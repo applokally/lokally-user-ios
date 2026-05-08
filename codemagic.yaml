@@ -38,7 +38,7 @@ workflows:
 
       - name: Set up iOS code signing
         script: |
-          xcode-project use-profiles --custom-export-options='{"testFlightInternalTestingOnly": true}'
+          xcode-project use-profiles --project ios/Runner.xcodeproj --custom-export-options='{"testFlightInternalTestingOnly": true}'
 
       - name: Build signed iOS IPA
         script: |
