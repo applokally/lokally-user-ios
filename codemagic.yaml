@@ -12,8 +12,12 @@ workflows:
       xcode: latest
       cocoapods: default
       ios_signing:
-        distribution_type: app_store
-        bundle_identifier: com.lokallyapp.passageiro
+        provisioning_profiles:
+          - profile: lokally_passageiro_app_store_profile
+            environment_variable: LOKALLY_PASSAGEIRO_PROFILE_PATH
+        certificates:
+          - certificate: lokally_ios_distribution_certificate
+            environment_variable: LOKALLY_IOS_CERTIFICATE_PATH
       vars:
         BUNDLE_ID: "com.lokallyapp.passageiro"
 
@@ -25,6 +29,11 @@ workflows:
           find ios -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" -o -name "*.xcscheme" \) -print
           echo "---- Runner scheme ----"
           cat ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme
+          echo "---- Signing files ----"
+          echo "Profile path: $LOKALLY_PASSAGEIRO_PROFILE_PATH"
+          echo "Certificate path: $LOKALLY_IOS_CERTIFICATE_PATH"
+          ls -lah "$HOME/Library/MobileDevice/Provisioning Profiles" || true
+          ls -lah "$HOME/Library/MobileDevice/Certificates" || true
 
       - name: Get Flutter packages
         script: |
@@ -38,7 +47,10 @@ workflows:
 
       - name: Set up iOS code signing
         script: |
-          xcode-project use-profiles --project ios/Runner.xcodeproj --custom-export-options='{"testFlightInternalTestingOnly": true}'
+          xcode-project use-profiles \
+            --project ios/Runner.xcodeproj \
+            --profile "$LOKALLY_PASSAGEIRO_PROFILE_PATH" \
+            --custom-export-options='{"testFlightInternalTestingOnly": true}'
 
       - name: Build signed iOS IPA
         script: |
