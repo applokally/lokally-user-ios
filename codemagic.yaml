@@ -1,0 +1,59 @@
+workflows:
+  lokally-passenger-ios-testflight:
+    name: Lokally Passenger iOS TestFlight
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    integrations:
+      app_store_connect: Codemagic Lokally
+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.lokallyapp.passageiro
+      vars:
+        BUNDLE_ID: "com.lokallyapp.passageiro"
+
+    scripts:
+      - name: Diagnose iOS project
+        script: |
+          echo "CM_BUILD_DIR=$CM_BUILD_DIR"
+          echo "---- iOS project files ----"
+          find ios -maxdepth 5 \( -name "*.xcodeproj" -o -name "*.xcworkspace" -o -name "*.xcscheme" \) -print
+          echo "---- Runner scheme ----"
+          cat ios/Runner.xcodeproj/xcshareddata/xcschemes/Runner.xcscheme
+
+      - name: Get Flutter packages
+        script: |
+          flutter pub get
+
+      - name: Install CocoaPods
+        script: |
+          cd ios
+          pod install
+          cd ..
+
+      - name: Set up iOS code signing
+        script: |
+          xcode-project use-profiles --custom-export-options='{"testFlightInternalTestingOnly": true}'
+
+      - name: Build signed iOS IPA
+        script: |
+          flutter build ipa --release \
+            --build-name=1.0.0 \
+            --build-number=$PROJECT_BUILD_NUMBER \
+            --export-options-plist=/Users/builder/export_options.plist
+
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - flutter_drive.log
+
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: false
+        submit_to_app_store: false
