@@ -53,3 +53,5 @@ erro_flutter_run_mapa.txt
 home_screen_trecho_layout_restaurado.txt
 category_view_atual_completo.txt
 category_widget_atual_completo.txt
+ios/build/
+ios/Flutter/ephemeral/
