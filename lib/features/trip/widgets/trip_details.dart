@@ -39,9 +39,17 @@ class TripDetailWidget extends StatelessWidget {
   }
 
   String _paymentLabel(String? paymentMethod) {
-    final String method = (paymentMethod ?? '').toLowerCase();
+    final String lokallyLabel =
+        (tripDetails.lokallyPaymentMethodLabel ?? '').trim();
 
-    if (method == 'digital' || method == 'lokally_pay') {
+    if (lokallyLabel.isNotEmpty) {
+      return lokallyLabel;
+    }
+
+    final String method =
+        (tripDetails.lokallyPaymentMethod ?? paymentMethod ?? '').toLowerCase();
+
+    if (method == 'digital' || method == 'lokally_pay' || method == 'online') {
       return _localizedText(
         pt: 'Lokally Pay',
         en: 'Lokally Pay',
@@ -51,9 +59,9 @@ class TripDetailWidget extends StatelessWidget {
 
     if (method == 'wallet') {
       return _localizedText(
-        pt: 'Carteira',
-        en: 'Wallet',
-        es: 'Billetera',
+        pt: 'Carteira Lokally',
+        en: 'Lokally Wallet',
+        es: 'Billetera Lokally',
       );
     }
 
@@ -79,7 +87,7 @@ class TripDetailWidget extends StatelessWidget {
 
     return _localizedText(
       pt: 'Dinheiro',
-      en: 'Cash',
+      en: 'Cash payment',
       es: 'Efectivo',
     );
   }

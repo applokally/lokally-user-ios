@@ -141,11 +141,11 @@ class NotificationHelper {
             await _openRideCompleted(message.data);
           } else if (message.data['action'] == 'trip_completed' ||
               message.data['action'] == 'parcel_completed') {
-            Get.find<RideController>().clearRideDetails();
-
             if (message.data['action'] == 'trip_completed') {
-              Get.offAll(const DashboardScreen());
+              await _openRidePaidReviewOrDashboard(message.data);
             } else {
+              Get.find<RideController>().clearRideDetails();
+
               if (Get.find<ConfigController>().config!.reviewStatus!) {
                 Get.offAll(
                     ReviewScreen(tripId: message.data['ride_request_id']));
@@ -408,6 +408,22 @@ class NotificationHelper {
     }
   }
 
+  static Future<void> _openRidePaidReviewOrDashboard(
+      Map<String, dynamic> data) async {
+    final String? rideRequestId = data['ride_request_id']?.toString();
+
+    if (rideRequestId == null || rideRequestId.isEmpty) {
+      return;
+    }
+
+    if (Get.find<ConfigController>().config!.reviewStatus!) {
+      Get.offAll(() => ReviewScreen(tripId: rideRequestId));
+    } else {
+      Get.find<RideController>().clearRideDetails();
+      Get.offAll(() => const DashboardScreen());
+    }
+  }
+
   static Future<void> _openPaymentSuccessful(Map<String, dynamic> data) async {
     final String? rideRequestId = data['ride_request_id']?.toString();
 
@@ -418,7 +434,6 @@ class NotificationHelper {
     if (data['type'] == 'ride_request') {
       if (Get.find<ConfigController>().config!.reviewStatus!) {
         Get.off(() => ReviewScreen(tripId: rideRequestId));
-        Get.find<RideController>().tripDetails = null;
       } else {
         Get.offAll(() => const DashboardScreen());
         Get.find<RideController>().tripDetails = null;
@@ -808,7 +823,13 @@ class NotificationHelper {
                     AppConstants.completed &&
                 Get.find<RideController>().tripDetails!.paymentStatus ==
                     AppConstants.paid)) {
-          if (Get.currentRoute != '/TripDetailsScreen') {
+          if (Get.find<RideController>().tripDetails!.currentStatus ==
+                  AppConstants.completed &&
+              Get.find<RideController>().tripDetails!.paymentStatus ==
+                  AppConstants.paid &&
+              Get.find<ConfigController>().config!.reviewStatus!) {
+            _toRoute(formSplash, ReviewScreen(tripId: tripId));
+          } else if (Get.currentRoute != '/TripDetailsScreen') {
             _toRoute(
               formSplash,
               TripDetailsScreen(

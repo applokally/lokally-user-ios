@@ -149,7 +149,7 @@ class _OtpWidgetState extends State<OtpWidget> {
                         ),
                       ),
                       TextSpan(
-                        text: 'with_the_driver'.tr,
+                        text: ' ${'with_the_driver'.tr}',
                         style: textRegular.copyWith(
                           color: Theme.of(context)
                               .textTheme

@@ -27,40 +27,57 @@ import 'package:ride_sharing_user_app/common_widgets/button_widget.dart';
 
 class PaymentScreen extends StatefulWidget {
   final bool fromParcel;
-  const PaymentScreen({super.key,  this.fromParcel = false});
+  const PaymentScreen({super.key, this.fromParcel = false});
 
   @override
   State<PaymentScreen> createState() => _PaymentScreenState();
 }
 
-class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserver{
+class _PaymentScreenState extends State<PaymentScreen>
+    with WidgetsBindingObserver {
   bool collapsed = false;
   TextEditingController tipsAmountController = TextEditingController();
+
+  bool _isPayToDriverPayment() {
+    return Get.find<RideController>().tripDetails?.isPayToDriverPayment ??
+        false;
+  }
+
+  String _displayPaymentMethod() {
+    return Get.find<RideController>().tripDetails?.displayPaymentMethod ??
+        'cash'.tr;
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    if(Get.find<ProfileController>().profileModel?.data?.wallet == null){
+    if (Get.find<ProfileController>().profileModel?.data?.wallet == null) {
       Get.find<ProfileController>().getProfileInfo();
     }
     Get.find<PaymentController>().initPayment();
     Get.find<PaymentController>().getPaymentGetWayList();
-    Get.find<PaymentController>().setPaymentByName(Get.find<RideController>().tripDetails?.paymentMethod??'cash');
+    Get.find<PaymentController>().setPaymentByName(
+        Get.find<RideController>().tripDetails?.paymentMethod ?? 'cash');
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if(state == AppLifecycleState.resumed){
-      Get.find<RideController>().getRideDetails(Get.find<RideController>().currentTripDetails!.id!).then((value) {
-        if(Get.find<RideController>().currentTripDetails!.paymentStatus == 'paid'){
-          Get.offAll(()=> const DashboardScreen());
-        }else{
-          Get.find<RideController>().getFinalFare(Get.find<RideController>().currentTripDetails!.id!);
+    if (state == AppLifecycleState.resumed) {
+      Get.find<RideController>()
+          .getRideDetails(Get.find<RideController>().currentTripDetails!.id!)
+          .then((value) {
+        if (Get.find<RideController>().currentTripDetails!.paymentStatus ==
+            'paid') {
+          Get.offAll(() => const DashboardScreen());
+        } else {
+          Get.find<RideController>()
+              .getFinalFare(Get.find<RideController>().currentTripDetails!.id!);
           Get.find<PaymentController>().initPayment();
           Get.find<PaymentController>().getPaymentGetWayList();
-          Get.find<PaymentController>().setPaymentByName(Get.find<RideController>().tripDetails?.paymentMethod??'cash');
+          Get.find<PaymentController>().setPaymentByName(
+              Get.find<RideController>().tripDetails?.paymentMethod ?? 'cash');
         }
       });
     }
@@ -74,7 +91,6 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
 
   @override
   Widget build(BuildContext context) {
-
     return SafeArea(
       top: false,
       child: PopScope(
@@ -85,314 +101,564 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
         },
         child: Scaffold(
           body: GetBuilder<PaymentController>(builder: (paymentController) {
-            tipsAmountController.text = '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
-              return BodyWidget(
-                appBar: AppBarWidget(
-                  title: 'payment'.tr,
-                  onBackPressed: () => Get.find<BottomMenuController>().navigateToDashboard(),
-                ),
-                body: GetBuilder<CouponController>(builder: (couponController) {
-                  return SingleChildScrollView(child: Column(children: [
+            tipsAmountController.text =
+                '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
+            return BodyWidget(
+              appBar: AppBarWidget(
+                title: 'payment'.tr,
+                onBackPressed: () =>
+                    Get.find<BottomMenuController>().navigateToDashboard(),
+              ),
+              body: GetBuilder<CouponController>(builder: (couponController) {
+                return SingleChildScrollView(
+                    child: Column(children: [
+                  GetBuilder<RideController>(builder: (rideController) {
+                    String firstRoute = '';
+                    String secondRoute = '';
+                    List<dynamic> extraRoute = [];
+                    if (rideController.tripDetails?.intermediateAddresses !=
+                            null &&
+                        rideController.tripDetails?.intermediateAddresses !=
+                            '["",""]') {
+                      extraRoute = jsonDecode(
+                          rideController.tripDetails!.intermediateAddresses!);
 
-                    GetBuilder<RideController>(builder: (rideController){
-
-                      String firstRoute = '';
-                      String secondRoute = '';
-                      List<dynamic> extraRoute = [];
-                      if(rideController.tripDetails?.intermediateAddresses != null &&
-                          rideController.tripDetails?.intermediateAddresses != '["",""]'){
-                        extraRoute = jsonDecode(rideController.tripDetails!.intermediateAddresses!);
-
-                        if(extraRoute.isNotEmpty) {
-                          firstRoute = extraRoute[0];
-                        }
-                        if(extraRoute.isNotEmpty && extraRoute.length > 1) {
-                          secondRoute = extraRoute[1];
-                        }
+                      if (extraRoute.isNotEmpty) {
+                        firstRoute = extraRoute[0];
                       }
+                      if (extraRoute.isNotEmpty && extraRoute.length > 1) {
+                        secondRoute = extraRoute[1];
+                      }
+                    }
 
-                      return Column(children: [
-                        Padding(padding: const EdgeInsets.symmetric(
+                    final bool isPayToDriverPayment =
+                        rideController.tripDetails?.isPayToDriverPayment ??
+                            false;
+                    final String displayPaymentMethod =
+                        rideController.tripDetails?.displayPaymentMethod ??
+                            paymentController.paymentType.tr;
+
+                    return Column(children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
                           horizontal: Dimensions.paddingSizeDefault,
                           vertical: Dimensions.paddingSizeExtraLarge,
                         ),
-                          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,children: [
-                            Text('payment'.tr,
-                              style: textSemiBold.copyWith(color: Theme.of(context).primaryColor),
-                            ),
-
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal : Dimensions.paddingSizeExtraSmall,
-                                vertical: Dimensions.paddingSizeThree,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).primaryColor.withValues(alpha:.2),
-                                borderRadius: BorderRadius.circular(Dimensions.paddingSizeExtraSmall),
-                              ),
-                              child: Row(children: [
-                                Text(paymentController.paymentType.tr,
-                                  style: textMedium.copyWith(color: Theme.of(context).primaryColor),
-                                ),
-
-                                const SizedBox(width: Dimensions.paddingSizeExtraSmall),
-                                SizedBox(width: Dimensions.iconSizeSmall,
-                                  child: Image.asset(Images.cash),
-                                ),
-                              ]),
-                            ),
-                          ]),
-                        ),
-
-                        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Text('this_trip_is'.tr),
-
-                          const SizedBox(width: Dimensions.paddingSizeExtraSmall),
-                          if(rideController.finalFare != null && rideController.finalFare!.currentStatus != null)
-                            Text(rideController.finalFare!.currentStatus!.capitalize!,
-                              style: textSemiBold.copyWith(color: Theme.of(context).primaryColor),
-                            ),
-                        ]),
-
-                        (rideController.finalFare != null) ?
-                        Padding(padding: const EdgeInsets.symmetric(vertical: Dimensions.paddingSizeDefault),
-                          child: Row(mainAxisAlignment: MainAxisAlignment.center,children: [
+                        child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
                               Text(
-                                PriceConverter.convertPrice(
-                                  rideController.finalFare!.paidFare! + double.parse(paymentController.tipAmount),
-                                ),
-                                style: textRobotoMedium.copyWith(fontSize: Dimensions.fontSizeOverLarge,
-                                  color: Theme.of(context).textTheme.bodyMedium!.color,
-                                ),
+                                'payment'.tr,
+                                style: textSemiBold.copyWith(
+                                    color: Theme.of(context).primaryColor),
                               ),
-                            const SizedBox(width: Dimensions.paddingSizeSmall),
-
-                            if(double.parse(paymentController.tipAmount) > 0)
-                            Text('( ${'tips_added'.tr} )')
-                            ]),
-                        ) : const SizedBox(),
-
-                        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Text('your'.tr, style: textMedium.copyWith(
-                            color: Theme.of(context).textTheme.bodyMedium!.color,
-                          )),
-
-                          const SizedBox(width: Dimensions.paddingSizeExtraSmall),
-                          Text('total_fare'.tr, style: textSemiBold.copyWith(
-                            color: Theme.of(context).primaryColor,
-                          )),
-
-                          const SizedBox(width: Dimensions.paddingSizeExtraSmall),
-                          Text('for_this_trip'.tr, style: textMedium.copyWith(
-                            color: Theme.of(context).textTheme.bodyMedium!.color,
-                          )),
-
-                        ]),
-
-
-                        Row(crossAxisAlignment: paymentController.paymentTypeIndex == 2 ?
-                         CrossAxisAlignment.end : CrossAxisAlignment.center, children: [
-                          Expanded(child: ListView.builder(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: paymentController.paymentTypeList.length,
-                            itemBuilder: (context, index){
-                              return PaymentTypeItem(
-                                title: paymentController.paymentTypeList[index],
-                                index: index,
-                                selectedIndex: paymentController.paymentTypeIndex,
-                              );
-                            },
-                          )),
-
-                          paymentController.paymentTypeIndex == 2 ?
-                          GetBuilder<ProfileController>(builder: (profileController) {
-                            return Padding(padding:const EdgeInsets.all(Dimensions.paddingSizeDefault),
-                              child: Text.rich(
-                                TextSpan(children: [TextSpan(text: '${'available'.tr}: ',
-                                  style: textRegular.copyWith(color: Theme.of(context).hintColor),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: Dimensions.paddingSizeExtraSmall,
+                                  vertical: Dimensions.paddingSizeThree,
                                 ),
-                                  TextSpan(text: PriceConverter.convertPrice(
-                                    profileController.profileModel?.data?.wallet?.walletBalance ?? 0,
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context)
+                                      .primaryColor
+                                      .withValues(alpha: .2),
+                                  borderRadius: BorderRadius.circular(
+                                      Dimensions.paddingSizeExtraSmall),
+                                ),
+                                child: Row(children: [
+                                  Text(
+                                    displayPaymentMethod,
+                                    style: textMedium.copyWith(
+                                        color: Theme.of(context).primaryColor),
                                   ),
-                                    style: textRobotoMedium.copyWith(color: Theme.of(context).hintColor),
+                                  const SizedBox(
+                                      width: Dimensions.paddingSizeExtraSmall),
+                                  SizedBox(
+                                    width: Dimensions.iconSizeSmall,
+                                    child: Image.asset(Images.paymentTypeIcon),
                                   ),
                                 ]),
                               ),
-                            );
-                          }) : const SizedBox(),
-                        ],
-                        ),
-
-                        paymentController.paymentTypeIndex == 1 ?
-                        Padding(padding: const EdgeInsets.only(left: Dimensions.paddingSizeLarge),
-                          child: SizedBox(height: 105, child: ListView.builder(
-                            itemCount: paymentController.paymentGateways?.length,
-                            padding: EdgeInsets.zero,
-                            scrollDirection: Axis.horizontal,
-                            itemBuilder: (context, index){
-                              return DigitalCardPaymentWidget(
-                                digitalPaymentModel: paymentController.paymentGateways![index],
-                                index: index,
-                              );
-                            },
-                          )),
-                        ) : const SizedBox(),
-
-                        paymentController.paymentTypeIndex == 1 ?
-                        Container(width: MediaQuery.of(context).size.width,
-                          margin: const EdgeInsets.only(left:Dimensions.paddingSizeDefault,
-                            right:Dimensions.paddingSizeDefault, bottom: Dimensions.paddingSizeDefault,
-                            top: Dimensions.paddingSizeExtraSmall,
+                            ]),
+                      ),
+                      if (isPayToDriverPayment)
+                        Container(
+                          margin: const EdgeInsets.symmetric(
+                            horizontal: Dimensions.paddingSizeDefault,
+                            vertical: Dimensions.paddingSizeSmall,
                           ),
-                          decoration: BoxDecoration(borderRadius: BorderRadius.circular(
-                            Dimensions.paddingSizeExtraSmall,
+                          padding: const EdgeInsets.all(
+                              Dimensions.paddingSizeDefault),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: 0.10),
+                            borderRadius:
+                                BorderRadius.circular(Dimensions.radiusLarge),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .primaryColor
+                                  .withValues(alpha: 0.25),
+                            ),
                           ),
-                              border: Border.all(width: .5,
-                                color: Theme.of(context).primaryColor.withValues(alpha:.9),
+                          child: Column(children: [
+                            Text(
+                              'Aguardando confirmação do pagamento',
+                              textAlign: TextAlign.center,
+                              style: textSemiBold.copyWith(
+                                color: Theme.of(context).primaryColor,
+                                fontSize: Dimensions.fontSizeDefault,
                               ),
-                          ),
-                          child: Row(children: [
-                            Expanded(child: SizedBox(child: Padding(
-                              padding: EdgeInsets.only(
-                                left: Get.find<LocalizationController>().isLtr ?
-                                Dimensions.paddingSizeExtraSmall : 0,
-                                right: Get.find<LocalizationController>().isLtr ? 0 :
-                                Dimensions.paddingSizeExtraSmall,
+                            ),
+                            const SizedBox(height: Dimensions.paddingSizeSmall),
+                            Text(
+                              'O motorista precisa confirmar o recebimento do pagamento para finalizar esta etapa.',
+                              textAlign: TextAlign.center,
+                              style: textRegular.copyWith(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.color,
+                                fontSize: Dimensions.fontSizeSmall,
                               ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(horizontal:Dimensions.iconSizeSmall,
-                                  vertical: Dimensions.paddingSizeSmall,
-                                ),
-                                child: Text(
-                                  (paymentController.tipAmount == '0' ||
-                                      paymentController.tipAmount.isEmpty) ?
-                                  'give_tips'.tr :
-                                  '${'tips'.tr}: ${PriceConverter.convertPrice(
-                                      double.parse(paymentController.tipAmount))}',
-                                  style: textRobotoMedium.copyWith(color: Theme.of(context).primaryColorDark),
-                                ),
-                              ),
-                            ))),
-
-                            const SizedBox(width: Dimensions.paddingSizeSmall),
-                            InkWell(
-                              onTap: () => showDialog(barrierDismissible: false,
-                                context: context, builder: (_) => const TipsWidget(),
-                              ),
-                              child: Container(
-                                padding:const EdgeInsets.symmetric(
-                                  horizontal: Dimensions.paddingSizeSmall,
-                                  vertical: Dimensions.paddingSizeSmall,
-                                ),
-                                margin:const  EdgeInsets.all(Dimensions.paddingSizeSmall),
-                                decoration: BoxDecoration(color: Theme.of(context).primaryColor.withValues(alpha:.35),
-                                  borderRadius:const BorderRadius.all(
-                                      Radius.circular(Dimensions.paddingSizeSmall)),
-                                ),
-                                child: Center(child: Text(
-                                  (paymentController.tipAmount == '0' || paymentController.tipAmount.isEmpty) ?
-                                  'add_tips'.tr : 'change'.tr, style: textBold.copyWith(
-                                  color: Theme.of(context).primaryColorDark,
-                                  fontSize: Dimensions.fontSizeDefault,
-                                ),
-                                )),
+                            ),
+                            const SizedBox(
+                                height: Dimensions.paddingSizeExtraSmall),
+                            Text(
+                              'Forma escolhida: $displayPaymentMethod',
+                              textAlign: TextAlign.center,
+                              style: textMedium.copyWith(
+                                color: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.color,
+                                fontSize: Dimensions.fontSizeSmall,
                               ),
                             ),
                           ]),
-                        ) : const SizedBox(),
-
-                        Padding(padding: const EdgeInsets.symmetric(horizontal : Dimensions.paddingSizeDefault),
-                          child: Theme(data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-                            child: ExpansionTile(initiallyExpanded: true,
-                              tilePadding:collapsed ? EdgeInsets.zero :
-                              const EdgeInsets.symmetric(horizontal: Dimensions.paddingSizeSmall),
-                              collapsedBackgroundColor: Theme.of(context).primaryColor.withValues(alpha:.4),
-                              collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                              title: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('trip_details'.tr,
-                                      style: textMedium.copyWith(
-                                        color: Theme.of(context).primaryColor,
-                                        fontSize: Dimensions.fontSizeLarge,
-                                      )
-                                  ),
-                                ],
+                        ),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('this_trip_is'.tr),
+                            const SizedBox(
+                                width: Dimensions.paddingSizeExtraSmall),
+                            if (rideController.finalFare != null &&
+                                rideController.finalFare!.currentStatus != null)
+                              Text(
+                                rideController
+                                    .finalFare!.currentStatus!.capitalize!,
+                                style: textSemiBold.copyWith(
+                                    color: Theme.of(context).primaryColor),
                               ),
-                              onExpansionChanged: (bool expanded){
-                                setState(() {
-                                  collapsed = expanded;
-                                });
+                          ]),
+                      (rideController.finalFare != null)
+                          ? Padding(
+                              padding: const EdgeInsets.symmetric(
+                                  vertical: Dimensions.paddingSizeDefault),
+                              child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      PriceConverter.convertPrice(
+                                        rideController.finalFare!.paidFare! +
+                                            double.parse(
+                                                paymentController.tipAmount),
+                                      ),
+                                      style: textRobotoMedium.copyWith(
+                                        fontSize: Dimensions.fontSizeOverLarge,
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium!
+                                            .color,
+                                      ),
+                                    ),
+                                    const SizedBox(
+                                        width: Dimensions.paddingSizeSmall),
+                                    if (double.parse(
+                                            paymentController.tipAmount) >
+                                        0)
+                                      Text('( ${'tips_added'.tr} )')
+                                  ]),
+                            )
+                          : const SizedBox(),
+                      Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text('your'.tr,
+                                style: textMedium.copyWith(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium!
+                                      .color,
+                                )),
+                            const SizedBox(
+                                width: Dimensions.paddingSizeExtraSmall),
+                            Text('total_fare'.tr,
+                                style: textSemiBold.copyWith(
+                                  color: Theme.of(context).primaryColor,
+                                )),
+                            const SizedBox(
+                                width: Dimensions.paddingSizeExtraSmall),
+                            Text('for_this_trip'.tr,
+                                style: textMedium.copyWith(
+                                  color: Theme.of(context)
+                                      .textTheme
+                                      .bodyMedium!
+                                      .color,
+                                )),
+                          ]),
+                      if (!isPayToDriverPayment)
+                        Row(
+                          crossAxisAlignment:
+                              paymentController.paymentTypeIndex == 2
+                                  ? CrossAxisAlignment.end
+                                  : CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                                child: ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount:
+                                  paymentController.paymentTypeList.length,
+                              itemBuilder: (context, index) {
+                                return PaymentTypeItem(
+                                  title:
+                                      paymentController.paymentTypeList[index],
+                                  index: index,
+                                  selectedIndex:
+                                      paymentController.paymentTypeIndex,
+                                );
                               },
-                              children: [
-                                const SizedBox(height: Dimensions.paddingSizeSmall),
-
-                                if(rideController.tripDetails != null)
-                                  RouteWidget(
-                                    totalDistance: rideController.finalFare?.actualDistance?.toString()??'0',
-                                    fromAddress: rideController.tripDetails!.pickupAddress!,
-                                    toAddress: rideController.tripDetails!.destinationAddress!,
-                                    extraOneAddress: firstRoute,
-                                    extraTwoAddress: secondRoute,
-                                    entrance:  rideController.tripDetails!.entrance ?? '',
+                            )),
+                            paymentController.paymentTypeIndex == 2
+                                ? GetBuilder<ProfileController>(
+                                    builder: (profileController) {
+                                    return Padding(
+                                      padding: const EdgeInsets.all(
+                                          Dimensions.paddingSizeDefault),
+                                      child: Text.rich(
+                                        TextSpan(children: [
+                                          TextSpan(
+                                            text: '${'available'.tr}: ',
+                                            style: textRegular.copyWith(
+                                                color: Theme.of(context)
+                                                    .hintColor),
+                                          ),
+                                          TextSpan(
+                                            text: PriceConverter.convertPrice(
+                                              profileController
+                                                      .profileModel
+                                                      ?.data
+                                                      ?.wallet
+                                                      ?.walletBalance ??
+                                                  0,
+                                            ),
+                                            style: textRobotoMedium.copyWith(
+                                                color: Theme.of(context)
+                                                    .hintColor),
+                                          ),
+                                        ]),
+                                      ),
+                                    );
+                                  })
+                                : const SizedBox(),
+                          ],
+                        ),
+                      if (!isPayToDriverPayment)
+                        paymentController.paymentTypeIndex == 1
+                            ? Padding(
+                                padding: const EdgeInsets.only(
+                                    left: Dimensions.paddingSizeLarge),
+                                child: SizedBox(
+                                    height: 105,
+                                    child: ListView.builder(
+                                      itemCount: paymentController
+                                          .paymentGateways?.length,
+                                      padding: EdgeInsets.zero,
+                                      scrollDirection: Axis.horizontal,
+                                      itemBuilder: (context, index) {
+                                        return DigitalCardPaymentWidget(
+                                          digitalPaymentModel: paymentController
+                                              .paymentGateways![index],
+                                          index: index,
+                                        );
+                                      },
+                                    )),
+                              )
+                            : const SizedBox(),
+                      if (!isPayToDriverPayment)
+                        paymentController.paymentTypeIndex == 1
+                            ? Container(
+                                width: MediaQuery.of(context).size.width,
+                                margin: const EdgeInsets.only(
+                                  left: Dimensions.paddingSizeDefault,
+                                  right: Dimensions.paddingSizeDefault,
+                                  bottom: Dimensions.paddingSizeDefault,
+                                  top: Dimensions.paddingSizeExtraSmall,
+                                ),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(
+                                    Dimensions.paddingSizeExtraSmall,
                                   ),
+                                  border: Border.all(
+                                    width: .5,
+                                    color: Theme.of(context)
+                                        .primaryColor
+                                        .withValues(alpha: .9),
+                                  ),
+                                ),
+                                child: Row(children: [
+                                  Expanded(
+                                      child: SizedBox(
+                                          child: Padding(
+                                    padding: EdgeInsets.only(
+                                      left: Get.find<LocalizationController>()
+                                              .isLtr
+                                          ? Dimensions.paddingSizeExtraSmall
+                                          : 0,
+                                      right: Get.find<LocalizationController>()
+                                              .isLtr
+                                          ? 0
+                                          : Dimensions.paddingSizeExtraSmall,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: Dimensions.iconSizeSmall,
+                                        vertical: Dimensions.paddingSizeSmall,
+                                      ),
+                                      child: Text(
+                                        (paymentController.tipAmount == '0' ||
+                                                paymentController
+                                                    .tipAmount.isEmpty)
+                                            ? 'give_tips'.tr
+                                            : '${'tips'.tr}: ${PriceConverter.convertPrice(double.parse(paymentController.tipAmount))}',
+                                        style: textRobotoMedium.copyWith(
+                                            color: Theme.of(context)
+                                                .primaryColorDark),
+                                      ),
+                                    ),
+                                  ))),
+                                  const SizedBox(
+                                      width: Dimensions.paddingSizeSmall),
+                                  InkWell(
+                                    onTap: () => showDialog(
+                                      barrierDismissible: false,
+                                      context: context,
+                                      builder: (_) => const TipsWidget(),
+                                    ),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: Dimensions.paddingSizeSmall,
+                                        vertical: Dimensions.paddingSizeSmall,
+                                      ),
+                                      margin: const EdgeInsets.all(
+                                          Dimensions.paddingSizeSmall),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context)
+                                            .primaryColor
+                                            .withValues(alpha: .35),
+                                        borderRadius: const BorderRadius.all(
+                                            Radius.circular(
+                                                Dimensions.paddingSizeSmall)),
+                                      ),
+                                      child: Center(
+                                          child: Text(
+                                        (paymentController.tipAmount == '0' ||
+                                                paymentController
+                                                    .tipAmount.isEmpty)
+                                            ? 'add_tips'.tr
+                                            : 'change'.tr,
+                                        style: textBold.copyWith(
+                                          color: Theme.of(context)
+                                              .primaryColorDark,
+                                          fontSize: Dimensions.fontSizeDefault,
+                                        ),
+                                      )),
+                                    ),
+                                  ),
+                                ]),
+                              )
+                            : const SizedBox(),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: Dimensions.paddingSizeDefault),
+                        child: Theme(
+                          data: Theme.of(context)
+                              .copyWith(dividerColor: Colors.transparent),
+                          child: ExpansionTile(
+                            initiallyExpanded: true,
+                            tilePadding: collapsed
+                                ? EdgeInsets.zero
+                                : const EdgeInsets.symmetric(
+                                    horizontal: Dimensions.paddingSizeSmall),
+                            collapsedBackgroundColor: Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: .4),
+                            collapsedShape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                            title: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('trip_details'.tr,
+                                    style: textMedium.copyWith(
+                                      color: Theme.of(context).primaryColor,
+                                      fontSize: Dimensions.fontSizeLarge,
+                                    )),
                               ],
                             ),
+                            onExpansionChanged: (bool expanded) {
+                              setState(() {
+                                collapsed = expanded;
+                              });
+                            },
+                            children: [
+                              const SizedBox(
+                                  height: Dimensions.paddingSizeSmall),
+                              if (rideController.tripDetails != null)
+                                RouteWidget(
+                                  totalDistance: rideController
+                                          .finalFare?.actualDistance
+                                          ?.toString() ??
+                                      '0',
+                                  fromAddress: rideController
+                                      .tripDetails!.pickupAddress!,
+                                  toAddress: rideController
+                                      .tripDetails!.destinationAddress!,
+                                  extraOneAddress: firstRoute,
+                                  extraTwoAddress: secondRoute,
+                                  entrance:
+                                      rideController.tripDetails!.entrance ??
+                                          '',
+                                ),
+                            ],
                           ),
                         ),
-                      ]);
-
-                    }),
-
-                    Get.find<RideController>().finalFare != null ? Column(children: [
-                      TripFareSummery(fromPayment: true,
-                          tripFare: Get.find<RideController>().finalFare!.paidFare!,
-                          fromParcel: widget.fromParcel,
                       ),
-
-                      ApplyCoupon(tripId: Get.find<RideController>().finalFare!.id!),
-
-                    ]) : const SizedBox(),
-
-                  ]));
-                }),
-              );
-
+                    ]);
+                  }),
+                  Get.find<RideController>().finalFare != null
+                      ? Column(children: [
+                          TripFareSummery(
+                            fromPayment: true,
+                            tripFare:
+                                Get.find<RideController>().finalFare!.paidFare!,
+                            fromParcel: widget.fromParcel,
+                          ),
+                          if (!Get.find<RideController>()
+                              .tripDetails!
+                              .isPayToDriverPayment)
+                            ApplyCoupon(
+                                tripId:
+                                    Get.find<RideController>().finalFare!.id!),
+                        ])
+                      : const SizedBox(),
+                ]));
+              }),
+            );
           }),
+          bottomNavigationBar:
+              GetBuilder<PaymentController>(builder: (paymentController) {
+            if (_isPayToDriverPayment()) {
+              return Container(
+                color: Theme.of(context).cardColor,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: Dimensions.paddingSizeDefault,
+                  vertical: Dimensions.paddingSizeDefault,
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.all(Dimensions.paddingSizeDefault),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context)
+                          .primaryColor
+                          .withValues(alpha: 0.10),
+                      borderRadius:
+                          BorderRadius.circular(Dimensions.radiusLarge),
+                    ),
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.hourglass_bottom_rounded,
+                            color: Theme.of(context).primaryColor,
+                            size: 22,
+                          ),
+                          const SizedBox(width: Dimensions.paddingSizeSmall),
+                          Expanded(
+                              child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                Text(
+                                  'Aguardando o motorista',
+                                  style: textSemiBold.copyWith(
+                                    color: Theme.of(context).primaryColor,
+                                    fontSize: Dimensions.fontSizeDefault,
+                                  ),
+                                ),
+                                const SizedBox(
+                                    height: Dimensions.paddingSizeExtraSmall),
+                                Text(
+                                  'Confirmação do pagamento: ${_displayPaymentMethod()}',
+                                  style: textRegular.copyWith(
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium
+                                        ?.color,
+                                    fontSize: Dimensions.fontSizeSmall,
+                                  ),
+                                ),
+                              ])),
+                        ]),
+                  ),
+                ),
+              );
+            }
 
-          bottomNavigationBar: GetBuilder<PaymentController>(builder: (paymentController) {
-            return Container(color: Theme.of(context).cardColor, height: 80,
-              padding: const EdgeInsets.symmetric(horizontal: Dimensions.paddingSizeDefault,
+            return Container(
+              color: Theme.of(context).cardColor,
+              height: 80,
+              padding: const EdgeInsets.symmetric(
+                horizontal: Dimensions.paddingSizeDefault,
                 vertical: Dimensions.paddingSizeDefault,
               ),
-
-              child: paymentController.isLoading ?
-              Center(child: SpinKitCircle(color: Theme.of(context).primaryColor, size: 40.0,)) :
-              ButtonWidget(buttonText: 'pay_now'.tr,
-                onPressed: () {
-                  if(paymentController.paymentTypeIndex == 1 && paymentController.paymentGatewayIndex != -1)
-                  {
-                    Get.to(() => DigitalPaymentScreen(
-                      tripId: Get.find<RideController>().finalFare!.id!,
-                      paymentMethod: paymentController.gateWay,
-                      fromParcel: widget.fromParcel,
-                      tips: paymentController.tipAmount,
-                    ));
-
-                  }
-                  if(paymentController.paymentTypeIndex == 1 && paymentController.paymentGatewayIndex == -1)
-                  {
-                    showCustomSnackBar('select_payment_method'.tr);
-                  }else if(paymentController.paymentTypeIndex == 0 || paymentController.paymentTypeIndex == 2) {
-                    if(Get.find<RideController>().finalFare != null){
-                      paymentController.paymentSubmit(Get.find<RideController>().finalFare!.id!,
-                        paymentController.paymentTypeList[paymentController.paymentTypeIndex],
-                        fromParcel: widget.fromParcel,
-                      );
-                    }
-                  }
-                },
-              ),
+              child: paymentController.isLoading
+                  ? Center(
+                      child: SpinKitCircle(
+                      color: Theme.of(context).primaryColor,
+                      size: 40.0,
+                    ))
+                  : ButtonWidget(
+                      buttonText: 'pay_now'.tr,
+                      onPressed: () {
+                        if (paymentController.paymentTypeIndex == 1 &&
+                            paymentController.paymentGatewayIndex != -1) {
+                          Get.to(() => DigitalPaymentScreen(
+                                tripId:
+                                    Get.find<RideController>().finalFare!.id!,
+                                paymentMethod: paymentController.gateWay,
+                                fromParcel: widget.fromParcel,
+                                tips: paymentController.tipAmount,
+                              ));
+                        }
+                        if (paymentController.paymentTypeIndex == 1 &&
+                            paymentController.paymentGatewayIndex == -1) {
+                          showCustomSnackBar('select_payment_method'.tr);
+                        } else if (paymentController.paymentTypeIndex == 0 ||
+                            paymentController.paymentTypeIndex == 2) {
+                          if (Get.find<RideController>().finalFare != null) {
+                            paymentController.paymentSubmit(
+                              Get.find<RideController>().finalFare!.id!,
+                              paymentController.paymentTypeList[
+                                  paymentController.paymentTypeIndex],
+                              fromParcel: widget.fromParcel,
+                            );
+                          }
+                        }
+                      },
+                    ),
             );
           }),
         ),
@@ -400,8 +666,3 @@ class _PaymentScreenState extends State<PaymentScreen> with WidgetsBindingObserv
     );
   }
 }
-
-
-
-
-
