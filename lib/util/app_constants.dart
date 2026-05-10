@@ -140,6 +140,10 @@ class AppConstants {
   static const String otpLoginAfterUpdateData =
       '/api/customer/auth/update-data';
 
+  /// Store / Marketplace
+  static const String storeSellerStatus = '/api/customer/store/seller/status';
+  static const String storeSellerRequest = '/api/customer/store/seller-request';
+
   /// Shared Key
   static const String notification = 'notification';
   static const String theme = 'theme';
