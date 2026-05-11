@@ -551,6 +551,204 @@ class StoreSellerProductCard extends StatelessWidget {
     required this.onEditTap,
   });
 
+  void openRejectedReasonModal(BuildContext context) {
+    final String reason = product.rejectionNote.trim().isEmpty
+        ? 'Motivo da reprovação não informado pelo ADM.'
+        : product.rejectionNote.trim();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: const Icon(
+                        Icons.error_outline_rounded,
+                        color: Colors.redAccent,
+                        size: 23,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Produto reprovado',
+                            style: textBold.copyWith(
+                              color: Colors.black87,
+                              fontSize: 17,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Veja o motivo e ajuste para reenviar.',
+                            style: textRegular.copyWith(
+                              color: Colors.grey.shade600,
+                              fontSize: 12.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pop(),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.grey.shade700,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 15),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 13.8,
+                          height: 1.22,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        product.categoryName.isEmpty
+                            ? 'Sem categoria'
+                            : product.categoryName,
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 15),
+                Text(
+                  'Motivo da reprovação',
+                  style: textBold.copyWith(
+                    color: Colors.black87,
+                    fontSize: 13.4,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.32,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent.withValues(alpha: 0.07),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Text(
+                        reason,
+                        style: textRegular.copyWith(
+                          color: Colors.redAccent,
+                          fontSize: 12.4,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                Material(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.of(context).pop();
+                      onEditTap();
+                    },
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      height: 48,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Editar e reenviar',
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.6,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Material(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(),
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      height: 46,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Fechar',
+                        style: textBold.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 13.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color statusColor = product.statusColor(primaryColor);
@@ -678,22 +876,46 @@ class StoreSellerProductCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                if (product.approvalStatus == 'rejected' &&
-                    product.rejectionNote.isNotEmpty) ...[
+                if (product.approvalStatus == 'rejected') ...[
                   const SizedBox(height: 8),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: Colors.redAccent.withValues(alpha: 0.08),
+                  Material(
+                    color: Colors.redAccent.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(14),
+                    child: InkWell(
+                      onTap: () => openRejectedReasonModal(context),
                       borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Text(
-                      product.rejectionNote,
-                      style: textRegular.copyWith(
-                        color: Colors.redAccent,
-                        fontSize: 11.4,
-                        height: 1.28,
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 9,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.error_outline_rounded,
+                              color: Colors.redAccent,
+                              size: 17,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                'Reprovado • Ver motivo',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: textBold.copyWith(
+                                  color: Colors.redAccent,
+                                  fontSize: 11.8,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.keyboard_arrow_right_rounded,
+                              color: Colors.redAccent,
+                              size: 19,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
