@@ -1,6 +1,7 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/features/address/controllers/address_controller.dart';
 import 'package:ride_sharing_user_app/features/address/domain/models/address_model.dart';
 import 'package:ride_sharing_user_app/features/address/screens/add_new_address.dart';
@@ -16,7 +17,47 @@ enum StoreCartDeliveryMode {
 
 enum StoreCartPaymentMode {
   appBalance,
-  stripeCard,
+  mercadoPago,
+}
+
+class StoreShippingPreview {
+  final bool hasValue;
+  final double itemsSubtotal;
+  final double shippingAmount;
+  final double shippingDiscount;
+  final double shippingTotal;
+  final double total;
+
+  StoreShippingPreview({
+    required this.hasValue,
+    required this.itemsSubtotal,
+    required this.shippingAmount,
+    required this.shippingDiscount,
+    required this.shippingTotal,
+    required this.total,
+  });
+
+  factory StoreShippingPreview.empty() {
+    return StoreShippingPreview(
+      hasValue: false,
+      itemsSubtotal: 0,
+      shippingAmount: 0,
+      shippingDiscount: 0,
+      shippingTotal: 0,
+      total: 0,
+    );
+  }
+
+  factory StoreShippingPreview.fromMap(Map<String, dynamic> map) {
+    return StoreShippingPreview(
+      hasValue: true,
+      itemsSubtotal: StoreCartCurrency.parseDouble(map['items_subtotal']),
+      shippingAmount: StoreCartCurrency.parseDouble(map['shipping_amount']),
+      shippingDiscount: StoreCartCurrency.parseDouble(map['shipping_discount']),
+      shippingTotal: StoreCartCurrency.parseDouble(map['shipping_total']),
+      total: StoreCartCurrency.parseDouble(map['total']),
+    );
+  }
 }
 
 class StoreMarketplaceDeliveryContext {
@@ -133,6 +174,12 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   Address? selectedDeliveryAddress;
 
   final List<StoreCartItemData> cartItems = StoreCartSession.items;
+
+  bool isShippingPreviewLoading = false;
+  String shippingPreviewError = '';
+  StoreShippingPreview shippingPreview = StoreShippingPreview.empty();
+  int shippingPreviewRequestId = 0;
+
   double get appBalance {
     if (!Get.isRegistered<ProfileController>()) {
       return 0;
@@ -191,6 +238,18 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
 
   int get storeCount => storeGroups.length;
 
+  List<StoreCartItemData> get physicalCartItems {
+    return cartItems.where((item) => !item.product.isService).toList();
+  }
+
+  bool get hasPhysicalItems {
+    return physicalCartItems.isNotEmpty;
+  }
+
+  bool get hasOnlyServiceItems {
+    return cartItems.isNotEmpty && !hasPhysicalItems;
+  }
+
   double get itemsSubtotal {
     return cartItems.fold<double>(
       0,
@@ -199,44 +258,58 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   double get shippingBaseValue {
-    if (deliveryMode == StoreCartDeliveryMode.pickup) {
+    if (!hasPhysicalItems || deliveryMode == StoreCartDeliveryMode.pickup) {
       return 0;
     }
 
-    double total = 0;
-
-    for (final StoreCartStoreGroup group in storeGroups) {
-      if (group.subtotal >= 200) {
-        continue;
-      }
-
-      total += 8.50;
+    if (shippingPreview.hasValue) {
+      return shippingPreview.shippingAmount;
     }
 
-    return total;
+    return 0;
   }
 
   bool get hasMultiStoreShippingDiscount {
-    return deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+    return hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        shippingPreview.hasValue &&
         storeCount >= 2 &&
-        itemsSubtotal >= 200 &&
-        shippingBaseValue > 0;
+        shippingPreview.shippingDiscount > 0;
   }
 
   double get shippingDiscount {
-    if (!hasMultiStoreShippingDiscount) {
+    if (!hasPhysicalItems || deliveryMode == StoreCartDeliveryMode.pickup) {
       return 0;
     }
 
-    return shippingBaseValue * 0.25;
+    if (shippingPreview.hasValue) {
+      return shippingPreview.shippingDiscount;
+    }
+
+    return 0;
   }
 
   double get shippingTotal {
-    final double value = shippingBaseValue - shippingDiscount;
-    return value < 0 ? 0 : value;
+    if (!hasPhysicalItems || deliveryMode == StoreCartDeliveryMode.pickup) {
+      return 0;
+    }
+
+    if (shippingPreview.hasValue) {
+      return shippingPreview.shippingTotal;
+    }
+
+    return 0;
   }
 
-  double get orderTotal => itemsSubtotal + shippingTotal;
+  double get orderTotal {
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        shippingPreview.hasValue) {
+      return shippingPreview.total;
+    }
+
+    return itemsSubtotal + shippingTotal;
+  }
 
   StoreCartStoreGroup? get firstStore {
     if (storeGroups.isEmpty) {
@@ -246,11 +319,120 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
     return storeGroups.first;
   }
 
+  Map<String, dynamic> buildShippingPreviewPayload() {
+    return {
+      'delivery_type': deliveryMode == StoreCartDeliveryMode.pickup
+          ? 'pickup'
+          : 'lokally_shipping',
+      'items': physicalCartItems.map((item) {
+        return {
+          'product_id': item.product.id,
+          'quantity': item.quantity,
+        };
+      }).toList(),
+    };
+  }
+
+  void clearShippingPreview() {
+    shippingPreviewRequestId++;
+
+    setState(() {
+      isShippingPreviewLoading = false;
+      shippingPreviewError = '';
+      shippingPreview = StoreShippingPreview.empty();
+    });
+  }
+
+  Future<void> loadShippingPreview() async {
+    if (!hasPhysicalItems ||
+        deliveryMode != StoreCartDeliveryMode.lokallyShipping ||
+        cartItems.isEmpty) {
+      clearShippingPreview();
+      return;
+    }
+
+    if (!Get.isRegistered<ApiClient>()) {
+      setState(() {
+        isShippingPreviewLoading = false;
+        shippingPreviewError = 'Não foi possível conectar com o servidor.';
+        shippingPreview = StoreShippingPreview.empty();
+      });
+      return;
+    }
+
+    final int requestId = ++shippingPreviewRequestId;
+
+    setState(() {
+      isShippingPreviewLoading = true;
+      shippingPreviewError = '';
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '/api/customer/store/shipping-preview',
+        buildShippingPreviewPayload(),
+      );
+
+      if (!mounted || requestId != shippingPreviewRequestId) {
+        return;
+      }
+
+      final dynamic responseBody = response.body;
+      final dynamic dataValue =
+          responseBody is Map ? responseBody['data'] : null;
+
+      final bool success =
+          (response.statusCode == 200 || response.statusCode == 201) &&
+              responseBody is Map &&
+              responseBody['status'] == true &&
+              dataValue is Map;
+
+      if (!success) {
+        final String message = responseBody is Map
+            ? '${responseBody['message'] ?? response.statusText ?? 'Não foi possível calcular o frete.'}'
+            : response.statusText ?? 'Não foi possível calcular o frete.';
+
+        setState(() {
+          isShippingPreviewLoading = false;
+          shippingPreviewError = message;
+          shippingPreview = StoreShippingPreview.empty();
+        });
+        return;
+      }
+
+      setState(() {
+        isShippingPreviewLoading = false;
+        shippingPreviewError = '';
+        shippingPreview = StoreShippingPreview.fromMap(
+          Map<String, dynamic>.from(dataValue),
+        );
+      });
+    } catch (_) {
+      if (!mounted || requestId != shippingPreviewRequestId) {
+        return;
+      }
+
+      setState(() {
+        isShippingPreviewLoading = false;
+        shippingPreviewError = 'Não foi possível calcular o frete.';
+        shippingPreview = StoreShippingPreview.empty();
+      });
+    }
+  }
+
+  void refreshShippingPreviewIfNeeded() {
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping) {
+      loadShippingPreview();
+    }
+  }
+
   void increaseQuantity(StoreCartItemData item) {
     setState(() {
       item.quantity++;
     });
     StoreCartSession.notifyChanged();
+    refreshShippingPreviewIfNeeded();
   }
 
   void decreaseQuantity(StoreCartItemData item) {
@@ -262,6 +444,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       item.quantity--;
     });
     StoreCartSession.notifyChanged();
+    refreshShippingPreviewIfNeeded();
   }
 
   void removeItem(StoreCartItemData item) {
@@ -271,7 +454,10 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
 
     if (cartItems.isEmpty) {
       Get.back();
+      return;
     }
+
+    refreshShippingPreviewIfNeeded();
   }
 
   Future<void> loadCustomerAddresses() async {
@@ -327,18 +513,48 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       return;
     }
 
-    if (paymentMode == StoreCartPaymentMode.appBalance &&
-        appBalance < orderTotal) {
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        selectedDeliveryAddress == null) {
       showCartMessage(
-        'Saldo insuficiente. Recarregue seu saldo ou escolha cartão de crédito.',
+        'Selecione um endereço de entrega para receber em casa.',
       );
       return;
     }
 
-    if (deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
-        selectedDeliveryAddress == null) {
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        ((selectedDeliveryAddress?.latitude ?? 0) == 0 ||
+            (selectedDeliveryAddress?.longitude ?? 0) == 0)) {
       showCartMessage(
-        'Selecione um endereço de entrega para receber em casa.',
+        'Selecione um endereço de entrega válido no mapa para calcular o Lokally Envios.',
+      );
+      return;
+    }
+
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        isShippingPreviewLoading) {
+      showCartMessage('Aguarde o cálculo do frete Marketplace.');
+      return;
+    }
+
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        !shippingPreview.hasValue) {
+      showCartMessage(
+        shippingPreviewError.isNotEmpty
+            ? shippingPreviewError
+            : 'Calculando frete Marketplace. Tente novamente em instantes.',
+      );
+      loadShippingPreview();
+      return;
+    }
+
+    if (paymentMode == StoreCartPaymentMode.appBalance &&
+        appBalance < orderTotal) {
+      showCartMessage(
+        'Saldo insuficiente. Recarregue seu saldo ou escolha cartão de crédito.',
       );
       return;
     }
@@ -359,6 +575,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
         shippingDiscount: shippingDiscount,
         shippingTotal: shippingTotal,
         orderTotal: orderTotal,
+        hasPhysicalItems: hasPhysicalItems,
       ),
     );
   }
@@ -426,27 +643,33 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                                 onRemove: removeItem,
                               );
                             }),
-                            const SizedBox(height: 18),
-                            StoreCartDeliverySelector(
-                              primaryColor: primaryColor,
-                              deliveryMode: deliveryMode,
-                              onChanged: (value) {
-                                setState(() {
-                                  deliveryMode = value;
+                            if (hasPhysicalItems) ...[
+                              const SizedBox(height: 18),
+                              StoreCartDeliverySelector(
+                                primaryColor: primaryColor,
+                                deliveryMode: deliveryMode,
+                                onChanged: (value) {
+                                  setState(() {
+                                    deliveryMode = value;
 
-                                  if (value == StoreCartDeliveryMode.pickup) {
-                                    selectedDeliveryAddress = null;
+                                    if (value == StoreCartDeliveryMode.pickup) {
+                                      selectedDeliveryAddress = null;
+                                    }
+                                  });
+
+                                  if (value ==
+                                      StoreCartDeliveryMode.lokallyShipping) {
+                                    loadCustomerAddresses();
+                                    loadShippingPreview();
+                                  } else {
+                                    clearShippingPreview();
                                   }
-                                });
-
-                                if (value ==
-                                    StoreCartDeliveryMode.lokallyShipping) {
-                                  loadCustomerAddresses();
-                                }
-                              },
-                            ),
-                            if (deliveryMode ==
-                                StoreCartDeliveryMode.lokallyShipping) ...[
+                                },
+                              ),
+                            ],
+                            if (hasPhysicalItems &&
+                                deliveryMode ==
+                                    StoreCartDeliveryMode.lokallyShipping) ...[
                               const SizedBox(height: 18),
                               StoreCartDeliveryAddressSelector(
                                 primaryColor: primaryColor,
@@ -454,6 +677,16 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                                 onSelectAddress: selectDeliveryAddress,
                                 onAddNewAddress: openAddNewDeliveryAddress,
                               ),
+                              if (shippingPreviewError.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  shippingPreviewError,
+                                  style: textMedium.copyWith(
+                                    color: Colors.redAccent,
+                                    fontSize: 12.2,
+                                  ),
+                                ),
+                              ],
                             ],
                             const SizedBox(height: 18),
                             StoreCartPaymentSelector(
@@ -477,6 +710,8 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                       itemsSubtotal: itemsSubtotal,
                       shippingTotal: shippingTotal,
                       orderTotal: orderTotal,
+                      isShippingPreviewLoading: isShippingPreviewLoading,
+                      showShippingLine: hasPhysicalItems,
                       onContinueShopping: continueShopping,
                       onCloseOrder: closeOrder,
                     ),
@@ -759,6 +994,18 @@ class StoreCartItemRow extends StatelessWidget {
                     fontSize: 14.2,
                   ),
                 ),
+                if (item.product.isService) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    item.product.serviceDeliverySummary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textMedium.copyWith(
+                      color: Colors.grey.shade700,
+                      fontSize: 11.6,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -1159,10 +1406,10 @@ class StoreCartPaymentSelector extends StatelessWidget {
         const SizedBox(height: 10),
         StoreCartSelectableLine(
           primaryColor: primaryColor,
-          selected: paymentMode == StoreCartPaymentMode.stripeCard,
+          selected: paymentMode == StoreCartPaymentMode.mercadoPago,
           title: 'Cartão de crédito',
-          description: 'Pague com cartão de crédito.',
-          onTap: () => onChanged(StoreCartPaymentMode.stripeCard),
+          description: 'Pague com cartão de crédito pelo Mercado Pago.',
+          onTap: () => onChanged(StoreCartPaymentMode.mercadoPago),
         ),
       ],
     );
@@ -1349,14 +1596,14 @@ class StoreCartRulesSummary extends StatelessWidget {
         storeCount >= 2 && itemsSubtotal >= 200 && shippingDiscount > 0;
 
     String message =
-        'Pedidos serão separados por loja. O Lokally Envios custa R\$8,50 por loja.';
+        'Pedidos serão separados por loja. O Lokally Envios será calculado conforme a configuração da cidade ou zona da loja.';
 
     if (hasSingleStoreFreeShipping) {
       message =
           'Frete grátis aplicado: compra de R\$200,00 ou mais em uma única loja.';
     } else if (hasMultiStoreDiscount) {
       message =
-          'Desconto de 25% no Lokally Envios aplicado: compra em 2 ou mais lojas com total mínimo de R\$200,00.';
+          'Desconto de 25% no Lokally Envios aplicado: compra em 2 ou mais lojas com total mínimo de R\$200,00 em produtos.';
     }
 
     return Text(
@@ -1375,6 +1622,8 @@ class StoreCartBottomBar extends StatelessWidget {
   final double itemsSubtotal;
   final double shippingTotal;
   final double orderTotal;
+  final bool isShippingPreviewLoading;
+  final bool showShippingLine;
   final VoidCallback onContinueShopping;
   final VoidCallback onCloseOrder;
 
@@ -1384,12 +1633,20 @@ class StoreCartBottomBar extends StatelessWidget {
     required this.itemsSubtotal,
     required this.shippingTotal,
     required this.orderTotal,
+    required this.isShippingPreviewLoading,
+    required this.showShippingLine,
     required this.onContinueShopping,
     required this.onCloseOrder,
   });
 
   @override
   Widget build(BuildContext context) {
+    final String shippingText = isShippingPreviewLoading
+        ? 'Calculando...'
+        : shippingTotal <= 0
+            ? 'Grátis'
+            : StoreCartCurrency.format(shippingTotal);
+
     return SafeArea(
       top: false,
       child: Container(
@@ -1412,13 +1669,13 @@ class StoreCartBottomBar extends StatelessWidget {
               label: 'Produtos',
               value: StoreCartCurrency.format(itemsSubtotal),
             ),
-            const SizedBox(height: 5),
-            StoreCartTotalLine(
-              label: 'Entrega',
-              value: shippingTotal <= 0
-                  ? 'Grátis'
-                  : StoreCartCurrency.format(shippingTotal),
-            ),
+            if (showShippingLine) ...[
+              const SizedBox(height: 5),
+              StoreCartTotalLine(
+                label: 'Entrega',
+                value: shippingText,
+              ),
+            ],
             const SizedBox(height: 7),
             StoreCartTotalLine(
               label: 'Total do pedido',
@@ -1529,6 +1786,7 @@ class StoreCheckoutScreen extends StatefulWidget {
   final double shippingDiscount;
   final double shippingTotal;
   final double orderTotal;
+  final bool hasPhysicalItems;
 
   const StoreCheckoutScreen({
     super.key,
@@ -1541,6 +1799,7 @@ class StoreCheckoutScreen extends StatefulWidget {
     required this.shippingDiscount,
     required this.shippingTotal,
     required this.orderTotal,
+    required this.hasPhysicalItems,
   });
 
   @override
@@ -1549,7 +1808,10 @@ class StoreCheckoutScreen extends StatefulWidget {
 
 class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
   bool paymentApproved = false;
-  late final String orderNumber = StoreMarketplaceOrderNumber.generate();
+  bool isSubmittingOrder = false;
+  late final String fallbackOrderNumber =
+      StoreMarketplaceOrderNumber.generate();
+  List<Map<String, dynamic>> backendOrders = <Map<String, dynamic>>[];
 
   List<StoreCartStoreGroup> get storeGroups {
     final Map<String, StoreCartStoreGroup> groups =
@@ -1576,6 +1838,32 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
     return groups.values.toList();
   }
 
+  double get checkoutShippingTotal {
+    if (backendOrders.isEmpty) {
+      return widget.shippingTotal;
+    }
+
+    return backendOrders.fold<double>(0, (total, order) {
+      final double shippingAmount =
+          StoreCartCurrency.parseDouble(order['shipping_amount']);
+      final double shippingDiscount =
+          StoreCartCurrency.parseDouble(order['shipping_discount']);
+
+      final double value = shippingAmount - shippingDiscount;
+      return total + (value < 0 ? 0 : value);
+    });
+  }
+
+  double get checkoutOrderTotal {
+    if (backendOrders.isEmpty) {
+      return widget.orderTotal;
+    }
+
+    return backendOrders.fold<double>(0, (total, order) {
+      return total + StoreCartCurrency.parseDouble(order['total']);
+    });
+  }
+
   String get customerName {
     if (!Get.isRegistered<ProfileController>()) {
       return 'Cliente';
@@ -1597,27 +1885,216 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
   String get paymentLabel {
     return widget.paymentMode == StoreCartPaymentMode.appBalance
         ? 'Pague no APP com saldo'
-        : 'Cartão de crédito';
+        : 'Cartão de crédito via Mercado Pago';
   }
 
   String get deliveryLabel {
+    if (!widget.hasPhysicalItems) {
+      return 'Serviço';
+    }
+
     return widget.deliveryMode == StoreCartDeliveryMode.pickup
         ? 'Retire Grátis'
         : 'Lokally Envios';
   }
 
   bool get isLokallyShipping {
-    return widget.deliveryMode == StoreCartDeliveryMode.lokallyShipping;
+    return widget.hasPhysicalItems &&
+        widget.deliveryMode == StoreCartDeliveryMode.lokallyShipping;
   }
 
   bool get hasFreeMarketplaceShipping {
-    return isLokallyShipping && widget.shippingTotal <= 0;
+    return isLokallyShipping && checkoutShippingTotal <= 0;
   }
 
-  void approvePayment() {
+  String get mainOrderNumber {
+    if (backendOrders.isNotEmpty) {
+      return '${backendOrders.first['order_number'] ?? fallbackOrderNumber}';
+    }
+
+    return fallbackOrderNumber;
+  }
+
+  String orderNumberForGroup(StoreCartStoreGroup group) {
+    final Map<String, dynamic>? order = backendOrderForGroup(group);
+
+    if (order == null) {
+      return mainOrderNumber;
+    }
+
+    return '${order['order_number'] ?? mainOrderNumber}';
+  }
+
+  Map<String, dynamic>? backendOrderForGroup(StoreCartStoreGroup group) {
+    for (final Map<String, dynamic> order in backendOrders) {
+      final dynamic sellerValue = order['seller'];
+      final Map<String, dynamic> seller = sellerValue is Map
+          ? Map<String, dynamic>.from(sellerValue)
+          : <String, dynamic>{};
+
+      final String sellerId = '${seller['id'] ?? ''}';
+      final String sellerName = '${seller['name'] ?? ''}';
+
+      if (sellerId == group.storeId || sellerName == group.storeName) {
+        return order;
+      }
+    }
+
+    return null;
+  }
+
+  Map<String, dynamic> buildOrderPayload() {
+    return {
+      'delivery_type': !widget.hasPhysicalItems ||
+              widget.deliveryMode == StoreCartDeliveryMode.pickup
+          ? 'pickup'
+          : 'lokally_shipping',
+      'payment_method': widget.paymentMode == StoreCartPaymentMode.appBalance
+          ? 'app_balance'
+          : 'mercadopago',
+      'payment_status': widget.paymentMode == StoreCartPaymentMode.appBalance
+          ? 'approved'
+          : 'pending',
+      'delivery_address': widget.deliveryAddress?.address,
+      'delivery_latitude': widget.deliveryAddress?.latitude,
+      'delivery_longitude': widget.deliveryAddress?.longitude,
+      'items': widget.cartItems.map((item) {
+        return {
+          'product_id': item.product.id,
+          'quantity': item.quantity,
+        };
+      }).toList(),
+    };
+  }
+
+  Future<void> approvePayment() async {
+    if (isSubmittingOrder || paymentApproved) {
+      return;
+    }
+
+    if (!Get.isRegistered<ApiClient>()) {
+      showCheckoutMessage('Não foi possível conectar com o servidor.');
+      return;
+    }
+
     setState(() {
-      paymentApproved = true;
+      isSubmittingOrder = true;
     });
+
+    final Response response = await Get.find<ApiClient>().postData(
+      '/api/customer/store/orders',
+      buildOrderPayload(),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    final dynamic responseBody = response.body;
+    final bool success =
+        (response.statusCode == 200 || response.statusCode == 201) &&
+            responseBody is Map &&
+            responseBody['status'] == true;
+
+    if (!success) {
+      setState(() {
+        isSubmittingOrder = false;
+      });
+
+      final String message = responseBody is Map
+          ? '${responseBody['message'] ?? response.statusText ?? 'Não foi possível criar o pedido.'}'
+          : response.statusText ?? 'Não foi possível criar o pedido.';
+
+      showCheckoutMessage(message);
+      return;
+    }
+
+    final dynamic dataValue = responseBody['data'];
+    final Map<String, dynamic> data = dataValue is Map
+        ? Map<String, dynamic>.from(dataValue)
+        : <String, dynamic>{};
+
+    final dynamic ordersValue = data['orders'];
+    final List<dynamic> ordersList =
+        ordersValue is List ? ordersValue : <dynamic>[];
+
+    final dynamic paymentValue = data['payment'];
+    final Map<String, dynamic> payment = paymentValue is Map
+        ? Map<String, dynamic>.from(paymentValue)
+        : <String, dynamic>{};
+
+    final String paymentUrl = '${payment['payment_url'] ?? ''}';
+    final bool requiresExternalPayment = payment['requires_external_payment'] ==
+            true ||
+        '${payment['requires_external_payment'] ?? ''}' == '1' ||
+        '${payment['requires_external_payment'] ?? ''}'.toLowerCase() == 'true';
+
+    final List<Map<String, dynamic>> parsedOrders = ordersList
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+
+    if (widget.paymentMode == StoreCartPaymentMode.mercadoPago ||
+        requiresExternalPayment) {
+      setState(() {
+        backendOrders = parsedOrders;
+        paymentApproved = false;
+        isSubmittingOrder = false;
+      });
+
+      StoreCartSession.clear();
+
+      if (paymentUrl.isEmpty) {
+        showCheckoutMessage(
+          'Pedido criado, mas não foi possível abrir o checkout do Mercado Pago.',
+        );
+        return;
+      }
+
+      final bool opened = await launchUrl(
+        Uri.parse(paymentUrl),
+        mode: LaunchMode.externalApplication,
+      );
+
+      if (!opened) {
+        showCheckoutMessage('Não foi possível abrir o Mercado Pago.');
+        return;
+      }
+
+      showCheckoutMessage(
+        'Finalize o pagamento no Mercado Pago. Depois acompanhe em Meus pedidos.',
+      );
+      return;
+    }
+
+    setState(() {
+      backendOrders = parsedOrders;
+      paymentApproved = true;
+      isSubmittingOrder = false;
+    });
+
+    StoreCartSession.clear();
+  }
+
+  void showCheckoutMessage(String message) {
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: textMedium.copyWith(
+            color: Colors.white,
+            fontSize: 12.8,
+          ),
+        ),
+        backgroundColor: Theme.of(context).primaryColor,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+      ),
+    );
   }
 
   @override
@@ -1645,7 +2122,7 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                       const SizedBox(height: 10),
                       StoreCheckoutSimpleLine(
                         label: 'Número do pedido',
-                        value: orderNumber,
+                        value: mainOrderNumber,
                         highlight: true,
                         primaryColor: primaryColor,
                       ),
@@ -1670,30 +2147,35 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                           primaryColor: primaryColor,
                           paymentApproved: paymentApproved,
                           deliveryMode: widget.deliveryMode,
-                          orderNumber: orderNumber,
+                          hasPhysicalItems: widget.hasPhysicalItems,
+                          orderNumber: orderNumberForGroup(group),
                           paymentLabel: paymentLabel,
                         );
                       }),
-                      const StoreCheckoutDivider(),
-                      StoreCheckoutSectionTitle(title: 'Entrega'),
-                      const SizedBox(height: 10),
-                      StoreCheckoutSimpleLine(
-                        label: 'Opção selecionada',
-                        value: deliveryLabel,
-                      ),
-                      if (isLokallyShipping) ...[
-                        const SizedBox(height: 6),
+                      if (widget.hasPhysicalItems) ...[
+                        const StoreCheckoutDivider(),
+                        StoreCheckoutSectionTitle(title: 'Entrega'),
+                        const SizedBox(height: 10),
                         StoreCheckoutSimpleLine(
-                          label: 'Endereço de entrega',
-                          value: widget.deliveryAddress?.address ?? '-',
+                          label: 'Opção selecionada',
+                          value: deliveryLabel,
                         ),
-                        const SizedBox(height: 6),
-                        StoreCheckoutSimpleLine(
-                          label: 'Frete',
-                          value: widget.shippingTotal <= 0
-                              ? 'Grátis'
-                              : StoreCartCurrency.format(widget.shippingTotal),
-                        ),
+                        if (isLokallyShipping) ...[
+                          const SizedBox(height: 6),
+                          StoreCheckoutSimpleLine(
+                            label: 'Endereço de entrega',
+                            value: widget.deliveryAddress?.address ?? '-',
+                          ),
+                          const SizedBox(height: 6),
+                          StoreCheckoutSimpleLine(
+                            label: 'Frete',
+                            value: checkoutShippingTotal <= 0
+                                ? 'Grátis'
+                                : StoreCartCurrency.format(
+                                    checkoutShippingTotal,
+                                  ),
+                          ),
+                        ],
                       ],
                       const StoreCheckoutDivider(),
                       StoreCheckoutSectionTitle(title: 'Pagamento'),
@@ -1705,7 +2187,7 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                       const SizedBox(height: 6),
                       StoreCheckoutSimpleLine(
                         label: 'Total',
-                        value: StoreCartCurrency.format(widget.orderTotal),
+                        value: StoreCartCurrency.format(checkoutOrderTotal),
                         highlight: true,
                         primaryColor: primaryColor,
                       ),
@@ -1714,6 +2196,7 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                         StoreCheckoutApprovedMessage(
                           primaryColor: primaryColor,
                           deliveryMode: widget.deliveryMode,
+                          hasPhysicalItems: widget.hasPhysicalItems,
                         ),
                       ],
                     ],
@@ -1724,6 +2207,7 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
             StoreCheckoutBottomBar(
               primaryColor: primaryColor,
               paymentApproved: paymentApproved,
+              isSubmittingOrder: isSubmittingOrder,
               paymentMode: widget.paymentMode,
               onPayTap: approvePayment,
             ),
@@ -1851,6 +2335,7 @@ class StoreCheckoutStoreSummary extends StatelessWidget {
   final Color primaryColor;
   final bool paymentApproved;
   final StoreCartDeliveryMode deliveryMode;
+  final bool hasPhysicalItems;
   final String orderNumber;
   final String paymentLabel;
 
@@ -1860,12 +2345,14 @@ class StoreCheckoutStoreSummary extends StatelessWidget {
     required this.primaryColor,
     required this.paymentApproved,
     required this.deliveryMode,
+    required this.hasPhysicalItems,
     required this.orderNumber,
     required this.paymentLabel,
   });
 
   bool get isLokallyShipping {
-    return deliveryMode == StoreCartDeliveryMode.lokallyShipping;
+    return hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.lokallyShipping;
   }
 
   @override
@@ -1912,7 +2399,7 @@ class StoreCheckoutStoreSummary extends StatelessWidget {
               ),
             );
           }),
-          if (paymentApproved) ...[
+          if (paymentApproved && hasPhysicalItems) ...[
             const SizedBox(height: 10),
             if (isLokallyShipping)
               StoreCheckoutLokallyShippingInfo(primaryColor: primaryColor)
@@ -2138,19 +2625,23 @@ class StoreCheckoutLokallyShippingInfo extends StatelessWidget {
 class StoreCheckoutApprovedMessage extends StatelessWidget {
   final Color primaryColor;
   final StoreCartDeliveryMode deliveryMode;
+  final bool hasPhysicalItems;
 
   const StoreCheckoutApprovedMessage({
     super.key,
     required this.primaryColor,
     required this.deliveryMode,
+    required this.hasPhysicalItems,
   });
 
   @override
   Widget build(BuildContext context) {
     return Text(
-      deliveryMode == StoreCartDeliveryMode.pickup
-          ? 'Pagamento aprovado. As informações de retirada foram liberadas.'
-          : 'Pagamento aprovado. O vendedor tem até 24h para solicitar o Lokally Envios.',
+      !hasPhysicalItems
+          ? 'Pagamento aprovado. As informações do serviço foram enviadas ao vendedor.'
+          : deliveryMode == StoreCartDeliveryMode.pickup
+              ? 'Pagamento aprovado. As informações de retirada foram liberadas.'
+              : 'Pagamento aprovado. O vendedor tem até 24h para solicitar o Lokally Envios.',
       style: textBold.copyWith(
         color: primaryColor,
         fontSize: 13.2,
@@ -2179,13 +2670,15 @@ class StoreCheckoutDivider extends StatelessWidget {
 class StoreCheckoutBottomBar extends StatelessWidget {
   final Color primaryColor;
   final bool paymentApproved;
+  final bool isSubmittingOrder;
   final StoreCartPaymentMode paymentMode;
-  final VoidCallback onPayTap;
+  final Future<void> Function() onPayTap;
 
   const StoreCheckoutBottomBar({
     super.key,
     required this.primaryColor,
     required this.paymentApproved,
+    required this.isSubmittingOrder,
     required this.paymentMode,
     required this.onPayTap,
   });
@@ -2221,7 +2714,7 @@ class StoreCheckoutBottomBar extends StatelessWidget {
           width: double.infinity,
           height: 46,
           child: ElevatedButton(
-            onPressed: onPayTap,
+            onPressed: isSubmittingOrder ? null : () => onPayTap(),
             style: ElevatedButton.styleFrom(
               backgroundColor: primaryColor,
               foregroundColor: Colors.white,
@@ -2230,15 +2723,24 @@ class StoreCheckoutBottomBar extends StatelessWidget {
                 borderRadius: BorderRadius.circular(17),
               ),
             ),
-            child: Text(
-              paymentMode == StoreCartPaymentMode.appBalance
-                  ? 'Pagar com saldo'
-                  : 'Pagar com cartão',
-              style: textBold.copyWith(
-                color: Colors.white,
-                fontSize: 13.5,
-              ),
-            ),
+            child: isSubmittingOrder
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: Colors.white,
+                    ),
+                  )
+                : Text(
+                    paymentMode == StoreCartPaymentMode.appBalance
+                        ? 'Pagar com saldo'
+                        : 'Pagar com Mercado Pago',
+                    style: textBold.copyWith(
+                      color: Colors.white,
+                      fontSize: 13.5,
+                    ),
+                  ),
           ),
         ),
       ),
@@ -2272,6 +2774,8 @@ class StoreCartProductData {
   final String storeAddress;
   final String storePhone;
   final String storeEmail;
+  final String productType;
+  final String serviceDeliveryType;
 
   StoreCartProductData({
     required this.id,
@@ -2285,6 +2789,8 @@ class StoreCartProductData {
     required this.storeAddress,
     required this.storePhone,
     required this.storeEmail,
+    required this.productType,
+    required this.serviceDeliveryType,
   });
 
   factory StoreCartProductData.fromMap(Map<String, dynamic> map) {
@@ -2311,7 +2817,59 @@ class StoreCartProductData {
       storePhone:
           '${store['phone'] ?? store['contact_phone'] ?? store['business_phone'] ?? store['mobile'] ?? ''}',
       storeEmail: '${store['email'] ?? store['business_email'] ?? ''}',
+      productType: '${map['product_type'] ?? ''}'.trim().toLowerCase(),
+      serviceDeliveryType:
+          '${map['service_delivery_type'] ?? ''}'.trim().toLowerCase(),
     );
+  }
+
+  bool get isService {
+    if (productType == 'service') {
+      return true;
+    }
+
+    final String text = '$title $serviceDeliveryType'.toLowerCase();
+    return text.contains('serviço') ||
+        text.contains('redes sociais') ||
+        text.contains('marketing digital') ||
+        text.contains('online') ||
+        text.contains('download') ||
+        text.contains('presencial') ||
+        text.contains('home office');
+  }
+
+  String get serviceDeliveryLabel {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return 'Download';
+      case 'presential':
+      case 'presencial':
+        return 'Presencial';
+      case 'home_office':
+      case 'homeoffice':
+        return 'Home Office';
+      case 'online':
+      case 'digital':
+      default:
+        return 'Online';
+    }
+  }
+
+  String get serviceDeliverySummary {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return 'Formato: Download';
+      case 'presential':
+      case 'presencial':
+        return 'Formato: Presencial';
+      case 'home_office':
+      case 'homeoffice':
+        return 'Formato: Home Office';
+      case 'online':
+      case 'digital':
+      default:
+        return 'Formato: Online';
+    }
   }
 
   String get cartKey {

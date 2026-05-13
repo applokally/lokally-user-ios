@@ -770,15 +770,10 @@ class StoreProductMarketplaceNavigation extends StatelessWidget {
               height: 38,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemCount: subcategories.length + 1,
+                itemCount: subcategories.length,
                 itemBuilder: (context, index) {
-                  final bool isAll = index == 0;
-                  final StoreProductCategoryData item = isAll
-                      ? StoreProductCategoryData.allSubcategory()
-                      : subcategories[index - 1];
-                  final bool selected = isAll
-                      ? selectedSubcategoryId.isEmpty
-                      : selectedSubcategoryId == item.id;
+                  final StoreProductCategoryData item = subcategories[index];
+                  final bool selected = selectedSubcategoryId == item.id;
 
                   return Padding(
                     padding: const EdgeInsets.only(right: 8),
@@ -1136,27 +1131,59 @@ class StoreProductInfoBlock extends StatelessWidget {
             primaryColor: primaryColor,
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              StoreProductInfoPill(
-                icon: Icons.inventory_2_outlined,
-                title: 'Estoque',
-                value: '${product.stock} ${product.unit}',
-                primaryColor: primaryColor,
+          if (product.isService) ...[
+            Row(
+              children: [
+                StoreProductInfoPill(
+                  icon: Icons.workspace_premium_outlined,
+                  title: 'Tipo',
+                  value: 'Serviço',
+                  primaryColor: primaryColor,
+                ),
+                const SizedBox(width: 8),
+                StoreProductInfoPill(
+                  icon: product.serviceDeliveryIcon,
+                  title: 'Formato',
+                  value: product.serviceDeliveryLabel,
+                  primaryColor: primaryColor,
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              product.serviceDeliveryDescription,
+              style: textRegular.copyWith(
+                color: Colors.grey.shade700,
+                fontSize: 12.6,
+                height: 1.28,
               ),
-              const SizedBox(width: 8),
-              StoreProductInfoPill(
-                icon: product.availabilityType == 'within_24h'
-                    ? Icons.schedule_rounded
-                    : Icons.flash_on_rounded,
-                title: 'Disponível',
-                value: product.availabilityLabel,
-                primaryColor: primaryColor,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          StoreProductDeliveryBox(primaryColor: primaryColor),
+            ),
+          ] else ...[
+            Row(
+              children: [
+                StoreProductInfoPill(
+                  icon: Icons.inventory_2_outlined,
+                  title: 'Estoque',
+                  value: '${product.stock} ${product.unit}',
+                  primaryColor: primaryColor,
+                ),
+                const SizedBox(width: 8),
+                StoreProductInfoPill(
+                  icon: product.availabilityType == 'within_24h'
+                      ? Icons.schedule_rounded
+                      : Icons.flash_on_rounded,
+                  title: 'Disponível',
+                  value: product.availabilityLabel,
+                  primaryColor: primaryColor,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            StoreProductDeliveryBox(
+              product: product,
+              primaryColor: primaryColor,
+            ),
+          ],
         ],
       ),
     );
@@ -1275,15 +1302,72 @@ class StoreProductInfoPill extends StatelessWidget {
 }
 
 class StoreProductDeliveryBox extends StatelessWidget {
+  final StoreProductDetailsData product;
   final Color primaryColor;
 
   const StoreProductDeliveryBox({
     super.key,
+    required this.product,
     required this.primaryColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (product.isService) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Formato do serviço',
+            style: textBold.copyWith(
+              color: Colors.black87,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  product.serviceDeliveryIcon,
+                  color: primaryColor,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  product.serviceDeliveryLabel,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: textBold.copyWith(
+                    color: primaryColor,
+                    fontSize: 13.4,
+                    height: 1.16,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            product.serviceDeliveryDescription,
+            style: textRegular.copyWith(
+              color: Colors.grey.shade700,
+              fontSize: 12.2,
+              height: 1.30,
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1415,8 +1499,77 @@ class StoreProductShopMiniHeader extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 14),
+          StoreGuaranteedPaymentNotice(primaryColor: primaryColor),
           const SizedBox(height: 18),
           StoreShopTrustBar(primaryColor: primaryColor),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreGuaranteedPaymentNotice extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreGuaranteedPaymentNotice({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: primaryColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: primaryColor.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.verified_user_outlined,
+              color: primaryColor,
+              size: 17,
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Entrega garantida pela Lokally',
+                  style: textBold.copyWith(
+                    color: Colors.black87,
+                    fontSize: 12.4,
+                    height: 1.18,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Seu pagamento fica bloqueado até a comprovação do recebimento do produto ou serviço.',
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade600,
+                    fontSize: 11.6,
+                    height: 1.28,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1597,7 +1750,7 @@ class StoreProductDescriptionBlock extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Descrição do produto',
+            product.isService ? 'Descrição do serviço' : 'Descrição do produto',
             style: textBold.copyWith(
               color: Colors.black87,
               fontSize: 17,
@@ -1606,7 +1759,9 @@ class StoreProductDescriptionBlock extends StatelessWidget {
           const SizedBox(height: 9),
           Text(
             description.isEmpty
-                ? 'O vendedor ainda não adicionou uma descrição detalhada para este produto.'
+                ? product.isService
+                    ? 'O vendedor ainda não adicionou uma descrição detalhada para este serviço.'
+                    : 'O vendedor ainda não adicionou uma descrição detalhada para este produto.'
                 : description,
             style: textRegular.copyWith(
               color: Colors.grey.shade700,
@@ -1845,7 +2000,8 @@ class StoreRelatedProductCard extends StatelessWidget {
                           primaryColor: primaryColor,
                         ),
                         const SizedBox(height: 8),
-                        StoreRelatedDeliveryInfo(primaryColor: primaryColor),
+                        StoreRelatedDeliveryInfo(
+                            product: product, primaryColor: primaryColor),
                         const Spacer(),
                       ],
                     ),
@@ -1853,6 +2009,7 @@ class StoreRelatedProductCard extends StatelessWidget {
                 ),
                 StoreRelatedBottomActionStrip(
                   primaryColor: primaryColor,
+                  label: product.actionLabel,
                   onTap: onTap,
                 ),
               ],
@@ -1952,15 +2109,55 @@ class StoreRelatedProductHeroImage extends StatelessWidget {
 }
 
 class StoreRelatedDeliveryInfo extends StatelessWidget {
+  final StoreProductDetailsData product;
   final Color primaryColor;
 
   const StoreRelatedDeliveryInfo({
     super.key,
+    required this.product,
     required this.primaryColor,
   });
 
   @override
   Widget build(BuildContext context) {
+    if (product.isService) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Formato do serviço',
+            style: textBold.copyWith(
+              color: Colors.black87,
+              fontSize: 11.4,
+              height: 1.12,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            product.serviceDeliveryLabel.toUpperCase(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: textBold.copyWith(
+              color: primaryColor,
+              fontSize: 10.8,
+              height: 1.12,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            product.shortServiceDeliveryDescription,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textMedium.copyWith(
+              color: Colors.grey.shade700,
+              fontSize: 10.4,
+              height: 1.12,
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2011,11 +2208,13 @@ class StoreRelatedDeliveryInfo extends StatelessWidget {
 
 class StoreRelatedBottomActionStrip extends StatelessWidget {
   final Color primaryColor;
+  final String label;
   final VoidCallback onTap;
 
   const StoreRelatedBottomActionStrip({
     super.key,
     required this.primaryColor,
+    required this.label,
     required this.onTap,
   });
 
@@ -2034,7 +2233,7 @@ class StoreRelatedBottomActionStrip extends StatelessWidget {
         ),
         child: Center(
           child: Text(
-            'Ver oferta',
+            label,
             maxLines: 1,
             textAlign: TextAlign.center,
             style: textBold.copyWith(
@@ -2401,6 +2600,9 @@ class StoreProductDetailsData {
   final String storeEmail;
   final String availabilityType;
   final String availabilityLabel;
+  final String productType;
+  final String conditionType;
+  final String serviceDeliveryType;
 
   StoreProductDetailsData({
     required this.id,
@@ -2427,6 +2629,9 @@ class StoreProductDetailsData {
     required this.storeEmail,
     required this.availabilityType,
     required this.availabilityLabel,
+    required this.productType,
+    required this.conditionType,
+    required this.serviceDeliveryType,
   });
 
   factory StoreProductDetailsData.fromMap(Map<String, dynamic> map) {
@@ -2452,6 +2657,22 @@ class StoreProductDetailsData {
         promotionalPrice < price;
 
     final String mainImageUrl = '${map['main_image_url'] ?? ''}';
+    final String categoryText =
+        '${map['category_name'] ?? ''} ${map['category_slug'] ?? ''} ${map['category'] ?? ''}'
+            .toLowerCase();
+    final String rawProductType =
+        '${map['product_type'] ?? ''}'.trim().toLowerCase();
+    final bool looksLikeService = categoryText.contains('servi') ||
+        categoryText.contains('marketing') ||
+        categoryText.contains('publicidade') ||
+        categoryText.contains('tecnologia') ||
+        categoryText.contains('download') ||
+        categoryText.contains('digital');
+    final String normalizedProductType = rawProductType.isNotEmpty
+        ? rawProductType
+        : looksLikeService
+            ? 'service'
+            : 'physical';
 
     return StoreProductDetailsData(
       id: '${map['id'] ?? ''}',
@@ -2482,6 +2703,10 @@ class StoreProductDetailsData {
       storeEmail: '${store['email'] ?? store['business_email'] ?? ''}',
       availabilityType: '${map['availability_type'] ?? 'immediate'}',
       availabilityLabel: '${map['availability_label'] ?? 'Imediata'}',
+      productType: normalizedProductType,
+      conditionType: '${map['condition_type'] ?? 'new'}'.trim().toLowerCase(),
+      serviceDeliveryType:
+          '${map['service_delivery_type'] ?? ''}'.trim().toLowerCase(),
     );
   }
 
@@ -2509,6 +2734,9 @@ class StoreProductDetailsData {
           .toList(),
       'availability_type': availabilityType,
       'availability_label': availabilityLabel,
+      'product_type': productType,
+      'condition_type': conditionType,
+      'service_delivery_type': serviceDeliveryType,
       'store': <String, dynamic>{
         'id': sellerId,
         'name': storeName,
@@ -2546,6 +2774,86 @@ class StoreProductDetailsData {
         decimalPart >= 0.5 ? '${wholePart.toString()},5' : wholePart.toString();
 
     return '-$formatted%';
+  }
+
+  bool get isService => productType == 'service';
+
+  String get actionLabel => isService ? 'Ver serviço' : 'Ver oferta';
+
+  String get serviceDeliveryLabel {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return 'Download';
+      case 'presential':
+      case 'presencial':
+        return 'Presencial';
+      case 'home_office':
+      case 'homeoffice':
+      case 'remote':
+        return 'Home Office';
+      case 'online':
+        return 'Online';
+      case 'digital':
+        return 'Digital';
+      default:
+        return 'Digital';
+    }
+  }
+
+  String get serviceDeliveryDescription {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return 'Serviço digital, entrega por download.';
+      case 'presential':
+      case 'presencial':
+        return 'Serviço presencial, realizado em loco.';
+      case 'home_office':
+      case 'homeoffice':
+      case 'remote':
+        return 'Serviço digital, atendimento Home Office.';
+      case 'online':
+        return 'Serviço digital, entrega online.';
+      case 'digital':
+        return 'Serviço digital, entrega online.';
+      default:
+        return 'Serviço digital, entrega online.';
+    }
+  }
+
+  String get shortServiceDeliveryDescription {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return 'Serviço digital, entrega por download.';
+      case 'presential':
+      case 'presencial':
+        return 'Serviço presencial, realizado em loco.';
+      case 'home_office':
+      case 'homeoffice':
+      case 'remote':
+        return 'Serviço digital, atendimento Home Office.';
+      case 'online':
+        return 'Serviço digital, entrega online.';
+      default:
+        return 'Serviço digital, entrega online.';
+    }
+  }
+
+  IconData get serviceDeliveryIcon {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return Icons.download_rounded;
+      case 'presential':
+      case 'presencial':
+        return Icons.storefront_rounded;
+      case 'home_office':
+      case 'homeoffice':
+      case 'remote':
+        return Icons.home_work_outlined;
+      case 'online':
+      case 'digital':
+      default:
+        return Icons.language_rounded;
+    }
   }
 
   static double parseDouble(dynamic value) {
