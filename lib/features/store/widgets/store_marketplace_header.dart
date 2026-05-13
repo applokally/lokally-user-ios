@@ -6,12 +6,20 @@ class StoreMarketplaceHeader extends StatelessWidget {
   final Color primaryColor;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onCartTap;
+  final bool showSellButton;
+  final bool isSellButtonLoading;
+  final String sellButtonLabel;
+  final VoidCallback? onSellTap;
 
   const StoreMarketplaceHeader({
     super.key,
     required this.primaryColor,
     required this.onSearchChanged,
     required this.onCartTap,
+    this.showSellButton = false,
+    this.isSellButtonLoading = false,
+    this.sellButtonLabel = 'Vender',
+    this.onSellTap,
   });
 
   @override
@@ -26,20 +34,30 @@ class StoreMarketplaceHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(14),
+          if (showSellButton) ...[
+            StoreMarketplaceHeaderSellButton(
+              primaryColor: primaryColor,
+              label: sellButtonLabel,
+              isLoading: isSellButtonLoading,
+              onTap: onSellTap,
             ),
-            child: Image.asset(
-              'assets/image/loja.png',
-              fit: BoxFit.contain,
+            const SizedBox(width: 8),
+          ] else ...[
+            Container(
+              width: 42,
+              height: 42,
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.16),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Image.asset(
+                'assets/image/loja.png',
+                fit: BoxFit.contain,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: StoreMarketplaceHeaderSearchField(
               onChanged: onSearchChanged,
@@ -108,6 +126,69 @@ class StoreMarketplaceHeader extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class StoreMarketplaceHeaderSellButton extends StatelessWidget {
+  final Color primaryColor;
+  final String label;
+  final bool isLoading;
+  final VoidCallback? onTap;
+
+  const StoreMarketplaceHeaderSellButton({
+    super.key,
+    required this.primaryColor,
+    required this.label,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: isLoading ? null : onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 42,
+          constraints: const BoxConstraints(minWidth: 74),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                offset: const Offset(0, 4),
+                blurRadius: 12,
+                color: Colors.black.withValues(alpha: 0.08),
+              ),
+            ],
+          ),
+          child: Center(
+            child: isLoading
+                ? SizedBox(
+                    width: 17,
+                    height: 17,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: primaryColor,
+                    ),
+                  )
+                : Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textBold.copyWith(
+                      color: primaryColor,
+                      fontSize: 13.2,
+                      height: 1,
+                    ),
+                  ),
+          ),
+        ),
       ),
     );
   }

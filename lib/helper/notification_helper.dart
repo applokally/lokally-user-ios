@@ -28,6 +28,7 @@ import 'package:ride_sharing_user_app/features/safety_setup/controllers/safety_a
 import 'package:ride_sharing_user_app/features/settings/domain/html_enum_types.dart';
 import 'package:ride_sharing_user_app/features/settings/screens/policy_screen.dart';
 import 'package:ride_sharing_user_app/features/splash/controllers/config_controller.dart';
+import 'package:ride_sharing_user_app/features/store/screens/store_customer_order_list_screen.dart';
 import 'package:ride_sharing_user_app/features/trip/screens/trip_details_screen.dart';
 import 'package:ride_sharing_user_app/features/wallet/screens/wallet_screen.dart';
 import 'package:ride_sharing_user_app/helper/display_helper.dart';
@@ -601,7 +602,19 @@ class NotificationHelper {
     bool formSplash = false,
     String? userName,
   }) {
-    if (data['action'] == "new_message") {
+    if (data['action'] == 'store_order_ready_for_pickup' ||
+        data['notification_type'] == 'store_order' ||
+        data['type'] == 'store_order') {
+      final String orderId =
+          '${data['order_id'] ?? data['ride_request_id'] ?? ''}';
+
+      _toRoute(
+        formSplash,
+        StoreCustomerOrderListScreen(
+          initialOrderId: orderId.isEmpty ? null : orderId,
+        ),
+      );
+    } else if (data['action'] == "new_message") {
       Get.find<MessageController>().getConversation(data['type'], 1);
       _toRoute(
         formSplash,

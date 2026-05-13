@@ -41,6 +41,23 @@ class ParcelController extends GetxController
   List<ParcelCategory>? parcelCategoryList;
   bool getSuggested = false;
 
+  bool isMarketplaceShippingFlow = false;
+  String marketplaceOrderId = '';
+  String marketplaceOrderNumber = '';
+  String marketplaceStoreName = '';
+  double marketplaceShippingAmount = 0;
+  double marketplaceShippingDiscount = 0;
+
+  double get marketplaceShippingFinalFare {
+    final double value =
+        marketplaceShippingAmount - marketplaceShippingDiscount;
+    return value < 0 ? 0 : value;
+  }
+
+  bool get marketplaceShippingIsFree {
+    return isMarketplaceShippingFlow && marketplaceShippingFinalFare <= 0;
+  }
+
   TextEditingController senderContactController = TextEditingController();
   TextEditingController senderNameController = TextEditingController();
   TextEditingController senderAddressController = TextEditingController();
@@ -88,7 +105,42 @@ class ParcelController extends GetxController
     update();
   }
 
+  void configureMarketplaceShippingContext({
+    required String orderId,
+    required String orderNumber,
+    required String storeName,
+    required double shippingAmount,
+    required double shippingDiscount,
+    bool notify = true,
+  }) {
+    isMarketplaceShippingFlow = true;
+    marketplaceOrderId = orderId;
+    marketplaceOrderNumber = orderNumber;
+    marketplaceStoreName = storeName;
+    marketplaceShippingAmount = shippingAmount;
+    marketplaceShippingDiscount = shippingDiscount;
+
+    if (notify) {
+      update();
+    }
+  }
+
+  void clearMarketplaceShippingContext({bool notify = true}) {
+    isMarketplaceShippingFlow = false;
+    marketplaceOrderId = '';
+    marketplaceOrderNumber = '';
+    marketplaceStoreName = '';
+    marketplaceShippingAmount = 0;
+    marketplaceShippingDiscount = 0;
+
+    if (notify) {
+      update();
+    }
+  }
+
   void initParcelData() {
+    clearMarketplaceShippingContext(notify: false);
+
     payReceiver = false;
     currentParcelState = ParcelDeliveryState.initial;
     tabController.index = 0;

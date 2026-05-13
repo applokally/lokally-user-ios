@@ -5,6 +5,9 @@ import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/common_widgets/button_widget.dart';
 import 'package:ride_sharing_user_app/common_widgets/custom_text_field.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/address/domain/models/address_model.dart';
+import 'package:ride_sharing_user_app/features/location/controllers/location_controller.dart';
+import 'package:ride_sharing_user_app/features/location/view/pick_map_screen.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -37,6 +40,10 @@ class _StoreSellerRegistrationScreenState
   bool ownDeliveryEnabled = false;
   bool lokallyDeliveryEnabled = true;
   bool isSubmitting = false;
+
+  Address? selectedStoreAddress;
+  double? storeLatitude;
+  double? storeLongitude;
 
   @override
   void dispose() {
@@ -104,6 +111,67 @@ class _StoreSellerRegistrationScreenState
     return 'cpf';
   }
 
+  void clearSelectedStoreCoordinatesIfNeeded(String value) {
+    final String typedAddress = value.trim();
+    final String selectedAddress = selectedStoreAddress?.address?.trim() ?? '';
+
+    if (selectedAddress.isNotEmpty && typedAddress == selectedAddress) {
+      return;
+    }
+
+    if (selectedStoreAddress == null &&
+        storeLatitude == null &&
+        storeLongitude == null) {
+      return;
+    }
+
+    setState(() {
+      selectedStoreAddress = null;
+      storeLatitude = null;
+      storeLongitude = null;
+    });
+  }
+
+  Future<void> pickStoreAddressFromMap() async {
+    FocusScope.of(context).unfocus();
+
+    final LocationController locationController =
+        Get.find<LocationController>();
+
+    locationController.clearAddAddress();
+
+    await Get.to(
+      () => PickMapScreen(
+        type: LocationType.location,
+        address: selectedStoreAddress,
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    final Address? pickedAddress = locationController.addAddress;
+
+    if (pickedAddress == null ||
+        pickedAddress.latitude == null ||
+        pickedAddress.longitude == null ||
+        pickedAddress.latitude == 0 ||
+        pickedAddress.longitude == 0) {
+      return;
+    }
+
+    setState(() {
+      selectedStoreAddress = pickedAddress;
+      storeLatitude = pickedAddress.latitude;
+      storeLongitude = pickedAddress.longitude;
+
+      if ((pickedAddress.address ?? '').trim().isNotEmpty) {
+        addressController.text = pickedAddress.address!.trim();
+      }
+    });
+  }
+
   bool validateForm() {
     if (storeNameController.text.trim().isEmpty) {
       showStoreMessage('Informe o nome da loja.');
@@ -135,6 +203,11 @@ class _StoreSellerRegistrationScreenState
       return false;
     }
 
+    if (storeLatitude == null || storeLongitude == null) {
+      showStoreMessage('Selecione a localização da loja no mapa.');
+      return false;
+    }
+
     return true;
   }
 
@@ -157,6 +230,8 @@ class _StoreSellerRegistrationScreenState
       'document_number': documentController.text.trim(),
       'description': descriptionController.text.trim(),
       'address': addressController.text.trim(),
+      'latitude': storeLatitude,
+      'longitude': storeLongitude,
       'pickup_enabled': pickupEnabled,
       'own_delivery_enabled': ownDeliveryEnabled,
       'lokally_delivery_enabled': lokallyDeliveryEnabled,
@@ -302,6 +377,16 @@ class _StoreSellerRegistrationScreenState
                       inputAction: TextInputAction.next,
                       inputType: TextInputType.streetAddress,
                       maxLines: 2,
+                      onChanged: clearSelectedStoreCoordinatesIfNeeded,
+                    ),
+                    const SizedBox(height: 9),
+                    StoreMapLocationPickerCard(
+                      primaryColor: primaryColor,
+                      hasLocation:
+                          storeLatitude != null && storeLongitude != null,
+                      latitude: storeLatitude,
+                      longitude: storeLongitude,
+                      onTap: pickStoreAddressFromMap,
                     ),
                     const SizedBox(height: 14),
                     StoreFormLabel(label: 'Descrição da loja'),
@@ -492,6 +577,117 @@ class StoreSellerIntroCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class StoreMapLocationPickerCard extends StatelessWidget {
+  final Color primaryColor;
+  final bool hasLocation;
+  final double? latitude;
+  final double? longitude;
+  final VoidCallback onTap;
+
+  const StoreMapLocationPickerCard({
+    super.key,
+    required this.primaryColor,
+    required this.hasLocation,
+    required this.latitude,
+    required this.longitude,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final String title = hasLocation
+        ? 'Localização da loja definida'
+        : 'Selecionar localização da loja no mapa';
+
+    final String description = hasLocation
+        ? 'Coordenadas salvas para Retire Grátis e Lokally Envios.'
+        : 'Obrigatório para calcular rota, retirada e entregas com parceiro Lokally.';
+
+    final String? coordinates = hasLocation
+        ? '${latitude!.toStringAsFixed(6)}, ${longitude!.toStringAsFixed(6)}'
+        : null;
+
+    return Material(
+      color: primaryColor.withValues(alpha: hasLocation ? 0.08 : 0.05),
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: primaryColor.withValues(alpha: hasLocation ? 0.30 : 0.18),
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  hasLocation
+                      ? Icons.check_circle_outline_rounded
+                      : Icons.location_on_outlined,
+                  color: primaryColor,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 12.8,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      description,
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 11.8,
+                        height: 1.28,
+                      ),
+                    ),
+                    if (coordinates != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        coordinates,
+                        style: textMedium.copyWith(
+                          color: primaryColor,
+                          fontSize: 11.4,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: primaryColor,
+                size: 24,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
