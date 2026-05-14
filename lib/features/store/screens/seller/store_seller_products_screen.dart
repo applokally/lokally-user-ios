@@ -38,11 +38,16 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
   final TextEditingController shortDescriptionController =
       TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
+  final TextEditingController serviceDeliveryTimeController =
+      TextEditingController();
 
   bool isLoadingCategories = false;
   bool isSubmitting = false;
 
   String selectedAvailabilityType = 'immediate';
+  String selectedProductType = 'physical';
+  String selectedConditionType = 'new';
+  String selectedServiceDeliveryType = 'online';
 
   List<StoreCategoryOption> categories = [];
   StoreCategoryOption? selectedCategory;
@@ -65,6 +70,7 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
     stockController.dispose();
     shortDescriptionController.dispose();
     descriptionController.dispose();
+    serviceDeliveryTimeController.dispose();
     super.dispose();
   }
 
@@ -101,6 +107,33 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
         '${product['availability_type'] ?? 'immediate'}'.trim();
     selectedAvailabilityType =
         availability == 'within_24h' ? 'within_24h' : 'immediate';
+
+    final String productType =
+        '${product['product_type'] ?? 'physical'}'.trim().toLowerCase();
+    selectedProductType = productType == 'service' ? 'service' : 'physical';
+
+    final String conditionType =
+        '${product['condition_type'] ?? 'new'}'.trim().toLowerCase();
+    selectedConditionType = conditionType == 'used' ? 'used' : 'new';
+
+    final String serviceDeliveryType =
+        '${product['service_delivery_type'] ?? 'online'}'.trim().toLowerCase();
+
+    if (serviceDeliveryType == 'download') {
+      selectedServiceDeliveryType = 'download';
+    } else if (serviceDeliveryType == 'presential' ||
+        serviceDeliveryType == 'presencial') {
+      selectedServiceDeliveryType = 'presential';
+    } else if (serviceDeliveryType == 'home_office' ||
+        serviceDeliveryType == 'homeoffice') {
+      selectedServiceDeliveryType = 'home_office';
+    } else {
+      selectedServiceDeliveryType = 'online';
+    }
+
+    serviceDeliveryTimeController.text =
+        ('${product['service_delivery_time'] ?? product['average_delivery_time'] ?? product['delivery_time'] ?? ''}')
+            .trim();
 
     final String imageUrl = '${product['main_image_url'] ?? ''}'.trim();
     existingImageUrl = imageUrl.isNotEmpty ? imageUrl : null;
@@ -503,12 +536,21 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
       'name': nameController.text.trim(),
       'price': normalizeMoney(priceController.text),
       'availability_type': selectedAvailabilityType,
+      'product_type': selectedProductType,
+      'condition_type':
+          selectedProductType == 'physical' ? selectedConditionType : 'new',
       'manage_stock': '1',
       'stock': stockController.text.trim().isEmpty
           ? '0'
           : stockController.text.trim(),
       'unit': 'unidade',
     };
+
+    if (selectedProductType == 'service') {
+      fields['service_delivery_type'] = selectedServiceDeliveryType;
+      fields['service_delivery_time'] =
+          serviceDeliveryTimeController.text.trim();
+    }
 
     if (promotionalPriceController.text.trim().isNotEmpty) {
       fields['old_price'] = normalizeMoney(promotionalPriceController.text);
@@ -608,6 +650,7 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
     stockController.clear();
     shortDescriptionController.clear();
     descriptionController.clear();
+    serviceDeliveryTimeController.clear();
 
     setState(() {
       selectedCategory = null;
@@ -615,6 +658,9 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
       existingImageUrl = null;
       editingCategoryId = null;
       selectedAvailabilityType = 'immediate';
+      selectedProductType = 'physical';
+      selectedConditionType = 'new';
+      selectedServiceDeliveryType = 'online';
     });
   }
 
@@ -704,6 +750,58 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
                           onTap: openCategorySelector,
                         ),
                         const SizedBox(height: 12),
+                        StoreProductTypeSelector(
+                          primaryColor: primaryColor,
+                          selectedProductType: selectedProductType,
+                          onChanged: (value) {
+                            setState(() {
+                              selectedProductType = value;
+
+                              if (selectedProductType == 'service') {
+                                selectedConditionType = 'new';
+                              }
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        if (selectedProductType == 'physical') ...[
+                          StoreConditionSelector(
+                            primaryColor: primaryColor,
+                            selectedConditionType: selectedConditionType,
+                            onChanged: (value) {
+                              setState(() {
+                                selectedConditionType = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ] else ...[
+                          StoreServiceDeliverySelector(
+                            primaryColor: primaryColor,
+                            selectedServiceDeliveryType:
+                                selectedServiceDeliveryType,
+                            onChanged: (value) {
+                              setState(() {
+                                selectedServiceDeliveryType = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          StoreTextInput(
+                            label: 'Prazo médio de entrega',
+                            hint: 'Ex: 24 horas, 2 dias úteis ou 5 dias',
+                            controller: serviceDeliveryTimeController,
+                            validator: (value) {
+                              if (selectedProductType == 'service' &&
+                                  (value == null || value.trim().isEmpty)) {
+                                return 'Informe o prazo médio de entrega.';
+                              }
+
+                              return null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         Row(
                           children: [
                             Expanded(
@@ -747,16 +845,18 @@ class _StoreSellerProductsScreenState extends State<StoreSellerProductsScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        StoreAvailabilitySelector(
-                          primaryColor: primaryColor,
-                          selectedAvailabilityType: selectedAvailabilityType,
-                          onChanged: (value) {
-                            setState(() {
-                              selectedAvailabilityType = value;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
+                        if (selectedProductType == 'physical') ...[
+                          StoreAvailabilitySelector(
+                            primaryColor: primaryColor,
+                            selectedAvailabilityType: selectedAvailabilityType,
+                            onChanged: (value) {
+                              setState(() {
+                                selectedAvailabilityType = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         StoreTextInput(
                           label: 'Estoque disponível',
                           hint: '10',
@@ -1207,6 +1307,184 @@ class StoreCategorySelectorField extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class StoreProductTypeSelector extends StatelessWidget {
+  final Color primaryColor;
+  final String selectedProductType;
+  final ValueChanged<String> onChanged;
+
+  const StoreProductTypeSelector({
+    super.key,
+    required this.primaryColor,
+    required this.selectedProductType,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreOptionSelectorSection(
+      title: 'Tipo de cadastro',
+      children: [
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Produto físico',
+          description: 'Item com entrega ou retirada',
+          value: 'physical',
+          selectedValue: selectedProductType,
+          onTap: onChanged,
+        ),
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Serviço',
+          description: 'Online, download ou atendimento',
+          value: 'service',
+          selectedValue: selectedProductType,
+          onTap: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class StoreConditionSelector extends StatelessWidget {
+  final Color primaryColor;
+  final String selectedConditionType;
+  final ValueChanged<String> onChanged;
+
+  const StoreConditionSelector({
+    super.key,
+    required this.primaryColor,
+    required this.selectedConditionType,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreOptionSelectorSection(
+      title: 'Condição do produto',
+      children: [
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Novo',
+          description: 'Produto novo',
+          value: 'new',
+          selectedValue: selectedConditionType,
+          onTap: onChanged,
+        ),
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Usado',
+          description: 'Produto usado',
+          value: 'used',
+          selectedValue: selectedConditionType,
+          onTap: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class StoreServiceDeliverySelector extends StatelessWidget {
+  final Color primaryColor;
+  final String selectedServiceDeliveryType;
+  final ValueChanged<String> onChanged;
+
+  const StoreServiceDeliverySelector({
+    super.key,
+    required this.primaryColor,
+    required this.selectedServiceDeliveryType,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreOptionSelectorSection(
+      title: 'Formato do serviço',
+      children: [
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Online',
+          description: 'Serviço digital online',
+          value: 'online',
+          selectedValue: selectedServiceDeliveryType,
+          onTap: onChanged,
+        ),
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Download',
+          description: 'Arquivo entregue ao cliente',
+          value: 'download',
+          selectedValue: selectedServiceDeliveryType,
+          onTap: onChanged,
+        ),
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Presencial',
+          description: 'Atendimento presencial',
+          value: 'presential',
+          selectedValue: selectedServiceDeliveryType,
+          onTap: onChanged,
+        ),
+        StoreAvailabilityOption(
+          primaryColor: primaryColor,
+          title: 'Home Office',
+          description: 'Atendimento remoto',
+          value: 'home_office',
+          selectedValue: selectedServiceDeliveryType,
+          onTap: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class StoreOptionSelectorSection extends StatelessWidget {
+  final String title;
+  final List<Widget> children;
+
+  const StoreOptionSelectorSection({
+    super.key,
+    required this.title,
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const double gap = 10;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: textBold.copyWith(
+            color: Colors.black87,
+            fontSize: 12.8,
+          ),
+        ),
+        const SizedBox(height: 7),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final double itemWidth = (constraints.maxWidth - gap) / 2;
+
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: children
+                  .map(
+                    (child) => SizedBox(
+                      width: itemWidth,
+                      child: child,
+                    ),
+                  )
+                  .toList(),
+            );
+          },
         ),
       ],
     );

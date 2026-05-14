@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:ride_sharing_user_app/common_widgets/app_bar_widget.dart';
 import 'package:ride_sharing_user_app/common_widgets/body_widget.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
@@ -465,12 +468,16 @@ class StoreCustomerOrderCard extends StatelessWidget {
       case 'completed':
       case 'lokally_shipping_requested':
       case 'shipped':
+      case 'payout_authorized':
+      case 'auto_payout_authorized':
         return primaryColor;
       case 'cancelled':
+      case 'dispute_opened':
         return Colors.redAccent;
       case 'lokally_shipping_pending':
       case 'payment_approved':
       case 'preparing':
+      case 'awaiting_customer_release':
         return Colors.orangeAccent;
       default:
         return Colors.grey;
@@ -478,6 +485,10 @@ class StoreCustomerOrderCard extends StatelessWidget {
   }
 
   IconData get deliveryIcon {
+    if (order.isServiceOrder) {
+      return Icons.support_agent_outlined;
+    }
+
     return order.deliveryType == 'pickup'
         ? Icons.storefront_rounded
         : Icons.local_shipping_outlined;
@@ -608,7 +619,7 @@ class StoreCustomerOrderCard extends StatelessWidget {
   }
 }
 
-class StoreCustomerOrderDetailsScreen extends StatelessWidget {
+class StoreCustomerOrderDetailsScreen extends StatefulWidget {
   final StoreCustomerOrderItem order;
 
   const StoreCustomerOrderDetailsScreen({
@@ -616,7 +627,36 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
     required this.order,
   });
 
-  Color statusColor(Color primaryColor) {
+  @override
+  State<StoreCustomerOrderDetailsScreen> createState() =>
+      _StoreCustomerOrderDetailsScreenState();
+}
+
+class _StoreCustomerOrderDetailsScreenState
+    extends State<StoreCustomerOrderDetailsScreen> {
+  late StoreCustomerOrderItem order;
+
+  @override
+  void initState() {
+    super.initState();
+    order = widget.order;
+  }
+
+  Color paymentStatusColor(Color primaryColor) {
+    switch (order.paymentStatus) {
+      case 'approved':
+        return primaryColor;
+      case 'failed':
+      case 'cancelled':
+      case 'rejected':
+        return Colors.redAccent;
+      case 'pending':
+      default:
+        return Colors.orangeAccent;
+    }
+  }
+
+  Color orderStatusColor(Color primaryColor) {
     switch (order.orderStatus) {
       case 'ready_for_pickup':
       case 'completed':
@@ -634,10 +674,379 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
     }
   }
 
+  IconData orderIcon() {
+    if (order.isServiceOrder) {
+      return Icons.support_agent_outlined;
+    }
+
+    return order.deliveryType == 'pickup'
+        ? Icons.storefront_rounded
+        : Icons.local_shipping_outlined;
+  }
+
+  void openServiceChat() {
+    Get.to(() => StoreCustomerServiceChatScreen(order: order));
+  }
+
+  void openDisputeTicket() {
+    Get.to(() => StoreCustomerDisputeTicketScreen(order: order));
+  }
+
+  void showDetailsMessage(BuildContext context, String message) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: textMedium.copyWith(
+            color: Colors.white,
+            fontSize: 12.8,
+          ),
+        ),
+        backgroundColor: primaryColor,
+        behavior: SnackBarBehavior.floating,
+        elevation: 8,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<bool> confirmSimpleAction({
+    required BuildContext context,
+    required String title,
+    required String message,
+    required String confirmLabel,
+  }) async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    final bool? result = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: textBold.copyWith(
+                    color: Colors.black87,
+                    fontSize: 17,
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Text(
+                  message,
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.8,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Material(
+                  color: primaryColor,
+                  borderRadius: BorderRadius.circular(17),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(true),
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 46,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        confirmLabel,
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Material(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(17),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(false),
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 44,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Cancelar',
+                        style: textBold.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    return result == true;
+  }
+
+  Future<void> authorizePayout(BuildContext context) async {
+    if (!order.canAuthorizePayout) {
+      showDetailsMessage(context,
+          'Este pedido ainda não está aguardando autorização de repasse.');
+      return;
+    }
+
+    final bool confirmed = await confirmSimpleAction(
+      context: context,
+      title: 'Autorizar repasse',
+      message:
+          'Confirme somente se você recebeu o produto ou serviço corretamente. Após autorizar, o repasse será liberado para o vendedor.',
+      confirmLabel: 'AUTORIZAR REPASSE',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    final Response response = await Get.find<ApiClient>().postData(
+      '/api/customer/store/orders/${order.id}/authorize-payout',
+      <String, dynamic>{},
+    );
+
+    final dynamic body = response.body;
+
+    if ((response.statusCode == 200 || response.statusCode == 201) &&
+        body is Map &&
+        body['status'] == true) {
+      final dynamic dataValue = body['data'];
+      final Map<String, dynamic> data = dataValue is Map
+          ? Map<String, dynamic>.from(dataValue)
+          : <String, dynamic>{};
+      final dynamic orderValue = data['order'];
+
+      if (orderValue is Map) {
+        final StoreCustomerOrderItem updatedOrder =
+            StoreCustomerOrderItem.fromMap(
+          Map<String, dynamic>.from(orderValue),
+        );
+
+        if (mounted) {
+          setState(() {
+            order = updatedOrder;
+          });
+        }
+      }
+
+      showDetailsMessage(context, 'Repasse autorizado com sucesso.');
+      return;
+    }
+
+    showDetailsMessage(
+      context,
+      body is Map && body['message'] != null
+          ? body['message'].toString()
+          : 'Não foi possível autorizar o repasse.',
+    );
+  }
+
+  Future<void> openDispute(BuildContext context) async {
+    if (!order.canOpenDispute) {
+      showDetailsMessage(
+          context, 'Este pedido ainda não permite abertura de disputa.');
+      return;
+    }
+
+    final TextEditingController reasonController = TextEditingController();
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: Container(
+              margin: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(26),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Abrir disputa',
+                    style: textBold.copyWith(
+                      color: Colors.black87,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Explique o que não foi entregue corretamente. A equipe Lokally irá analisar o pedido.',
+                    style: textRegular.copyWith(
+                      color: Colors.grey.shade700,
+                      fontSize: 12.6,
+                      height: 1.34,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: reasonController,
+                    minLines: 3,
+                    maxLines: 5,
+                    decoration: InputDecoration(
+                      hintText: 'Descreva o problema encontrado...',
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: Colors.grey.shade200),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(color: primaryColor),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Material(
+                    color: Colors.redAccent,
+                    borderRadius: BorderRadius.circular(17),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(true),
+                      borderRadius: BorderRadius.circular(17),
+                      child: Container(
+                        height: 46,
+                        width: double.infinity,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'ABRIR DISPUTA',
+                          style: textBold.copyWith(
+                            color: Colors.white,
+                            fontSize: 13.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Material(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(17),
+                    child: InkWell(
+                      onTap: () => Navigator.of(context).pop(false),
+                      borderRadius: BorderRadius.circular(17),
+                      child: Container(
+                        height: 44,
+                        width: double.infinity,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Cancelar',
+                          style: textBold.copyWith(
+                            color: Colors.grey.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (confirmed != true) {
+      reasonController.dispose();
+      return;
+    }
+
+    final String reason = reasonController.text.trim();
+    reasonController.dispose();
+
+    final Response response = await Get.find<ApiClient>().postData(
+      '/api/customer/store/orders/${order.id}/dispute',
+      <String, dynamic>{
+        'dispute_reason': reason,
+      },
+    );
+
+    final dynamic body = response.body;
+
+    if ((response.statusCode == 200 || response.statusCode == 201) &&
+        body is Map &&
+        body['status'] == true) {
+      final dynamic dataValue = body['data'];
+      final Map<String, dynamic> data = dataValue is Map
+          ? Map<String, dynamic>.from(dataValue)
+          : <String, dynamic>{};
+      final dynamic orderValue = data['order'];
+
+      if (orderValue is Map) {
+        final StoreCustomerOrderItem updatedOrder =
+            StoreCustomerOrderItem.fromMap(
+          Map<String, dynamic>.from(orderValue),
+        );
+
+        if (mounted) {
+          setState(() {
+            order = updatedOrder;
+          });
+        }
+      }
+
+      showDetailsMessage(context, 'Disputa aberta com sucesso.');
+      return;
+    }
+
+    showDetailsMessage(
+      context,
+      body is Map && body['message'] != null
+          ? body['message'].toString()
+          : 'Não foi possível abrir a disputa.',
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color primaryColor = Theme.of(context).primaryColor;
     final bool isPickup = order.deliveryType == 'pickup';
+    final bool showOrderStatusLine = order.orderStatusLabel.isNotEmpty &&
+        order.orderStatusLabel != order.paymentStatusLabel;
 
     return SafeArea(
       top: false,
@@ -662,9 +1071,7 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
                         StoreCustomerOrderSellerLogo(
                           primaryColor: primaryColor,
                           logoUrl: order.sellerLogoUrl,
-                          icon: isPickup
-                              ? Icons.storefront_rounded
-                              : Icons.local_shipping_outlined,
+                          icon: orderIcon(),
                         ),
                         const SizedBox(width: 11),
                         Expanded(
@@ -672,9 +1079,11 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                order.sellerName.isEmpty
-                                    ? 'Loja'
-                                    : order.sellerName,
+                                order.isServiceOrder
+                                    ? 'Pedido de serviço'
+                                    : order.sellerName.isEmpty
+                                        ? 'Loja'
+                                        : order.sellerName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: textBold.copyWith(
@@ -697,24 +1106,28 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 13),
                     StoreCustomerOrderStatusBadge(
-                      label: order.orderStatusLabel,
-                      color: statusColor(primaryColor),
+                      label: order.paymentStatusLabel,
+                      color: paymentStatusColor(primaryColor),
                     ),
                     const SizedBox(height: 14),
                     StoreCustomerSimpleLine(
-                      label: 'Entrega',
-                      value: order.deliveryTypeLabel,
+                      label: order.isServiceOrder ? 'Formato' : 'Entrega',
+                      value: order.isServiceOrder
+                          ? order.serviceDeliveryLabel
+                          : order.deliveryTypeLabel,
                     ),
                     const SizedBox(height: 6),
                     StoreCustomerSimpleLine(
                       label: 'Pagamento',
                       value: order.paymentMethodLabel,
                     ),
-                    const SizedBox(height: 6),
-                    StoreCustomerSimpleLine(
-                      label: 'Status do pagamento',
-                      value: order.paymentStatusLabel,
-                    ),
+                    if (showOrderStatusLine) ...[
+                      const SizedBox(height: 6),
+                      StoreCustomerSimpleLine(
+                        label: 'Situação do pedido',
+                        value: order.orderStatusLabel,
+                      ),
+                    ],
                     const SizedBox(height: 6),
                     StoreCustomerSimpleLine(
                       label: 'Total',
@@ -726,23 +1139,46 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 14),
-              if (isPickup)
+              if (order.shouldShowServiceChatBlock)
+                StoreCustomerServiceOrderDetails(
+                  order: order,
+                  primaryColor: primaryColor,
+                  onOpenChatTap: openServiceChat,
+                )
+              else if (!order.isServiceOrder && isPickup)
                 StoreCustomerPickupDetails(
                   order: order,
                   primaryColor: primaryColor,
                 )
-              else
+              else if (!order.isServiceOrder)
                 StoreCustomerShippingDetails(
                   order: order,
                   primaryColor: primaryColor,
                 ),
+              if (order.shouldShowReleaseBlock) ...[
+                const SizedBox(height: 14),
+                StoreCustomerReleaseActionBlock(
+                  order: order,
+                  primaryColor: primaryColor,
+                  onAuthorizeTap: () => authorizePayout(context),
+                  onDisputeTap: () => openDispute(context),
+                ),
+              ],
+              if (order.isDisputed) ...[
+                const SizedBox(height: 14),
+                StoreCustomerDisputeShortcutBlock(
+                  order: order,
+                  primaryColor: primaryColor,
+                  onTap: openDisputeTicket,
+                ),
+              ],
               const SizedBox(height: 14),
               StoreCustomerSurface(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Produtos',
+                      order.isServiceOrder ? 'Serviços' : 'Produtos',
                       style: textBold.copyWith(
                         color: Colors.black87,
                         fontSize: 16,
@@ -763,6 +1199,952 @@ class StoreCustomerOrderDetailsScreen extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreCustomerServiceOrderDetails extends StatelessWidget {
+  final StoreCustomerOrderItem order;
+  final Color primaryColor;
+  final VoidCallback onOpenChatTap;
+
+  const StoreCustomerServiceOrderDetails({
+    super.key,
+    required this.order,
+    required this.primaryColor,
+    required this.onOpenChatTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool paymentApproved = order.paymentStatus == 'approved';
+    final bool chatAvailable = paymentApproved &&
+        order.serviceChatAvailable &&
+        !order.isReleaseClosed &&
+        !order.isDisputeFinalized;
+    final bool finalFlow = order.isReleaseClosed || order.isDisputeFinalized;
+
+    return StoreCustomerSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Serviço ${order.serviceDeliveryLabel}',
+            style: textBold.copyWith(
+              color: Colors.black87,
+              fontSize: 16,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            order.serviceDeliveryDescription.isEmpty
+                ? 'Acompanhe as informações do serviço contratado.'
+                : order.serviceDeliveryDescription,
+            style: textRegular.copyWith(
+              color: Colors.grey.shade700,
+              fontSize: 12.5,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (!chatAvailable && !finalFlow)
+            StoreCustomerInfoBlock(
+              icon: Icons.lock_clock_outlined,
+              title: 'Chat Lokally',
+              value: paymentApproved
+                  ? 'O Chat Lokally ainda não está disponível para este pedido.'
+                  : 'O chat do serviço será liberado assim que o pagamento for aprovado.',
+            )
+          else if (chatAvailable) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(17),
+                border: Border.all(color: primaryColor.withValues(alpha: 0.18)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.verified_user_outlined,
+                    color: primaryColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Garantia Lokally',
+                          style: textBold.copyWith(
+                            color: Colors.black87,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          order.lokallyGuaranteeMessage.isEmpty
+                              ? 'Mantenha a conversa pelo Chat Lokally e não confirme recebimento antes de receber o serviço.'
+                              : order.lokallyGuaranteeMessage,
+                          style: textRegular.copyWith(
+                            color: Colors.grey.shade700,
+                            fontSize: 11.6,
+                            height: 1.28,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Material(
+              color: primaryColor,
+              borderRadius: BorderRadius.circular(17),
+              child: InkWell(
+                onTap: onOpenChatTap,
+                borderRadius: BorderRadius.circular(17),
+                child: Container(
+                  height: 46,
+                  width: double.infinity,
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        'Abrir Chat Lokally',
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class StoreCustomerServiceChatScreen extends StatefulWidget {
+  final StoreCustomerOrderItem order;
+
+  const StoreCustomerServiceChatScreen({
+    super.key,
+    required this.order,
+  });
+
+  @override
+  State<StoreCustomerServiceChatScreen> createState() =>
+      _StoreCustomerServiceChatScreenState();
+}
+
+class _StoreCustomerServiceChatScreenState
+    extends State<StoreCustomerServiceChatScreen> {
+  static const List<String> allowedFileExtensions = [
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'gif',
+    'svg',
+    'pdf',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'ppt',
+    'pptx',
+    'txt',
+    'csv',
+    'zip',
+    'rar',
+    '7z',
+    'psd',
+    'ai',
+    'eps',
+    'cdr',
+  ];
+
+  final TextEditingController messageController = TextEditingController();
+  final ScrollController scrollController = ScrollController();
+
+  bool isLoading = false;
+  bool isSending = false;
+  bool noticeModalShown = false;
+
+  StoreCustomerServiceChatThread? thread;
+  StoreCustomerServiceChatSafetyNotice? safetyNotice;
+  List<StoreCustomerServiceChatMessage> messages =
+      <StoreCustomerServiceChatMessage>[];
+
+  String get chatUri =>
+      '/api/customer/store/service-chat/order/${widget.order.id}';
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadChat();
+    });
+  }
+
+  @override
+  void dispose() {
+    messageController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> loadChat() async {
+    if (isLoading) {
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    final Response response = await Get.find<ApiClient>().getData(chatUri);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+
+    final dynamic body = response.body;
+
+    if (response.statusCode != 200 || body is! Map || body['status'] != true) {
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível abrir o Chat Lokally.',
+      );
+      return;
+    }
+
+    final dynamic dataValue = body['data'];
+    final Map<String, dynamic> data = dataValue is Map
+        ? Map<String, dynamic>.from(dataValue)
+        : <String, dynamic>{};
+
+    final dynamic threadValue = data['thread'];
+    final dynamic noticeValue = data['safety_notice'];
+    final dynamic messagesValue = data['messages'];
+
+    setState(() {
+      thread = threadValue is Map
+          ? StoreCustomerServiceChatThread.fromMap(
+              Map<String, dynamic>.from(threadValue),
+            )
+          : null;
+      safetyNotice = noticeValue is Map
+          ? StoreCustomerServiceChatSafetyNotice.fromMap(
+              Map<String, dynamic>.from(noticeValue),
+            )
+          : null;
+      messages = messagesValue is List
+          ? messagesValue
+              .whereType<Map>()
+              .map(
+                (item) => StoreCustomerServiceChatMessage.fromMap(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList()
+          : <StoreCustomerServiceChatMessage>[];
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      scrollToEnd();
+      final StoreCustomerServiceChatThread? currentThread = thread;
+      if (currentThread != null &&
+          !currentThread.safetyNoticeAccepted &&
+          !noticeModalShown) {
+        noticeModalShown = true;
+        showSafetyNoticeModal();
+      }
+    });
+  }
+
+  Future<void> acceptSafetyNotice() async {
+    final Response response = await Get.find<ApiClient>().postData(
+      '$chatUri/safety-notice',
+      <String, dynamic>{},
+    );
+
+    final dynamic body = response.body;
+
+    if ((response.statusCode == 200 || response.statusCode == 201) &&
+        body is Map &&
+        body['status'] == true) {
+      final dynamic dataValue = body['data'];
+      final Map<String, dynamic> data = dataValue is Map
+          ? Map<String, dynamic>.from(dataValue)
+          : <String, dynamic>{};
+      final dynamic threadValue = data['thread'];
+
+      if (threadValue is Map) {
+        setState(() {
+          thread = StoreCustomerServiceChatThread.fromMap(
+            Map<String, dynamic>.from(threadValue),
+          );
+        });
+      }
+    }
+  }
+
+  String get allowedFileExtensionsText {
+    return allowedFileExtensions
+        .map((extension) => extension.toUpperCase())
+        .join(', ');
+  }
+
+  Future<void> sendTextMessage() async {
+    final String message = messageController.text.trim();
+
+    if (message.isEmpty || isSending) {
+      return;
+    }
+
+    messageController.clear();
+    await sendMessage(message: message);
+  }
+
+  Future<bool> showFileAttachmentInstructions() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        Icons.attach_file_rounded,
+                        color: primaryColor,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        'Anexar arquivo ao serviço',
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Você pode enviar arquivos para o vendedor executar o serviço, como marca, briefing, imagens, documentos e arquivos de criação.',
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.6,
+                    height: 1.34,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    'Formatos permitidos: $allowedFileExtensionsText. Limite por arquivo: até 50 MB.',
+                    style: textMedium.copyWith(
+                      color: primaryColor,
+                      fontSize: 11.6,
+                      height: 1.28,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Material(
+                  color: primaryColor,
+                  borderRadius: BorderRadius.circular(17),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(true),
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 46,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Selecionar arquivo',
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Material(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(17),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(false),
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 44,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Cancelar',
+                        style: textBold.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    return confirmed == true;
+  }
+
+  Future<void> pickAndSendFile() async {
+    if (isSending) {
+      return;
+    }
+
+    final bool canPick = await showFileAttachmentInstructions();
+
+    if (!canPick) {
+      return;
+    }
+
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedFileExtensions,
+      allowMultiple: false,
+      withData: false,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final PlatformFile selectedFile = result.files.single;
+    final String? path = selectedFile.path;
+
+    if (path == null || path.trim().isEmpty) {
+      showChatMessage('Não foi possível acessar o arquivo selecionado.');
+      return;
+    }
+
+    final String message = messageController.text.trim();
+    messageController.clear();
+
+    await sendMessage(
+      message: message,
+      file: XFile(path, name: selectedFile.name),
+    );
+  }
+
+  Future<void> sendMessage({
+    required String message,
+    XFile? file,
+  }) async {
+    if ((message.trim().isEmpty && file == null) || isSending) {
+      return;
+    }
+
+    setState(() {
+      isSending = true;
+    });
+
+    try {
+      Response response;
+
+      if (file != null) {
+        response = await Get.find<ApiClient>().postMultipartData(
+          '$chatUri/message',
+          <String, String>{
+            'message': message,
+            'file_original_name': file.name,
+            'file_extension': StoreChatFileHelper.extensionFromName(file.name),
+          },
+          MultipartBody('file', file),
+          <MultipartBody>[],
+        );
+      } else {
+        response = await Get.find<ApiClient>().postData(
+          '$chatUri/message',
+          <String, dynamic>{
+            'message': message,
+          },
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+        final dynamic messageValue = data['message'];
+
+        if (messageValue is Map) {
+          setState(() {
+            messages.add(
+              StoreCustomerServiceChatMessage.fromMap(
+                Map<String, dynamic>.from(messageValue),
+              ),
+            );
+          });
+        }
+
+        scrollToEnd();
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível enviar a mensagem.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível enviar a mensagem.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSending = false;
+        });
+      }
+    }
+  }
+
+  void scrollToEnd() {
+    if (!scrollController.hasClients) {
+      return;
+    }
+
+    scrollController.animateTo(
+      scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void showChatMessage(String message) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: textMedium.copyWith(
+            color: Colors.white,
+            fontSize: 12.8,
+          ),
+        ),
+        backgroundColor: primaryColor,
+        behavior: SnackBarBehavior.floating,
+        elevation: 8,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> showSafetyNoticeModal() async {
+    final StoreCustomerServiceChatSafetyNotice notice =
+        safetyNotice ?? StoreCustomerServiceChatSafetyNotice.defaultNotice();
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        Icons.verified_user_outlined,
+                        color: primaryColor,
+                        size: 23,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        notice.title,
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  notice.message,
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.8,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ...notice.details.map(
+                  (detail) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.check_circle_outline_rounded,
+                          color: primaryColor,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            detail,
+                            style: textRegular.copyWith(
+                              color: Colors.grey.shade700,
+                              fontSize: 11.8,
+                              height: 1.28,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Material(
+                  color: primaryColor,
+                  borderRadius: BorderRadius.circular(18),
+                  child: InkWell(
+                    onTap: () async {
+                      await acceptSafetyNotice();
+                      if (Navigator.of(context).canPop()) {
+                        Navigator.of(context).pop();
+                      }
+                    },
+                    borderRadius: BorderRadius.circular(18),
+                    child: Container(
+                      height: 48,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Entendi e quero continuar',
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.4,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    return SafeArea(
+      top: false,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF4F6F6),
+        body: BodyWidget(
+          appBar: AppBarWidget(title: 'Chat Lokally'.tr),
+          body: Column(
+            children: [
+              Expanded(
+                child: isLoading
+                    ? Center(
+                        child: CircularProgressIndicator(
+                          color: primaryColor,
+                          strokeWidth: 2.4,
+                        ),
+                      )
+                    : ListView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                        children: [
+                          StoreCustomerSurface(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Atendimento do serviço',
+                                  style: textBold.copyWith(
+                                    color: Colors.black87,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                Text(
+                                  '${widget.order.orderNumber} • ${widget.order.serviceDeliveryLabel}',
+                                  style: textRegular.copyWith(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 12.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (messages.isEmpty)
+                            StoreCustomerSurface(
+                              child: Text(
+                                'Envie uma mensagem para combinar os detalhes do serviço com segurança pelo Chat Lokally.',
+                                style: textRegular.copyWith(
+                                  color: Colors.grey.shade700,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                ),
+                              ),
+                            )
+                          else
+                            ...messages.map(
+                              (message) => StoreCustomerServiceChatBubble(
+                                message: message,
+                                primaryColor: primaryColor,
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              Container(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  10,
+                  12,
+                  MediaQuery.of(context).padding.bottom + 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                ),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: isSending ? null : pickAndSendFile,
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(17),
+                        ),
+                        child: Icon(
+                          Icons.attach_file_rounded,
+                          color: primaryColor,
+                          size: 21,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: messageController,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Escreva sua mensagem...',
+                          filled: true,
+                          fillColor: const Color(0xFFF4F6F6),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: isSending ? null : sendTextMessage,
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: BorderRadius.circular(17),
+                        ),
+                        child: isSending
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.2,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 21,
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreCustomerServiceChatBubble extends StatelessWidget {
+  final StoreCustomerServiceChatMessage message;
+  final Color primaryColor;
+
+  const StoreCustomerServiceChatBubble({
+    super.key,
+    required this.message,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isMine = message.senderType == 'customer';
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.76,
+        ),
+        margin: const EdgeInsets.only(bottom: 9),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isMine ? primaryColor : Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isMine ? 18 : 4),
+            bottomRight: Radius.circular(isMine ? 4 : 18),
+          ),
+          border: isMine ? null : Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (message.message.isNotEmpty)
+              Text(
+                message.message,
+                style: textRegular.copyWith(
+                  color: isMine ? Colors.white : Colors.black87,
+                  fontSize: 12.8,
+                  height: 1.3,
+                ),
+              ),
+            if (message.hasFile) ...[
+              if (message.message.isNotEmpty) const SizedBox(height: 8),
+              StoreServiceChatFilePreview(
+                fileName: message.fileDisplayName,
+                fileUrl: message.fileUrl,
+                isMine: isMine,
+                primaryColor: primaryColor,
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -870,6 +2252,997 @@ class StoreCustomerShippingDetails extends StatelessWidget {
             ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class StoreCustomerReleaseActionBlock extends StatelessWidget {
+  final StoreCustomerOrderItem order;
+  final Color primaryColor;
+  final VoidCallback onAuthorizeTap;
+  final VoidCallback onDisputeTap;
+
+  const StoreCustomerReleaseActionBlock({
+    super.key,
+    required this.order,
+    required this.primaryColor,
+    required this.onAuthorizeTap,
+    required this.onDisputeTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool waitingAuthorization =
+        order.releaseStatus == 'pending_customer_authorization';
+    final bool disputed = order.releaseStatus == 'disputed';
+    final bool disputeFinalized = order.isDisputeFinalized;
+    final bool authorized = !disputeFinalized &&
+        (order.releaseStatus == 'authorized' ||
+            order.releaseStatus == 'auto_authorized');
+
+    final String title = disputeFinalized
+        ? 'Disputa encerrada pela Lokally'
+        : authorized
+            ? 'Pedido finalizado'
+            : disputed
+                ? 'Disputa aberta'
+                : order.releaseStatusLabel.isEmpty
+                    ? 'Liberação de repasse'
+                    : order.releaseStatusLabel;
+
+    final String disputeFinalMessage = order.disputeResolutionMessage.trim();
+    final String message = disputeFinalized
+        ? (disputeFinalMessage.isNotEmpty
+            ? disputeFinalMessage
+            : 'A disputa foi encerrada pela Lokally.')
+        : waitingAuthorization
+            ? 'O vendedor informou que o pedido foi entregue. Autorize o repasse somente se recebeu tudo corretamente. Se houver problema, abra uma disputa.'
+            : disputed
+                ? 'A disputa foi aberta e será analisada pela equipe Lokally.'
+                : 'O repasse foi autorizado com sucesso. Este pedido foi finalizado.';
+
+    final Color blockColor = disputeFinalized
+        ? Colors.orangeAccent
+        : disputed
+            ? Colors.redAccent
+            : authorized
+                ? primaryColor
+                : Colors.orangeAccent;
+
+    return StoreCustomerSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                disputeFinalized
+                    ? Icons.gavel_outlined
+                    : disputed
+                        ? Icons.report_problem_outlined
+                        : authorized
+                            ? Icons.verified_outlined
+                            : Icons.payments_outlined,
+                color: blockColor,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 15.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    if (disputeFinalized &&
+                        order.disputeResolutionTargetLabel.isNotEmpty) ...[
+                      Text(
+                        order.disputeResolutionTargetLabel,
+                        style: textBold.copyWith(
+                          color: Colors.orange.shade900,
+                          fontSize: 12.2,
+                          height: 1.25,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ],
+                    Text(
+                      message,
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.2,
+                        height: 1.34,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (order.releaseAutoAuthorizeAt.isNotEmpty &&
+              waitingAuthorization) ...[
+            const SizedBox(height: 10),
+            StoreCustomerInfoBlock(
+              icon: Icons.schedule_outlined,
+              title: 'Prazo de resposta',
+              value:
+                  'Você tem até 24h para autorizar o repasse ou abrir disputa. Após esse prazo, o sistema poderá liberar automaticamente.',
+            ),
+          ],
+          if (waitingAuthorization) ...[
+            const SizedBox(height: 12),
+            Material(
+              color: primaryColor,
+              borderRadius: BorderRadius.circular(17),
+              child: InkWell(
+                onTap: onAuthorizeTap,
+                borderRadius: BorderRadius.circular(17),
+                child: Container(
+                  height: 46,
+                  width: double.infinity,
+                  alignment: Alignment.center,
+                  child: Text(
+                    'AUTORIZAR REPASSE',
+                    style: textBold.copyWith(
+                      color: Colors.white,
+                      fontSize: 13.1,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 9),
+            Material(
+              color: Colors.redAccent.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(17),
+              child: InkWell(
+                onTap: onDisputeTap,
+                borderRadius: BorderRadius.circular(17),
+                child: Container(
+                  height: 44,
+                  width: double.infinity,
+                  alignment: Alignment.center,
+                  child: Text(
+                    'ABRIR DISPUTA',
+                    style: textBold.copyWith(
+                      color: Colors.redAccent,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class StoreCustomerDisputeShortcutBlock extends StatelessWidget {
+  final StoreCustomerOrderItem order;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  const StoreCustomerDisputeShortcutBlock({
+    super.key,
+    required this.order,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StoreCustomerSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                Icons.support_agent_outlined,
+                color: Colors.redAccent,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Disputa Lokally',
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 15.2,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'A disputa será tratada entre você e a equipe Lokally. O vendedor responde para a Lokally em uma linha separada da tratativa.',
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.2,
+                        height: 1.34,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          StoreCustomerInfoBlock(
+            icon: Icons.schedule_outlined,
+            title: 'Prazo da análise',
+            value:
+                'A análise da disputa pode levar até 7 dias. Acompanhe as solicitações e respostas pela timeline da disputa.',
+          ),
+          const SizedBox(height: 12),
+          Material(
+            color: primaryColor,
+            borderRadius: BorderRadius.circular(17),
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(17),
+              child: Container(
+                height: 46,
+                width: double.infinity,
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.timeline_outlined,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 7),
+                    Text(
+                      'Acompanhar disputa',
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 13.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreCustomerDisputeTicketScreen extends StatefulWidget {
+  final StoreCustomerOrderItem order;
+
+  const StoreCustomerDisputeTicketScreen({
+    super.key,
+    required this.order,
+  });
+
+  @override
+  State<StoreCustomerDisputeTicketScreen> createState() =>
+      _StoreCustomerDisputeTicketScreenState();
+}
+
+class _StoreCustomerDisputeTicketScreenState
+    extends State<StoreCustomerDisputeTicketScreen> {
+  static const List<String> allowedFileExtensions = [
+    'jpg',
+    'jpeg',
+    'png',
+    'webp',
+    'gif',
+    'svg',
+    'pdf',
+    'doc',
+    'docx',
+    'xls',
+    'xlsx',
+    'ppt',
+    'pptx',
+    'txt',
+    'csv',
+    'zip',
+    'rar',
+    '7z',
+    'psd',
+    'ai',
+    'eps',
+    'cdr',
+  ];
+
+  final TextEditingController messageController = TextEditingController();
+  final ScrollController scrollController = ScrollController();
+
+  bool isLoading = false;
+  bool isSending = false;
+
+  StoreCustomerOrderDispute? dispute;
+  List<StoreCustomerOrderDisputeMessage> messages =
+      <StoreCustomerOrderDisputeMessage>[];
+
+  String get disputeUri =>
+      '/api/customer/store/order-disputes/${widget.order.id}';
+
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadDispute();
+    });
+  }
+
+  @override
+  void dispose() {
+    messageController.dispose();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  String get allowedFileExtensionsText {
+    return allowedFileExtensions
+        .map((extension) => extension.toUpperCase())
+        .join(', ');
+  }
+
+  Future<void> loadDispute() async {
+    if (isLoading) {
+      return;
+    }
+
+    setState(() {
+      isLoading = true;
+    });
+
+    final Response response = await Get.find<ApiClient>().getData(disputeUri);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      isLoading = false;
+    });
+
+    final dynamic body = response.body;
+
+    if (response.statusCode != 200 || body is! Map || body['status'] != true) {
+      showDisputeMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível carregar a disputa.',
+      );
+      return;
+    }
+
+    final dynamic dataValue = body['data'];
+    final Map<String, dynamic> data = dataValue is Map
+        ? Map<String, dynamic>.from(dataValue)
+        : <String, dynamic>{};
+
+    final dynamic disputeValue = data['dispute'];
+    final dynamic messagesValue = data['messages'];
+
+    setState(() {
+      dispute = disputeValue is Map
+          ? StoreCustomerOrderDispute.fromMap(
+              Map<String, dynamic>.from(disputeValue),
+            )
+          : null;
+      messages = messagesValue is List
+          ? messagesValue
+              .whereType<Map>()
+              .map(
+                (item) => StoreCustomerOrderDisputeMessage.fromMap(
+                  Map<String, dynamic>.from(item),
+                ),
+              )
+              .toList()
+          : <StoreCustomerOrderDisputeMessage>[];
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      scrollToEnd();
+    });
+  }
+
+  Future<void> sendTextMessage() async {
+    final String message = messageController.text.trim();
+
+    if (message.isEmpty || isSending) {
+      return;
+    }
+
+    messageController.clear();
+    await sendMessage(message: message);
+  }
+
+  Future<bool> showFileAttachmentInstructions() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        Icons.attach_file_rounded,
+                        color: primaryColor,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        'Anexar arquivo à disputa',
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Envie comprovantes, imagens, briefing, documentos ou arquivos que ajudem a equipe Lokally a analisar a disputa.',
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.6,
+                    height: 1.34,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Text(
+                    'Formatos permitidos: $allowedFileExtensionsText. Limite por arquivo: até 50 MB.',
+                    style: textMedium.copyWith(
+                      color: primaryColor,
+                      fontSize: 11.6,
+                      height: 1.28,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Material(
+                  color: primaryColor,
+                  borderRadius: BorderRadius.circular(17),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(true),
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 46,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Selecionar arquivo',
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 9),
+                Material(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(17),
+                  child: InkWell(
+                    onTap: () => Navigator.of(context).pop(false),
+                    borderRadius: BorderRadius.circular(17),
+                    child: Container(
+                      height: 44,
+                      width: double.infinity,
+                      alignment: Alignment.center,
+                      child: Text(
+                        'Cancelar',
+                        style: textBold.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    return confirmed == true;
+  }
+
+  Future<void> pickAndSendFile() async {
+    if (isSending) {
+      return;
+    }
+
+    final bool canPick = await showFileAttachmentInstructions();
+
+    if (!canPick) {
+      return;
+    }
+
+    final FilePickerResult? result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: allowedFileExtensions,
+      allowMultiple: false,
+      withData: false,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final PlatformFile selectedFile = result.files.single;
+    final String? path = selectedFile.path;
+
+    if (path == null || path.trim().isEmpty) {
+      showDisputeMessage('Não foi possível acessar o arquivo selecionado.');
+      return;
+    }
+
+    final String message = messageController.text.trim();
+    messageController.clear();
+
+    await sendMessage(
+      message: message,
+      file: XFile(path, name: selectedFile.name),
+    );
+  }
+
+  Future<void> sendMessage({
+    required String message,
+    XFile? file,
+  }) async {
+    if ((message.trim().isEmpty && file == null) || isSending) {
+      return;
+    }
+
+    setState(() {
+      isSending = true;
+    });
+
+    try {
+      Response response;
+
+      if (file != null) {
+        response = await Get.find<ApiClient>().postMultipartData(
+          '$disputeUri/message',
+          <String, String>{
+            'message': message,
+            'file_original_name': file.name,
+            'file_extension': StoreChatFileHelper.extensionFromName(file.name),
+          },
+          MultipartBody('file', file),
+          <MultipartBody>[],
+        );
+      } else {
+        response = await Get.find<ApiClient>().postData(
+          '$disputeUri/message',
+          <String, dynamic>{
+            'message': message,
+          },
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+        final dynamic messageValue = data['message'];
+
+        if (messageValue is Map) {
+          setState(() {
+            messages.add(
+              StoreCustomerOrderDisputeMessage.fromMap(
+                Map<String, dynamic>.from(messageValue),
+              ),
+            );
+          });
+        }
+
+        scrollToEnd();
+        return;
+      }
+
+      showDisputeMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível enviar a mensagem.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showDisputeMessage('Não foi possível enviar a mensagem.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSending = false;
+        });
+      }
+    }
+  }
+
+  void scrollToEnd() {
+    if (!scrollController.hasClients) {
+      return;
+    }
+
+    scrollController.animateTo(
+      scrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void showDisputeMessage(String message) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: textMedium.copyWith(
+            color: Colors.white,
+            fontSize: 12.8,
+          ),
+        ),
+        backgroundColor: primaryColor,
+        behavior: SnackBarBehavior.floating,
+        elevation: 8,
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final StoreCustomerOrderDispute? currentDispute = dispute;
+
+    return SafeArea(
+      top: false,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF4F6F6),
+        body: BodyWidget(
+          appBar: AppBarWidget(title: 'Disputa Lokally'.tr),
+          body: Column(
+            children: [
+              Expanded(
+                child: isLoading
+                    ? Center(
+                        child: CircularProgressIndicator(
+                          color: primaryColor,
+                          strokeWidth: 2.4,
+                        ),
+                      )
+                    : ListView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                        children: [
+                          StoreCustomerSurface(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: Colors.redAccent
+                                            .withValues(alpha: 0.10),
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                      child: const Icon(
+                                        Icons.report_problem_outlined,
+                                        color: Colors.redAccent,
+                                        size: 23,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 11),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Ticket de disputa',
+                                            style: textBold.copyWith(
+                                              color: Colors.black87,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 3),
+                                          Text(
+                                            widget.order.orderNumber,
+                                            style: textRegular.copyWith(
+                                              color: Colors.grey.shade600,
+                                              fontSize: 12.2,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                StoreCustomerInfoBlock(
+                                  icon: Icons.support_agent_outlined,
+                                  title: currentDispute?.statusLabel ??
+                                      'Disputa aberta',
+                                  value:
+                                      'A tratativa acontece entre você e a equipe Lokally. O lojista responde para a Lokally em uma timeline separada.',
+                                ),
+                                const SizedBox(height: 10),
+                                StoreCustomerInfoBlock(
+                                  icon: Icons.schedule_outlined,
+                                  title: 'Prazo de análise',
+                                  value:
+                                      'A análise pode levar até 7 dias. ${currentDispute?.deadlineAt.isNotEmpty == true ? 'Prazo estimado: ${currentDispute!.deadlineAt}.' : ''}',
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (messages.isEmpty)
+                            StoreCustomerSurface(
+                              child: Text(
+                                'A equipe Lokally irá responder por aqui. Envie detalhes e comprovantes que ajudem na análise da disputa.',
+                                style: textRegular.copyWith(
+                                  color: Colors.grey.shade700,
+                                  fontSize: 12.5,
+                                  height: 1.35,
+                                ),
+                              ),
+                            )
+                          else
+                            ...messages.map(
+                              (message) => StoreCustomerDisputeTimelineItem(
+                                message: message,
+                                primaryColor: primaryColor,
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+              Container(
+                padding: EdgeInsets.fromLTRB(
+                  12,
+                  10,
+                  12,
+                  MediaQuery.of(context).padding.bottom + 10,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(top: BorderSide(color: Colors.grey.shade200)),
+                ),
+                child: Row(
+                  children: [
+                    GestureDetector(
+                      onTap: isSending ? null : pickAndSendFile,
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(17),
+                        ),
+                        child: Icon(
+                          Icons.attach_file_rounded,
+                          color: primaryColor,
+                          size: 21,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: messageController,
+                        minLines: 1,
+                        maxLines: 4,
+                        decoration: InputDecoration(
+                          hintText: 'Responder à Lokally...',
+                          filled: true,
+                          fillColor: const Color(0xFFF4F6F6),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(18),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    GestureDetector(
+                      onTap: isSending ? null : sendTextMessage,
+                      child: Container(
+                        width: 46,
+                        height: 46,
+                        decoration: BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: BorderRadius.circular(17),
+                        ),
+                        child: isSending
+                            ? const Center(
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.2,
+                                  ),
+                                ),
+                              )
+                            : const Icon(
+                                Icons.send_rounded,
+                                color: Colors.white,
+                                size: 21,
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreCustomerDisputeTimelineItem extends StatelessWidget {
+  final StoreCustomerOrderDisputeMessage message;
+  final Color primaryColor;
+
+  const StoreCustomerDisputeTimelineItem({
+    super.key,
+    required this.message,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isMine = message.senderType == 'customer';
+    final bool isLokally = message.senderType == 'lokally';
+    final Color bubbleColor = isMine
+        ? primaryColor
+        : isLokally
+            ? Colors.white
+            : Colors.orangeAccent.withValues(alpha: 0.10);
+    final Color borderColor =
+        isLokally ? primaryColor.withValues(alpha: 0.20) : Colors.grey.shade200;
+    final Color textColor = isMine ? Colors.white : Colors.black87;
+    final Color helperColor =
+        isMine ? Colors.white.withValues(alpha: 0.76) : Colors.grey.shade600;
+    final String senderLabel = isMine
+        ? 'Você'
+        : isLokally
+            ? 'Lokally'
+            : 'Atualização';
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.80,
+        ),
+        margin: const EdgeInsets.only(bottom: 9),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: bubbleColor,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(18),
+            topRight: const Radius.circular(18),
+            bottomLeft: Radius.circular(isMine ? 18 : 4),
+            bottomRight: Radius.circular(isMine ? 4 : 18),
+          ),
+          border: isMine ? null : Border.all(color: borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              senderLabel,
+              style: textBold.copyWith(
+                color: isMine ? Colors.white : primaryColor,
+                fontSize: 11.2,
+              ),
+            ),
+            if (message.message.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                message.message,
+                style: textRegular.copyWith(
+                  color: textColor,
+                  fontSize: 12.8,
+                  height: 1.3,
+                ),
+              ),
+            ],
+            if (message.hasFile) ...[
+              const SizedBox(height: 8),
+              StoreServiceChatFilePreview(
+                fileName: message.fileDisplayName,
+                fileUrl: message.fileUrl,
+                isMine: isMine,
+                primaryColor: primaryColor,
+              ),
+            ],
+            if (message.createdAt.isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                message.createdAt,
+                style: textRegular.copyWith(
+                  color: helperColor,
+                  fontSize: 9.8,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -1251,6 +3624,34 @@ class StoreCustomerOrderItem {
   final String sellerName;
   final String sellerLogoUrl;
   final String createdAt;
+  final bool containsServiceItems;
+  final bool containsPhysicalItems;
+  final bool isServiceOrder;
+  final bool isMixedOrder;
+  final String serviceDeliveryType;
+  final String serviceDeliveryLabel;
+  final String serviceDeliveryDescription;
+  final String serviceActionLabel;
+  final bool serviceChatAvailable;
+  final String lokallyGuaranteeMessage;
+  final String releaseStatus;
+  final String releaseStatusLabel;
+  final String sellerCompletedAt;
+  final String releaseRequestedAt;
+  final String releaseAutoAuthorizeAt;
+  final String payoutAuthorizedAt;
+  final String payoutAuthorizedBy;
+  final String disputeOpenedAt;
+  final String disputeReason;
+  final String disputeStatus;
+  final String disputeStatusLabel;
+  final String disputeResolutionTarget;
+  final String disputeResolutionTargetLabel;
+  final String disputeResolutionMessage;
+  final String disputeResolvedAt;
+  final bool isDisputeResolved;
+  final bool canAuthorizePayout;
+  final bool canOpenDispute;
   final List<StoreCustomerOrderProductItem> items;
 
   StoreCustomerOrderItem({
@@ -1274,8 +3675,75 @@ class StoreCustomerOrderItem {
     required this.sellerName,
     required this.sellerLogoUrl,
     required this.createdAt,
+    required this.containsServiceItems,
+    required this.containsPhysicalItems,
+    required this.isServiceOrder,
+    required this.isMixedOrder,
+    required this.serviceDeliveryType,
+    required this.serviceDeliveryLabel,
+    required this.serviceDeliveryDescription,
+    required this.serviceActionLabel,
+    required this.serviceChatAvailable,
+    required this.lokallyGuaranteeMessage,
+    required this.releaseStatus,
+    required this.releaseStatusLabel,
+    required this.sellerCompletedAt,
+    required this.releaseRequestedAt,
+    required this.releaseAutoAuthorizeAt,
+    required this.payoutAuthorizedAt,
+    required this.payoutAuthorizedBy,
+    required this.disputeOpenedAt,
+    required this.disputeReason,
+    required this.disputeStatus,
+    required this.disputeStatusLabel,
+    required this.disputeResolutionTarget,
+    required this.disputeResolutionTargetLabel,
+    required this.disputeResolutionMessage,
+    required this.disputeResolvedAt,
+    required this.isDisputeResolved,
+    required this.canAuthorizePayout,
+    required this.canOpenDispute,
     required this.items,
   });
+
+  bool get isPaymentApproved => paymentStatus == 'approved';
+
+  bool get isPayoutAuthorized {
+    return releaseStatus == 'authorized' ||
+        releaseStatus == 'auto_authorized' ||
+        orderStatus == 'payout_authorized' ||
+        orderStatus == 'auto_payout_authorized' ||
+        payoutAuthorizedAt.isNotEmpty;
+  }
+
+  bool get isDisputed {
+    return releaseStatus == 'disputed' || orderStatus == 'dispute_opened';
+  }
+
+  bool get isDisputeFinalized {
+    return isDisputeResolved ||
+        disputeResolvedAt.isNotEmpty ||
+        disputeStatus == 'resolved' ||
+        disputeStatus == 'resolved_customer' ||
+        disputeStatus == 'resolved_seller' ||
+        disputeStatus == 'closed' ||
+        releaseStatus == 'dispute_resolved_customer' ||
+        releaseStatus == 'dispute_resolved_seller' ||
+        orderStatus == 'dispute_resolved_customer' ||
+        orderStatus == 'dispute_resolved_seller';
+  }
+
+  bool get isReleaseClosed {
+    return isPayoutAuthorized || isDisputed || isDisputeFinalized;
+  }
+
+  bool get shouldShowServiceChatBlock {
+    return isServiceOrder && !isReleaseClosed;
+  }
+
+  bool get shouldShowReleaseBlock {
+    return releaseStatus.isNotEmpty || canAuthorizePayout || canOpenDispute;
+  }
 
   factory StoreCustomerOrderItem.fromMap(Map<String, dynamic> map) {
     final Map<String, dynamic> delivery = map['delivery'] is Map
@@ -1313,10 +3781,47 @@ class StoreCustomerOrderItem {
       total: StoreCustomerOrderCurrency.parseDouble(map['total']),
       deliveryAddress: '${delivery['address'] ?? ''}',
       pickupAddress: '${pickup['address'] ?? ''}',
-      sellerPhone: '${pickup['seller_phone'] ?? ''}',
+      sellerPhone: '${pickup['seller_phone'] ?? pickup['phone'] ?? ''}',
       sellerName: '${seller['name'] ?? ''}',
       sellerLogoUrl: '${seller['logo_url'] ?? ''}',
       createdAt: '${map['created_at'] ?? ''}',
+      containsServiceItems:
+          StoreCustomerOrderCurrency.parseBool(map['contains_service_items']),
+      containsPhysicalItems:
+          StoreCustomerOrderCurrency.parseBool(map['contains_physical_items']),
+      isServiceOrder:
+          StoreCustomerOrderCurrency.parseBool(map['is_service_order']),
+      isMixedOrder: StoreCustomerOrderCurrency.parseBool(map['is_mixed_order']),
+      serviceDeliveryType: '${map['service_delivery_type'] ?? ''}',
+      serviceDeliveryLabel: '${map['service_delivery_label'] ?? 'Serviço'}',
+      serviceDeliveryDescription:
+          '${map['service_delivery_description'] ?? ''}',
+      serviceActionLabel: '${map['service_action_label'] ?? ''}',
+      serviceChatAvailable:
+          StoreCustomerOrderCurrency.parseBool(map['service_chat_available']),
+      lokallyGuaranteeMessage: '${map['lokally_guarantee_message'] ?? ''}',
+      releaseStatus: '${map['release_status'] ?? ''}',
+      releaseStatusLabel: '${map['release_status_label'] ?? ''}',
+      sellerCompletedAt: '${map['seller_completed_at'] ?? ''}',
+      releaseRequestedAt: '${map['release_requested_at'] ?? ''}',
+      releaseAutoAuthorizeAt: '${map['release_auto_authorize_at'] ?? ''}',
+      payoutAuthorizedAt: '${map['payout_authorized_at'] ?? ''}',
+      payoutAuthorizedBy: '${map['payout_authorized_by'] ?? ''}',
+      disputeOpenedAt: '${map['dispute_opened_at'] ?? ''}',
+      disputeReason: '${map['dispute_reason'] ?? ''}',
+      disputeStatus: '${map['dispute_status'] ?? ''}',
+      disputeStatusLabel: '${map['dispute_status_label'] ?? ''}',
+      disputeResolutionTarget: '${map['dispute_resolution_target'] ?? ''}',
+      disputeResolutionTargetLabel:
+          '${map['dispute_resolution_target_label'] ?? ''}',
+      disputeResolutionMessage: '${map['dispute_resolution_message'] ?? ''}',
+      disputeResolvedAt: '${map['dispute_resolved_at'] ?? ''}',
+      isDisputeResolved:
+          StoreCustomerOrderCurrency.parseBool(map['is_dispute_resolved']),
+      canAuthorizePayout:
+          StoreCustomerOrderCurrency.parseBool(map['can_authorize_payout']),
+      canOpenDispute:
+          StoreCustomerOrderCurrency.parseBool(map['can_open_dispute']),
       items: rawItems
           .whereType<Map>()
           .map(
@@ -1337,6 +3842,12 @@ class StoreCustomerOrderProductItem {
   final double unitPrice;
   final int quantity;
   final double total;
+  final String productType;
+  final String conditionType;
+  final String serviceDeliveryType;
+  final String serviceDeliveryLabel;
+  final String serviceDeliveryDescription;
+  final bool isService;
 
   StoreCustomerOrderProductItem({
     required this.id,
@@ -1346,6 +3857,12 @@ class StoreCustomerOrderProductItem {
     required this.unitPrice,
     required this.quantity,
     required this.total,
+    required this.productType,
+    required this.conditionType,
+    required this.serviceDeliveryType,
+    required this.serviceDeliveryLabel,
+    required this.serviceDeliveryDescription,
+    required this.isService,
   });
 
   factory StoreCustomerOrderProductItem.fromMap(Map<String, dynamic> map) {
@@ -1357,6 +3874,385 @@ class StoreCustomerOrderProductItem {
       unitPrice: StoreCustomerOrderCurrency.parseDouble(map['unit_price']),
       quantity: int.tryParse('${map['quantity'] ?? 0}') ?? 0,
       total: StoreCustomerOrderCurrency.parseDouble(map['total']),
+      productType: '${map['product_type'] ?? 'physical'}',
+      conditionType: '${map['condition_type'] ?? 'new'}',
+      serviceDeliveryType: '${map['service_delivery_type'] ?? ''}',
+      serviceDeliveryLabel: '${map['service_delivery_label'] ?? ''}',
+      serviceDeliveryDescription:
+          '${map['service_delivery_description'] ?? ''}',
+      isService: StoreCustomerOrderCurrency.parseBool(map['is_service']) ||
+          '${map['product_type'] ?? ''}' == 'service',
+    );
+  }
+}
+
+class StoreCustomerServiceChatThread {
+  final String id;
+  final String storeOrderId;
+  final String status;
+  final bool safetyNoticeAccepted;
+
+  StoreCustomerServiceChatThread({
+    required this.id,
+    required this.storeOrderId,
+    required this.status,
+    required this.safetyNoticeAccepted,
+  });
+
+  factory StoreCustomerServiceChatThread.fromMap(Map<String, dynamic> map) {
+    return StoreCustomerServiceChatThread(
+      id: '${map['id'] ?? ''}',
+      storeOrderId: '${map['store_order_id'] ?? ''}',
+      status: '${map['status'] ?? ''}',
+      safetyNoticeAccepted:
+          StoreCustomerOrderCurrency.parseBool(map['safety_notice_accepted']),
+    );
+  }
+}
+
+class StoreCustomerServiceChatSafetyNotice {
+  final String title;
+  final String message;
+  final List<String> details;
+
+  StoreCustomerServiceChatSafetyNotice({
+    required this.title,
+    required this.message,
+    required this.details,
+  });
+
+  factory StoreCustomerServiceChatSafetyNotice.fromMap(
+    Map<String, dynamic> map,
+  ) {
+    final dynamic detailsValue = map['details'];
+
+    return StoreCustomerServiceChatSafetyNotice(
+      title: '${map['title'] ?? 'Garantia Lokally'}',
+      message: '${map['message'] ?? ''}',
+      details: detailsValue is List
+          ? detailsValue.map((item) => item.toString()).toList()
+          : <String>[],
+    );
+  }
+
+  factory StoreCustomerServiceChatSafetyNotice.defaultNotice() {
+    return StoreCustomerServiceChatSafetyNotice(
+      title: 'Garantia Lokally',
+      message:
+          'Você tem a Garantia Lokally. Não troque informações de contato nem confirme recebimento antes de receber seu produto ou serviço.',
+      details: const [
+        'Mantenha as conversas e arquivos dentro do Chat Lokally sempre que possível.',
+        'O pagamento fica protegido até a confirmação do recebimento do produto ou serviço.',
+        'Não libere o recebimento se o serviço não foi entregue conforme combinado.',
+      ],
+    );
+  }
+}
+
+class StoreServiceChatFilePreview extends StatelessWidget {
+  final String fileName;
+  final String fileUrl;
+  final bool isMine;
+  final Color primaryColor;
+
+  const StoreServiceChatFilePreview({
+    super.key,
+    required this.fileName,
+    required this.fileUrl,
+    required this.isMine,
+    required this.primaryColor,
+  });
+
+  Future<void> openFile() async {
+    if (fileUrl.trim().isEmpty) {
+      return;
+    }
+
+    final Uri? uri = Uri.tryParse(fileUrl);
+
+    if (uri == null) {
+      return;
+    }
+
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color backgroundColor = isMine
+        ? Colors.white.withValues(alpha: 0.14)
+        : primaryColor.withValues(alpha: 0.08);
+    final Color iconColor = isMine ? Colors.white : primaryColor;
+    final Color textColor = isMine ? Colors.white : Colors.black87;
+    final Color helperColor =
+        isMine ? Colors.white.withValues(alpha: 0.76) : Colors.grey.shade600;
+    final String extension = StoreChatFileHelper.extensionFromName(fileName);
+
+    return Material(
+      color: backgroundColor,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: fileUrl.trim().isEmpty ? null : openFile,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                StoreChatFileHelper.iconForExtension(extension),
+                color: iconColor,
+                size: 18,
+              ),
+              const SizedBox(width: 7),
+              Flexible(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName.isEmpty ? 'Arquivo anexado' : fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textBold.copyWith(
+                        color: textColor,
+                        fontSize: 11.4,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      fileUrl.trim().isEmpty
+                          ? 'Arquivo sem link'
+                          : 'Baixar / abrir',
+                      style: textRegular.copyWith(
+                        color: helperColor,
+                        fontSize: 10.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreChatFileHelper {
+  static String extensionFromName(String name) {
+    final String cleanName = name.split('?').first.trim();
+    final int dotIndex = cleanName.lastIndexOf('.');
+
+    if (dotIndex == -1 || dotIndex == cleanName.length - 1) {
+      return '';
+    }
+
+    return cleanName.substring(dotIndex + 1).toLowerCase();
+  }
+
+  static String displayName({
+    required String originalName,
+    required String fileUrl,
+    required String fallback,
+  }) {
+    final String cleanOriginal = originalName.trim();
+    final String originalExtension = extensionFromName(cleanOriginal);
+    final String urlExtension = extensionFromName(fileUrl);
+
+    if (cleanOriginal.isEmpty) {
+      return urlExtension.isEmpty ? fallback : '$fallback.$urlExtension';
+    }
+
+    if (urlExtension.isNotEmpty &&
+        originalExtension.isNotEmpty &&
+        originalExtension != urlExtension) {
+      final int dotIndex = cleanOriginal.lastIndexOf('.');
+      final String baseName =
+          dotIndex == -1 ? cleanOriginal : cleanOriginal.substring(0, dotIndex);
+
+      return '$baseName.$urlExtension';
+    }
+
+    return cleanOriginal;
+  }
+
+  static IconData iconForExtension(String extension) {
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+      case 'png':
+      case 'webp':
+      case 'gif':
+      case 'svg':
+        return Icons.image_outlined;
+      case 'pdf':
+        return Icons.picture_as_pdf_outlined;
+      case 'doc':
+      case 'docx':
+      case 'txt':
+        return Icons.description_outlined;
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return Icons.table_chart_outlined;
+      case 'ppt':
+      case 'pptx':
+        return Icons.slideshow_outlined;
+      case 'zip':
+      case 'rar':
+      case '7z':
+        return Icons.archive_outlined;
+      case 'psd':
+      case 'ai':
+      case 'eps':
+      case 'cdr':
+        return Icons.design_services_outlined;
+      default:
+        return Icons.insert_drive_file_outlined;
+    }
+  }
+}
+
+class StoreCustomerServiceChatMessage {
+  final String id;
+  final String senderType;
+  final String messageType;
+  final String message;
+  final String fileUrl;
+  final String fileOriginalName;
+  final String fileMimeType;
+  final int? fileSize;
+  final String createdAt;
+
+  StoreCustomerServiceChatMessage({
+    required this.id,
+    required this.senderType,
+    required this.messageType,
+    required this.message,
+    required this.fileUrl,
+    required this.fileOriginalName,
+    required this.fileMimeType,
+    required this.fileSize,
+    required this.createdAt,
+  });
+
+  bool get hasFile => fileUrl.isNotEmpty || fileOriginalName.isNotEmpty;
+
+  String get fileDisplayName {
+    return StoreChatFileHelper.displayName(
+      originalName: fileOriginalName,
+      fileUrl: fileUrl,
+      fallback: 'Arquivo anexado',
+    );
+  }
+
+  factory StoreCustomerServiceChatMessage.fromMap(Map<String, dynamic> map) {
+    return StoreCustomerServiceChatMessage(
+      id: '${map['id'] ?? ''}',
+      senderType: '${map['sender_type'] ?? ''}',
+      messageType: '${map['message_type'] ?? ''}',
+      message: '${map['message'] ?? ''}',
+      fileUrl: '${map['file_url'] ?? ''}',
+      fileOriginalName: '${map['file_original_name'] ?? ''}',
+      fileMimeType: '${map['file_mime_type'] ?? ''}',
+      fileSize: int.tryParse('${map['file_size'] ?? ''}'),
+      createdAt: '${map['created_at'] ?? ''}',
+    );
+  }
+}
+
+class StoreCustomerOrderDispute {
+  final String id;
+  final String storeOrderId;
+  final String status;
+  final String statusLabel;
+  final String openedBy;
+  final String openedAt;
+  final String deadlineAt;
+  final String resolvedAt;
+  final String resolutionTarget;
+  final String resolutionMessage;
+
+  StoreCustomerOrderDispute({
+    required this.id,
+    required this.storeOrderId,
+    required this.status,
+    required this.statusLabel,
+    required this.openedBy,
+    required this.openedAt,
+    required this.deadlineAt,
+    required this.resolvedAt,
+    required this.resolutionTarget,
+    required this.resolutionMessage,
+  });
+
+  factory StoreCustomerOrderDispute.fromMap(Map<String, dynamic> map) {
+    return StoreCustomerOrderDispute(
+      id: '${map['id'] ?? ''}',
+      storeOrderId: '${map['store_order_id'] ?? ''}',
+      status: '${map['status'] ?? ''}',
+      statusLabel: '${map['status_label'] ?? 'Disputa aberta'}',
+      openedBy: '${map['opened_by'] ?? ''}',
+      openedAt: '${map['opened_at'] ?? ''}',
+      deadlineAt: '${map['deadline_at'] ?? ''}',
+      resolvedAt: '${map['resolved_at'] ?? ''}',
+      resolutionTarget: '${map['resolution_target'] ?? ''}',
+      resolutionMessage: '${map['resolution_message'] ?? ''}',
+    );
+  }
+}
+
+class StoreCustomerOrderDisputeMessage {
+  final String id;
+  final String senderType;
+  final String channel;
+  final String messageType;
+  final String message;
+  final String fileUrl;
+  final String fileOriginalName;
+  final String fileMimeType;
+  final int? fileSize;
+  final String createdAt;
+
+  StoreCustomerOrderDisputeMessage({
+    required this.id,
+    required this.senderType,
+    required this.channel,
+    required this.messageType,
+    required this.message,
+    required this.fileUrl,
+    required this.fileOriginalName,
+    required this.fileMimeType,
+    required this.fileSize,
+    required this.createdAt,
+  });
+
+  bool get hasFile => fileUrl.isNotEmpty || fileOriginalName.isNotEmpty;
+
+  String get fileDisplayName {
+    return StoreChatFileHelper.displayName(
+      originalName: fileOriginalName,
+      fileUrl: fileUrl,
+      fallback: 'Arquivo da disputa',
+    );
+  }
+
+  factory StoreCustomerOrderDisputeMessage.fromMap(Map<String, dynamic> map) {
+    return StoreCustomerOrderDisputeMessage(
+      id: '${map['id'] ?? ''}',
+      senderType: '${map['sender_type'] ?? ''}',
+      channel: '${map['channel'] ?? ''}',
+      messageType: '${map['message_type'] ?? ''}',
+      message: '${map['message'] ?? ''}',
+      fileUrl: '${map['file_url'] ?? ''}',
+      fileOriginalName: '${map['file_original_name'] ?? ''}',
+      fileMimeType: '${map['file_mime_type'] ?? ''}',
+      fileSize: int.tryParse('${map['file_size'] ?? ''}'),
+      createdAt: '${map['created_at'] ?? ''}',
     );
   }
 }
@@ -1421,6 +4317,20 @@ class StoreCustomerOrderCurrency {
     }
 
     return double.tryParse('$value') ?? 0;
+  }
+
+  static bool parseBool(dynamic value) {
+    if (value is bool) {
+      return value;
+    }
+
+    if (value is num) {
+      return value != 0;
+    }
+
+    final String text = '$value'.toLowerCase().trim();
+
+    return text == '1' || text == 'true' || text == 'yes' || text == 'sim';
   }
 
   static String format(double value) {

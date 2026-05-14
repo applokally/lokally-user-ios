@@ -183,6 +183,40 @@ class TripDetailsTopSectionWidget extends StatelessWidget {
     );
   }
 
+  Widget _tripStatusText(BuildContext context) {
+    final String prefix = 'your_trip_has_been'.tr.trim();
+    final String status = (tripDetails?.currentStatus ?? '').tr.trim();
+
+    return Padding(
+      padding:
+          const EdgeInsets.symmetric(horizontal: Dimensions.paddingSizeSmall),
+      child: RichText(
+        textAlign: TextAlign.center,
+        text: TextSpan(
+          text: '$prefix ',
+          style: textRegular.copyWith(
+            color: Theme.of(context)
+                .textTheme
+                .bodyMedium
+                ?.color
+                ?.withValues(alpha: 0.7),
+          ),
+          children: [
+            TextSpan(
+              text: status,
+              style: textRegular.copyWith(
+                color: _choseStatusColor(
+                  tripDetails?.currentStatus,
+                  context,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final String? pickupTime = tripDetails?.type == AppConstants.parcel
@@ -269,30 +303,7 @@ class TripDetailsTopSectionWidget extends StatelessWidget {
                   textAlign: TextAlign.center,
                 )
               else
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      'your_trip_has_been'.tr,
-                      style: textRegular.copyWith(
-                        color: Theme.of(context)
-                            .textTheme
-                            .bodyMedium
-                            ?.color
-                            ?.withValues(alpha: 0.7),
-                      ),
-                    ),
-                    Text(
-                      (tripDetails?.currentStatus ?? '').tr,
-                      style: textRegular.copyWith(
-                        color: _choseStatusColor(
-                          tripDetails?.currentStatus,
-                          context,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+                _tripStatusText(context),
               if (tripDetails?.currentStatus == AppConstants.returning &&
                   tripDetails?.returnTime != null) ...[
                 ParcelReturnTimeShowWidget(tripDetails: tripDetails),

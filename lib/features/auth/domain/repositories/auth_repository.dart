@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:developer';
 
@@ -10,19 +11,29 @@ import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/features/address/domain/models/address_model.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-class AuthRepository implements AuthRepositoryInterface{
+class AuthRepository implements AuthRepositoryInterface {
   final ApiClient apiClient;
   final SharedPreferences sharedPreferences;
   AuthRepository({required this.apiClient, required this.sharedPreferences});
 
+  static StreamSubscription<String>? _tokenRefreshSubscription;
+
   @override
-  Future<Response?> login({required String phone, required String password}) async {
-    return await apiClient.postData(AppConstants.loginUri, {"phone_or_email": phone, "password": password});
+  Future<Response?> login(
+      {required String phone, required String password}) async {
+    return await apiClient.postData(
+      AppConstants.loginUri,
+      {"phone_or_email": phone, "password": password},
+    );
   }
 
   @override
-  Future<Response?> externalLogin({required String phone, required String password}) async {
-    return await apiClient.postData(AppConstants.externalLoginUri, {"phone_or_email": phone, "token": password});
+  Future<Response?> externalLogin(
+      {required String phone, required String password}) async {
+    return await apiClient.postData(
+      AppConstants.externalLoginUri,
+      {"phone_or_email": phone, "token": password},
+    );
   }
 
   @override
@@ -30,67 +41,85 @@ class AuthRepository implements AuthRepositoryInterface{
     return await apiClient.postData(AppConstants.logOutUri, {});
   }
 
-
-
   @override
   Future<Response?> registration({required SignUpBody signUpBody}) async {
-    return await apiClient.postData(AppConstants.registration, signUpBody.toJson());
+    return await apiClient.postData(
+        AppConstants.registration, signUpBody.toJson());
   }
-
-
 
   @override
   Future<Response?> sendOtp({required String phone}) async {
-    return await apiClient.postData(AppConstants.sendOTP,
-        {"phone_or_email": phone});
+    return await apiClient.postData(
+      AppConstants.sendOTP,
+      {"phone_or_email": phone},
+    );
   }
 
   @override
   Future<Response?> isUserRegistered({required String phone}) async {
-    return await apiClient.postData(AppConstants.checkRegisteredUserUri,
-        {"phone_or_email": phone});
+    return await apiClient.postData(
+      AppConstants.checkRegisteredUserUri,
+      {"phone_or_email": phone},
+    );
   }
 
   @override
-  Future<Response?> verifyOtp({required String phone, required String otp}) async {
-    return await apiClient.postData(AppConstants.otpVerification,
-        {"phone_or_email": phone,
-          "otp": otp
-        });
+  Future<Response?> verifyOtp(
+      {required String phone, required String otp}) async {
+    return await apiClient.postData(
+      AppConstants.otpVerification,
+      {
+        "phone_or_email": phone,
+        "otp": otp,
+      },
+    );
   }
-
 
   @override
-  Future<Response?> verifyFirebaseOtp({required String phone, required String otp, required String session}) async {
-    return await apiClient.postData(AppConstants.otpFirebaseVerification,
-        {"phone_or_email": phone,
-          "code": otp,
-          "session_info": session
-        });
+  Future<Response?> verifyFirebaseOtp({
+    required String phone,
+    required String otp,
+    required String session,
+  }) async {
+    return await apiClient.postData(
+      AppConstants.otpFirebaseVerification,
+      {
+        "phone_or_email": phone,
+        "code": otp,
+        "session_info": session,
+      },
+    );
   }
-
 
   @override
-  Future<Response?> otpLogin({required String phone, required String otp}) async {
-    return await apiClient.postData(AppConstants.otpLogin,
-        {"phone_or_email": phone,
-          "otp": otp
-        });
+  Future<Response?> otpLogin(
+      {required String phone, required String otp}) async {
+    return await apiClient.postData(
+      AppConstants.otpLogin,
+      {
+        "phone_or_email": phone,
+        "otp": otp,
+      },
+    );
   }
-
 
   @override
   Future<Response?> resetPassword(String phoneOrEmail, String password) async {
-    return await apiClient.postData(AppConstants.resetPassword,
-      { "phone_or_email": phoneOrEmail,
-        "password": password,},
+    return await apiClient.postData(
+      AppConstants.resetPassword,
+      {
+        "phone_or_email": phoneOrEmail,
+        "password": password,
+      },
     );
   }
 
   @override
   Future<Response?> changePassword(String oldPassword, String password) async {
-    return await apiClient.postData(AppConstants.changePassword,
-      { "password": oldPassword,
+    return await apiClient.postData(
+      AppConstants.changePassword,
+      {
+        "password": oldPassword,
         "new_password": password,
       },
     );
@@ -98,53 +127,131 @@ class AuthRepository implements AuthRepositoryInterface{
 
   @override
   Future<Response?> updateToken() async {
-    String? deviceToken;
-    if (GetPlatform.isIOS && !GetPlatform.isWeb) {
-      FirebaseMessaging.instance.setForegroundNotificationPresentationOptions(alert: true, badge: true, sound: true);
-      NotificationSettings settings = await FirebaseMessaging.instance.requestPermission(
-        alert: true, announcement: false, badge: true, carPlay: false,
-        criticalAlert: false, provisional: false, sound: true,
+    if (GetPlatform.isWeb) {
+      return null;
+    }
+
+    await _prepareFirebaseMessaging();
+    _listenTokenRefresh();
+
+    final String? deviceToken = await _saveDeviceToken();
+
+    if (deviceToken == null || deviceToken.isEmpty || deviceToken == '@') {
+      log('--------Device Token not available. FCM token was not sent to API.--------');
+      return null;
+    }
+
+    await _subscribeDefaultTopic();
+
+    return await _sendFcmTokenToApi(deviceToken);
+  }
+
+  Future<void> _prepareFirebaseMessaging() async {
+    if (GetPlatform.isIOS) {
+      await FirebaseMessaging.instance
+          .setForegroundNotificationPresentationOptions(
+        alert: true,
+        badge: true,
+        sound: true,
       );
-      if(settings.authorizationStatus == AuthorizationStatus.authorized) {
-        deviceToken = await _saveDeviceToken();
+
+      final NotificationSettings settings =
+          await FirebaseMessaging.instance.requestPermission(
+        alert: true,
+        announcement: false,
+        badge: true,
+        carPlay: false,
+        criticalAlert: false,
+        provisional: false,
+        sound: true,
+      );
+
+      final bool isAllowed =
+          settings.authorizationStatus == AuthorizationStatus.authorized ||
+              settings.authorizationStatus == AuthorizationStatus.provisional;
+
+      if (!isAllowed) {
+        log('--------Notification permission denied on iOS--------');
+        return;
       }
-    }else {
-      deviceToken = await _saveDeviceToken();
+
+      await _waitForApnsToken();
+    }
+  }
+
+  Future<void> _waitForApnsToken() async {
+    for (int attempt = 0; attempt < 10; attempt++) {
+      final String? apnsToken = await FirebaseMessaging.instance.getAPNSToken();
+
+      if (apnsToken != null && apnsToken.isNotEmpty) {
+        log('--------APNS Token available--------');
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 600));
     }
 
-    if(!GetPlatform.isWeb){
-
-        FirebaseMessaging.instance.subscribeToTopic(AppConstants.topic);
-
-    }
-    return await apiClient.postData(AppConstants.fcmTokenUpdate, {"_method": "put", "fcm_token": deviceToken});
+    log('--------APNS Token unavailable after waiting--------');
   }
 
   Future<String?> _saveDeviceToken() async {
-    String? deviceToken = '@';
     try {
-      deviceToken = await FirebaseMessaging.instance.getToken();
-    }catch(e) {
-      log('--------Device Token---------- $deviceToken');
+      final String? deviceToken = await FirebaseMessaging.instance.getToken();
+
+      if (deviceToken != null && deviceToken.isNotEmpty) {
+        log('--------Device Token---------- $deviceToken');
+        return deviceToken;
+      }
+    } catch (e) {
+      log('--------Device Token Error---------- $e');
     }
-    if (deviceToken != null) {
-      log('--------Device Token---------- $deviceToken');
-    }
-    return deviceToken;
+
+    return null;
   }
 
+  void _listenTokenRefresh() {
+    _tokenRefreshSubscription ??= FirebaseMessaging.instance.onTokenRefresh
+        .listen((String refreshedToken) async {
+      if (refreshedToken.isEmpty) {
+        return;
+      }
 
+      log('--------Device Token Refreshed---------- $refreshedToken');
+      await _sendFcmTokenToApi(refreshedToken);
+    });
+  }
+
+  Future<void> _subscribeDefaultTopic() async {
+    try {
+      await FirebaseMessaging.instance.subscribeToTopic(AppConstants.topic);
+    } catch (e) {
+      log('--------FCM Topic Subscribe Error---------- $e');
+    }
+  }
+
+  Future<Response?> _sendFcmTokenToApi(String token) async {
+    return await apiClient.postData(
+      AppConstants.fcmTokenUpdate,
+      {
+        "_method": "put",
+        "fcm_token": token,
+      },
+    );
+  }
 
   @override
   Future<Response?> forgetPassword(String? phone) async {
-    return await apiClient.postData(AppConstants.configUri, {"phone_or_email": phone});
+    return await apiClient
+        .postData(AppConstants.configUri, {"phone_or_email": phone});
   }
 
   @override
   Future<Response?> verifyToken(String phone, String otp) async {
-    return await apiClient.postData(AppConstants.configUri, {"phone_or_email": phone.substring(1,phone.length-1), "otp": otp});
+    return await apiClient.postData(
+      AppConstants.configUri,
+      {"phone_or_email": phone.substring(1, phone.length - 1), "otp": otp},
+    );
   }
-
 
   @override
   Future<Response?> checkEmail(String email) async {
@@ -153,29 +260,33 @@ class AuthRepository implements AuthRepositoryInterface{
 
   @override
   Future<Response?> verifyEmail(String email, String token) async {
-    return await apiClient.postData(AppConstants.configUri, {"email": email, "token": token});
+    return await apiClient.postData(
+      AppConstants.configUri,
+      {"email": email, "token": token},
+    );
   }
-
-
 
   @override
   Future<Response?> verifyPhone(String phone, String otp) async {
-    return await apiClient.postData(AppConstants.configUri, {"phone": phone, "otp": otp});
+    return await apiClient.postData(
+      AppConstants.configUri,
+      {"phone": phone, "otp": otp},
+    );
   }
 
   @override
   Future<bool?> saveUserToken(String token) async {
     Address? address;
     try {
-      address = Address.fromJson(jsonDecode(sharedPreferences.getString(AppConstants.userAddress)!));
-      // ignore: empty_catches
-    }catch(e) {
+      address = Address.fromJson(
+        jsonDecode(sharedPreferences.getString(AppConstants.userAddress)!),
+      );
+    } catch (e) {
+      // ignore
     }
     apiClient.updateHeader(token, address);
     return await sharedPreferences.setString(AppConstants.token, token);
-
   }
-
 
   @override
   String getUserToken() {
@@ -195,21 +306,28 @@ class AuthRepository implements AuthRepositoryInterface{
   }
 
   @override
-  Future<void> saveUserNumberAndPassword(String code, String number, String password, bool externalUser) async {
-    if(externalUser){
+  Future<void> saveUserNumberAndPassword(
+    String code,
+    String number,
+    String password,
+    bool externalUser,
+  ) async {
+    if (externalUser) {
       try {
-        await sharedPreferences.setString(AppConstants.externalUserPassword, password);
-        await sharedPreferences.setString(AppConstants.externalUserPhone, number);
-        await sharedPreferences.setString(AppConstants.externalUserCountryCode, code);
+        await sharedPreferences.setString(
+            AppConstants.externalUserPassword, password);
+        await sharedPreferences.setString(
+            AppConstants.externalUserPhone, number);
+        await sharedPreferences.setString(
+            AppConstants.externalUserCountryCode, code);
       } catch (e) {
         rethrow;
       }
-    }else{
+    } else {
       try {
         await sharedPreferences.setString(AppConstants.userPassword, password);
         await sharedPreferences.setString(AppConstants.userNumber, number);
         await sharedPreferences.setString(AppConstants.loginCountryCode, code);
-
       } catch (e) {
         rethrow;
       }
@@ -218,34 +336,33 @@ class AuthRepository implements AuthRepositoryInterface{
 
   @override
   String getUserNumber(bool externalUser) {
-    if(externalUser){
+    if (externalUser) {
       return sharedPreferences.getString(AppConstants.externalUserPhone) ?? "";
-    }else{
+    } else {
       return sharedPreferences.getString(AppConstants.userNumber) ?? "";
     }
   }
 
   @override
   String getLoginCountryCode(bool externalUser) {
-    if(externalUser){
-      return sharedPreferences.getString(AppConstants.externalUserCountryCode) ?? "";
-    }else{
+    if (externalUser) {
+      return sharedPreferences
+              .getString(AppConstants.externalUserCountryCode) ??
+          "";
+    } else {
       return sharedPreferences.getString(AppConstants.loginCountryCode) ?? "";
     }
   }
 
-
-
   @override
   String getUserPassword(bool externalUser) {
-    if(externalUser){
-      return sharedPreferences.getString(AppConstants.externalUserPassword) ?? "";
-    }else{
+    if (externalUser) {
+      return sharedPreferences.getString(AppConstants.externalUserPassword) ??
+          "";
+    } else {
       return sharedPreferences.getString(AppConstants.userPassword) ?? "";
     }
   }
-
-
 
   @override
   Future<bool> clearUserNumberAndPassword() async {
@@ -254,7 +371,7 @@ class AuthRepository implements AuthRepositoryInterface{
   }
 
   @override
-  bool clearSharedAddress(){
+  bool clearSharedAddress() {
     sharedPreferences.remove(AppConstants.userAddress);
     return true;
   }
@@ -290,7 +407,7 @@ class AuthRepository implements AuthRepositoryInterface{
   }
 
   @override
-  Future permanentlyDelete() async{
+  Future permanentlyDelete() async {
     return await apiClient.postData(AppConstants.deleteAccount, {});
   }
 
@@ -300,17 +417,20 @@ class AuthRepository implements AuthRepositoryInterface{
   }
 
   @override
-  Future<String> remainingTime() async{
+  Future<String> remainingTime() async {
     return sharedPreferences.getString('DateTime') ?? '';
   }
 
   @override
-  Future<dynamic> registrationFromOtp(SignUpBody signUpBody, {required bool updateFromRegistration}) async{
-   return await apiClient.postData(
-     updateFromRegistration ?
-     AppConstants.otpLoginAfterUpdateData :
-     AppConstants.registrationFromOtp,
-     signUpBody.toJson(),
-   );
+  Future<dynamic> registrationFromOtp(
+    SignUpBody signUpBody, {
+    required bool updateFromRegistration,
+  }) async {
+    return await apiClient.postData(
+      updateFromRegistration
+          ? AppConstants.otpLoginAfterUpdateData
+          : AppConstants.registrationFromOtp,
+      signUpBody.toJson(),
+    );
   }
 }

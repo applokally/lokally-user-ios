@@ -7,14 +7,15 @@ class ReferralDetailsModel {
   Data? data;
   List<String>? errors;
 
-  ReferralDetailsModel(
-      {this.responseCode,
-        this.message,
-        this.totalSize,
-        this.limit,
-        this.offset,
-        this.data,
-        this.errors});
+  ReferralDetailsModel({
+    this.responseCode,
+    this.message,
+    this.totalSize,
+    this.limit,
+    this.offset,
+    this.data,
+    this.errors,
+  });
 
   ReferralDetailsModel.fromJson(Map<String, dynamic> json) {
     responseCode = json['response_code'];
@@ -22,22 +23,26 @@ class ReferralDetailsModel {
     totalSize = json['total_size'];
     limit = json['limit'];
     offset = json['offset'];
-    data = json['data'] != null ?  Data.fromJson(json['data']) : null;
-    errors = json['errors'].cast<String>();
+    data = json['data'] != null ? Data.fromJson(json['data']) : null;
+    errors = json['errors'] != null
+        ? List<String>.from(json['errors'].map((error) => error.toString()))
+        : null;
   }
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
-    data['response_code'] = responseCode;
-    data['message'] = message;
-    data['total_size'] = totalSize;
-    data['limit'] = limit;
-    data['offset'] = offset;
-    if (this.data != null) {
-      data['data'] = this.data!.toJson();
+    final Map<String, dynamic> result = <String, dynamic>{};
+    result['response_code'] = responseCode;
+    result['message'] = message;
+    result['total_size'] = totalSize;
+    result['limit'] = limit;
+    result['offset'] = offset;
+
+    if (data != null) {
+      result['data'] = data!.toJson();
     }
-    data['errors'] = errors;
-    return data;
+
+    result['errors'] = errors;
+    return result;
   }
 }
 
@@ -50,34 +55,38 @@ class Data {
   int? discountValidity;
   String? discountValidityType;
 
-  Data(
-      {this.referralCode,
-        this.shareCodeEarning,
-        this.firstRideDiscountStatus,
-        this.discountAmount,
-        this.discountAmountType,
-        this.discountValidity,
-        this.discountValidityType});
+  Data({
+    this.referralCode,
+    this.shareCodeEarning,
+    this.firstRideDiscountStatus,
+    this.discountAmount,
+    this.discountAmountType,
+    this.discountValidity,
+    this.discountValidityType,
+  });
 
   Data.fromJson(Map<String, dynamic> json) {
     referralCode = json['referral_code'];
-    shareCodeEarning = double.parse(json['share_code_earning'].toString());
+    shareCodeEarning =
+        double.tryParse((json['share_code_earning'] ?? 0).toString()) ?? 0;
     firstRideDiscountStatus = json['first_ride_discount_status'];
-    discountAmount = double.parse(json['discount_amount'].toString());
+    discountAmount =
+        double.tryParse((json['discount_amount'] ?? 0).toString()) ?? 0;
     discountAmountType = json['discount_amount_type'];
-    discountValidity = json['discount_validity'];
+    discountValidity =
+        int.tryParse((json['discount_validity'] ?? 0).toString()) ?? 0;
     discountValidityType = json['discount_validity_type'];
   }
 
   Map<String, dynamic> toJson() {
-    final Map<String, dynamic> data = <String, dynamic>{};
-    data['referral_code'] = referralCode;
-    data['share_code_earning'] = shareCodeEarning;
-    data['first_ride_discount_status'] = firstRideDiscountStatus;
-    data['discount_amount'] = discountAmount;
-    data['discount_amount_type'] = discountAmountType;
-    data['discount_validity'] = discountValidity;
-    data['discount_validity_type'] = discountValidityType;
-    return data;
+    final Map<String, dynamic> result = <String, dynamic>{};
+    result['referral_code'] = referralCode;
+    result['share_code_earning'] = shareCodeEarning;
+    result['first_ride_discount_status'] = firstRideDiscountStatus;
+    result['discount_amount'] = discountAmount;
+    result['discount_amount_type'] = discountAmountType;
+    result['discount_validity'] = discountValidity;
+    result['discount_validity_type'] = discountValidityType;
+    return result;
   }
 }

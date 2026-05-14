@@ -22,6 +22,7 @@ class WalletScreen extends StatefulWidget {
   @override
   State<WalletScreen> createState() => _WalletScreenState();
 }
+
 class _WalletScreenState extends State<WalletScreen> {
   bool _isExpandBafButton = true;
 
@@ -31,17 +32,29 @@ class _WalletScreenState extends State<WalletScreen> {
     Get.find<WalletController>().updateCurrentTabIndex(0);
     Get.find<ProfileController>().getProfileInfo();
     Get.find<WalletController>().getAddFundPromotionalList();
-    Get.find<WalletController>().scrollController.addListener((){
-      if(Get.find<WalletController>().scrollController.offset > 20){
+    Get.find<WalletController>().scrollController.addListener(() {
+      if (Get.find<WalletController>().scrollController.offset > 20) {
         setState(() {
           _isExpandBafButton = false;
         });
-      }else{
+      } else {
         setState(() {
           _isExpandBafButton = true;
         });
       }
     });
+  }
+
+  String _tabLabel(List<String> labels, int index) {
+    if (index == 1) {
+      return 'Pontos';
+    }
+
+    if (index < labels.length) {
+      return labels[index];
+    }
+
+    return '';
   }
 
   @override
@@ -52,15 +65,18 @@ class _WalletScreenState extends State<WalletScreen> {
       },
       child: PopScope(
         canPop: false,
-        onPopInvokedWithResult: (res,val){
-          if(Get.find<WalletController>().currentTabIndex == 1){
-            Get.find<WalletController>().updateCurrentTabIndex(0,isUpdate: true);
-          }else{
-            if(!res){
-              if(Navigator.canPop(context)){
+        onPopInvokedWithResult: (res, val) {
+          if (Get.find<WalletController>().currentTabIndex == 1) {
+            Get.find<WalletController>().updateCurrentTabIndex(
+              0,
+              isUpdate: true,
+            );
+          } else {
+            if (!res) {
+              if (Navigator.canPop(context)) {
                 Get.back();
-              }else{
-                Get.offAll(()=> const DashboardScreen());
+              } else {
+                Get.offAll(() => const DashboardScreen());
               }
             }
           }
@@ -69,54 +85,86 @@ class _WalletScreenState extends State<WalletScreen> {
           top: false,
           child: Scaffold(
             resizeToAvoidBottomInset: false,
-            body: GetBuilder<WalletController>(builder: (walletController) {
-              return Stack(children: [
-                BodyWidget(
-                    appBar: AppBarWidget(
-                        title: 'wallet'.tr, centerTitle: true, showBonusHint: true,
-                      onBackPressed: (){
-                        if(Get.find<WalletController>().currentTabIndex == 1){
-                          Get.find<WalletController>().updateCurrentTabIndex(0,isUpdate: true);
-                        }else {
-                          Get.back();
-                        }
-                      },
-                    ),
-                    body:Column(children: [
-                      const SizedBox(height: Dimensions.paddingSizeSignUp),
-
-                      Expanded(
-                          child: walletController.currentTabIndex == 0 ?
-                          const WalletMoneyScreen() :
-                          const LoyaltyPointScreen()
+            body: GetBuilder<WalletController>(
+              builder: (walletController) {
+                return Stack(
+                  children: [
+                    BodyWidget(
+                      appBar: AppBarWidget(
+                        title: 'wallet'.tr,
+                        centerTitle: true,
+                        showBonusHint: true,
+                        onBackPressed: () {
+                          if (Get.find<WalletController>().currentTabIndex ==
+                              1) {
+                            Get.find<WalletController>().updateCurrentTabIndex(
+                              0,
+                              isUpdate: true,
+                            );
+                          } else {
+                            Get.back();
+                          }
+                        },
                       ),
-                    ])
-                ),
-
-                Positioned(top: Get.height * (GetPlatform.isIOS ? ResponsiveHelper.isTab ? 0.08 : 0.15 :  0.11), left: Dimensions.paddingSizeSmall,
-                  child: SizedBox(height: Get.find<LocalizationController>().isLtr? 45 : 50,
-                    width: Get.width-Dimensions.paddingSizeDefault,
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      padding: EdgeInsets.zero,
-                      scrollDirection: Axis.horizontal,
-                      itemCount: walletController.walletType.length,
-                      itemBuilder: (context, index){
-                        return SizedBox(width: Get.width/2.2, child: ProfileTypeButtonWidget(
-                          profileTypeName : walletController.walletType[index], index: index,
-                        ));
-
-                      },
+                      body: Column(
+                        children: [
+                          const SizedBox(height: Dimensions.paddingSizeSignUp),
+                          Expanded(
+                            child: walletController.currentTabIndex == 0
+                                ? const WalletMoneyScreen()
+                                : const LoyaltyPointScreen(),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ),
-              ]);
-            }),
-            floatingActionButton: GetBuilder<WalletController>(builder: (walletController){
-              return (((Get.find<ConfigController>().config?.externalSystem ?? false) && Get.find<AuthController>().isLoggedIn()) && walletController.currentTabIndex == 0)?
-              _isExpandBafButton ? animatedExpandedFabButton() : animatedFabButton() :
-              const SizedBox();
-            }),
+                    Positioned(
+                      top: Get.height *
+                          (GetPlatform.isIOS
+                              ? ResponsiveHelper.isTab
+                                  ? 0.08
+                                  : 0.15
+                              : 0.11),
+                      left: Dimensions.paddingSizeSmall,
+                      child: SizedBox(
+                        height:
+                            Get.find<LocalizationController>().isLtr ? 45 : 50,
+                        width: Get.width - Dimensions.paddingSizeDefault,
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          scrollDirection: Axis.horizontal,
+                          itemCount: walletController.walletType.length,
+                          itemBuilder: (context, index) {
+                            return SizedBox(
+                              width: Get.width / 2.2,
+                              child: ProfileTypeButtonWidget(
+                                profileTypeName: _tabLabel(
+                                  walletController.walletType,
+                                  index,
+                                ),
+                                index: index,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+            floatingActionButton: GetBuilder<WalletController>(
+              builder: (walletController) {
+                return (((Get.find<ConfigController>().config?.externalSystem ??
+                                false) &&
+                            Get.find<AuthController>().isLoggedIn()) &&
+                        walletController.currentTabIndex == 0)
+                    ? _isExpandBafButton
+                        ? animatedExpandedFabButton()
+                        : animatedFabButton()
+                    : const SizedBox();
+              },
+            ),
           ),
         ),
       ),

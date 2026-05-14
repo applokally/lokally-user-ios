@@ -136,23 +136,40 @@ class RideController extends GetxController implements GetxService {
   FareModel? selectedType;
 
   void setRideCategoryIndex(int newIndex) {
-    rideCategoryIndex = newIndex;
-    categoryName =
-        Get.find<CategoryController>().categoryList![rideCategoryIndex].id!;
+    final CategoryController categoryController =
+        Get.find<CategoryController>();
+    final categories = categoryController.categoryList ?? [];
 
-    Get.find<CategoryController>().setCouponFilterIndex(newIndex + 2);
+    if (categories.isEmpty) {
+      rideCategoryIndex = newIndex < 0 ? 0 : newIndex;
+      update();
+      return;
+    }
+
+    final int safeIndex = newIndex.clamp(0, categories.length - 1).toInt();
+    rideCategoryIndex = safeIndex;
+    categoryName = categories[safeIndex].id ?? '';
+    selectedCategoryId = categoryName;
+
+    categoryController.setCouponFilterIndex(safeIndex + 2);
 
     if (fareList.isNotEmpty) {
+      FareModel? matchedType;
+
       for (int i = 0; i < fareList.length; i++) {
         if (fareList[i].vehicleCategoryId == categoryName) {
-          selectedType = fareList[i];
+          matchedType = fareList[i];
           break;
         }
       }
 
-      estimatedDistance = selectedType!.estimatedDistance!;
-      estimatedDuration = selectedType!.estimatedDuration!;
-      selectedCategoryId = selectedType!.vehicleCategoryId!;
+      matchedType ??=
+          safeIndex < fareList.length ? fareList[safeIndex] : fareList.first;
+      selectedType = matchedType;
+
+      estimatedDistance = selectedType?.estimatedDistance ?? '0';
+      estimatedDuration = selectedType?.estimatedDuration ?? '0';
+      selectedCategoryId = selectedType?.vehicleCategoryId ?? categoryName;
 
       estimatedFare = (((selectedType?.extraFareFee ?? 0) > 0) ||
               ((selectedType?.surgeMultiplier ?? 0) > 0))
@@ -160,7 +177,7 @@ class RideController extends GetxController implements GetxService {
           : selectedType?.estimatedFare ?? 0;
       currentFarePrice = estimatedFare;
       actualFare = estimatedFare;
-      isCouponApplicable = selectedType!.couponApplicable!;
+      isCouponApplicable = selectedType?.couponApplicable ?? false;
       discountFare = (((selectedType?.extraFareFee ?? 0) > 0) ||
               ((selectedType?.surgeMultiplier ?? 0) > 0))
           ? selectedType?.extraDiscountFare ?? 0
@@ -292,13 +309,13 @@ class RideController extends GetxController implements GetxService {
       } else {
         fareList = [];
         fareList.addAll(EstimatedFareModel.fromJson(response.body).data!);
-        setRideCategoryIndex(rideCategoryIndex != 0 ? rideCategoryIndex : 0);
+        setRideCategoryIndex(rideCategoryIndex);
 
-        if (fareList[rideCategoryIndex].polyline == null) {
+        if (selectedType?.polyline == null || selectedType!.polyline!.isEmpty) {
           showCustomSnackBar('road_not_found'.tr, isError: true);
         }
 
-        encodedPolyLine = fareList[rideCategoryIndex].polyline!;
+        encodedPolyLine = selectedType?.polyline ?? '';
       }
     } else {
       loading = false;
@@ -392,9 +409,8 @@ class RideController extends GetxController implements GetxService {
           .paymentTypeList[Get.find<PaymentController>().paymentTypeIndex],
       encodedPolyline: parcel
           ? encodedPolyLine
-          : fareList.isNotEmpty
-              ? fareList[rideCategoryIndex].polyline!
-              : '',
+          : selectedType?.polyline ??
+              (fareList.isNotEmpty ? fareList.first.polyline ?? '' : ''),
       middleAddress: [
         locController.extraRouteAddress?.address ?? '',
         locController.extraRouteTwoAddress?.address ?? '',
@@ -416,9 +432,8 @@ class RideController extends GetxController implements GetxService {
           : '',
       areaId: parcel
           ? ''
-          : fareList.isNotEmpty
-              ? fareList[rideCategoryIndex].areaId ?? ''
-              : '',
+          : selectedType?.areaId ??
+              (fareList.isNotEmpty ? fareList.first.areaId ?? '' : ''),
       senderName: Get.find<ParcelController>().senderNameController.text,
       senderPhone: Get.find<ParcelController>().getSenderContactNumber,
       senderAddress: Get.find<ParcelController>().senderAddressController.text,

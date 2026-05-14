@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/features/store/screens/seller/store_seller_dashboard_screen.dart';
@@ -23,6 +25,17 @@ class StoreHomeScreen extends StatefulWidget {
 class _StoreHomeScreenState extends State<StoreHomeScreen> {
   static const String sellerLastStatusSignatureKey =
       'lokally_store_seller_last_status_signature';
+  static const String marketplaceZoneCacheIdKey =
+      'lokally_store_marketplace_zone_id';
+  static const String marketplaceZoneCacheLatKey =
+      'lokally_store_marketplace_zone_latitude';
+  static const String marketplaceZoneCacheLngKey =
+      'lokally_store_marketplace_zone_longitude';
+  static const String marketplaceZoneCacheCheckedAtKey =
+      'lokally_store_marketplace_zone_checked_at';
+
+  static const double marketplaceZoneCacheDistanceMeters = 1000;
+  static const Duration marketplaceZoneCacheDuration = Duration(minutes: 15);
 
   static const String publicCategoriesUri = '/api/store/public-categories';
   static const String publicProductsUri = '/api/store/products';
@@ -50,6 +63,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   bool hasLoadedBoostedProducts = false;
   bool isLoadingBoostedCategories = false;
   bool hasLoadedBoostedCategories = false;
+  String? currentMarketplaceZoneId;
 
   StoreMarketplaceSettings marketplaceSettings =
       StoreMarketplaceSettings.defaults();
@@ -95,6 +109,248 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     marketplaceBannerPageController.dispose();
     boostedProductsPageController.dispose();
     super.dispose();
+  }
+
+  String? normalizeMarketplaceZoneId(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is List) {
+      for (final dynamic item in value) {
+        final String? itemZoneId = normalizeMarketplaceZoneId(item);
+
+        if (itemZoneId != null && itemZoneId.isNotEmpty) {
+          return itemZoneId;
+        }
+      }
+
+      return null;
+    }
+
+    if (value is Map) {
+      for (final String key in <String>[
+        'zone_id',
+        'zoneId',
+        'zone',
+        'id',
+      ]) {
+        if (value.containsKey(key)) {
+          final String? itemZoneId = normalizeMarketplaceZoneId(value[key]);
+
+          if (itemZoneId != null && itemZoneId.isNotEmpty) {
+            return itemZoneId;
+          }
+        }
+      }
+
+      return null;
+    }
+
+    final String rawValue = value.toString().trim();
+
+    if (rawValue.isEmpty ||
+        rawValue == 'null' ||
+        rawValue == '[]' ||
+        rawValue == '{}') {
+      return null;
+    }
+
+    if (rawValue.startsWith('[') || rawValue.startsWith('{')) {
+      try {
+        return normalizeMarketplaceZoneId(jsonDecode(rawValue));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    return rawValue;
+  }
+
+  double? parseMarketplaceDouble(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+
+    return double.tryParse(value.trim().replaceAll(',', '.'));
+  }
+
+  String? resolveSavedMarketplaceZoneId() {
+    try {
+      final ApiClient apiClient = Get.find<ApiClient>();
+
+      final String? savedZoneId =
+          apiClient.sharedPreferences.getString(AppConstants.zoneId);
+
+      final String? normalizedSavedZoneId =
+          normalizeMarketplaceZoneId(savedZoneId);
+
+      if (normalizedSavedZoneId != null && normalizedSavedZoneId.isNotEmpty) {
+        return normalizedSavedZoneId;
+      }
+
+      final String? savedAddress =
+          apiClient.sharedPreferences.getString(AppConstants.userAddress);
+
+      final String? normalizedAddressZoneId =
+          normalizeMarketplaceZoneId(savedAddress);
+
+      if (normalizedAddressZoneId != null &&
+          normalizedAddressZoneId.isNotEmpty) {
+        return normalizedAddressZoneId;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
+  Future<String?> resolveMarketplaceZoneId() async {
+    final ApiClient apiClient = Get.find<ApiClient>();
+    final String? savedZoneId = resolveSavedMarketplaceZoneId();
+
+    try {
+      final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        return savedZoneId;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return savedZoneId;
+      }
+
+      final Position position = await Geolocator.getCurrentPosition(
+        locationSettings: LocationSettings(
+          accuracy: LocationAccuracy.low,
+          timeLimit: const Duration(seconds: 6),
+        ),
+      );
+
+      final double currentLat = position.latitude;
+      final double currentLng = position.longitude;
+
+      final String? cachedZoneId =
+          apiClient.sharedPreferences.getString(marketplaceZoneCacheIdKey);
+      final double? cachedLat = parseMarketplaceDouble(
+        apiClient.sharedPreferences.getString(marketplaceZoneCacheLatKey),
+      );
+      final double? cachedLng = parseMarketplaceDouble(
+        apiClient.sharedPreferences.getString(marketplaceZoneCacheLngKey),
+      );
+      final int? cachedCheckedAt = int.tryParse(
+        apiClient.sharedPreferences
+                .getString(marketplaceZoneCacheCheckedAtKey) ??
+            '',
+      );
+
+      if (cachedZoneId != null &&
+          cachedZoneId.isNotEmpty &&
+          cachedLat != null &&
+          cachedLng != null &&
+          cachedCheckedAt != null) {
+        final Duration cacheAge = DateTime.now().difference(
+          DateTime.fromMillisecondsSinceEpoch(cachedCheckedAt),
+        );
+        final double movedDistance = Geolocator.distanceBetween(
+          cachedLat,
+          cachedLng,
+          currentLat,
+          currentLng,
+        );
+
+        if (cacheAge <= marketplaceZoneCacheDuration &&
+            movedDistance <= marketplaceZoneCacheDistanceMeters) {
+          return cachedZoneId;
+        }
+      }
+
+      final Response response = await apiClient.getData(
+        '${AppConstants.getZone}?lat=$currentLat&lng=$currentLng',
+      );
+
+      final dynamic responseBody = response.body;
+      String? resolvedZoneId;
+
+      if (response.statusCode == 200 && responseBody is Map) {
+        final dynamic dataValue = responseBody['data'];
+
+        if (dataValue is Map) {
+          resolvedZoneId = normalizeMarketplaceZoneId(dataValue['id']);
+        }
+      }
+
+      await apiClient.sharedPreferences.setString(
+        marketplaceZoneCacheLatKey,
+        currentLat.toString(),
+      );
+      await apiClient.sharedPreferences.setString(
+        marketplaceZoneCacheLngKey,
+        currentLng.toString(),
+      );
+      await apiClient.sharedPreferences.setString(
+        marketplaceZoneCacheCheckedAtKey,
+        DateTime.now().millisecondsSinceEpoch.toString(),
+      );
+
+      if (resolvedZoneId != null && resolvedZoneId.isNotEmpty) {
+        await apiClient.sharedPreferences.setString(
+          marketplaceZoneCacheIdKey,
+          resolvedZoneId,
+        );
+
+        return resolvedZoneId;
+      }
+
+      await apiClient.sharedPreferences.remove(marketplaceZoneCacheIdKey);
+      return null;
+    } catch (_) {
+      return savedZoneId;
+    }
+  }
+
+  String uriWithMarketplaceZone(String uri) {
+    final String? zoneId = currentMarketplaceZoneId;
+
+    if (zoneId == null || zoneId.isEmpty) {
+      return uri;
+    }
+
+    final String separator = uri.contains('?') ? '&' : '?';
+
+    return '$uri${separator}zone_id=${Uri.encodeComponent(zoneId)}';
+  }
+
+  void clearPublicStoreForUnavailableZone() {
+    stopMarketplaceBannerCarousel();
+    stopBoostedProductsCarousel();
+
+    setState(() {
+      products = <StoreProductData>[];
+      boostedProducts = <StoreProductData>[];
+      boostedCategories = <StoreBoostedCategoryData>[];
+      marketplaceBanners = <StoreMarketplaceBannerData>[];
+      selectedMarketplaceBannerIndex = 0;
+      selectedBoostedProductIndex = 0;
+      mainCategories = <StoreCategoryData>[StoreCategoryData.all()];
+      selectedMainCategoryIndex = 0;
+      selectedSubcategoryId = '';
+      searchQuery = '';
+      isLoadingPublicStore = false;
+      hasLoadedPublicStore = true;
+      isLoadingMarketplaceBanners = false;
+      hasLoadedMarketplaceBanners = true;
+      isLoadingBoostedProducts = false;
+      hasLoadedBoostedProducts = true;
+      isLoadingBoostedCategories = false;
+      hasLoadedBoostedCategories = true;
+    });
   }
 
   void startWelcomeCarousel() {
@@ -189,6 +445,14 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   Future<void> loadPublicStore() async {
     final StoreMarketplaceSettings settings = await loadMarketplaceSettings();
 
+    final String? resolvedZoneId = await resolveMarketplaceZoneId();
+
+    if (mounted) {
+      setState(() {
+        currentMarketplaceZoneId = resolvedZoneId;
+      });
+    }
+
     if (!settings.marketplaceEnabled) {
       if (!mounted) {
         return;
@@ -220,6 +484,15 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       return;
     }
 
+    if (resolvedZoneId == null || resolvedZoneId.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      clearPublicStoreForUnavailableZone();
+      return;
+    }
+
     await loadPublicCategories();
     await loadPublicProducts();
     await loadMarketplaceBanners();
@@ -232,10 +505,12 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final StoreCategoryData selected = selectedMainCategory;
 
     if (selected.isAll) {
-      return '$marketplaceBannersUri?placement=home';
+      return uriWithMarketplaceZone('$marketplaceBannersUri?placement=home');
     }
 
-    return '$marketplaceBannersUri?placement=category&category_id=${Uri.encodeComponent(selected.id)}';
+    return uriWithMarketplaceZone(
+      '$marketplaceBannersUri?placement=category&category_id=${Uri.encodeComponent(selected.id)}',
+    );
   }
 
   Future<void> loadMarketplaceBanners() async {
@@ -377,8 +652,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   Future<void> loadPublicCategories() async {
     try {
-      final Response response =
-          await Get.find<ApiClient>().getData(publicCategoriesUri);
+      final Response response = await Get.find<ApiClient>().getData(
+        uriWithMarketplaceZone(publicCategoriesUri),
+      );
 
       if (!mounted) {
         return;
@@ -436,7 +712,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
     try {
       final Response response = await Get.find<ApiClient>().getData(
-        publicProductsUri,
+        uriWithMarketplaceZone(publicProductsUri),
       );
 
       if (!mounted) {
@@ -500,7 +776,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
     try {
       final Response response = await Get.find<ApiClient>().getData(
-        '$boostedProductsUri?boost_type=product_home',
+        uriWithMarketplaceZone('$boostedProductsUri?boost_type=product_home'),
       );
 
       if (!mounted) {
@@ -583,7 +859,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
     try {
       final Response response = await Get.find<ApiClient>().getData(
-        boostedCategoriesUri,
+        uriWithMarketplaceZone(boostedCategoriesUri),
       );
 
       if (!mounted) {
@@ -1565,10 +1841,10 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                             ),
                             const SizedBox(height: 20),
                           ],
-                          if (isLoadingPublicStore &&
+                          if (isLoadingPublicStore ||
                               !hasLoadedPublicStore) ...[
                             StorePublicLoadingBlock(primaryColor: primaryColor),
-                          ] else if (productsForView.isEmpty) ...[
+                          ] else if (products.isEmpty) ...[
                             StoreEmptyPublicProducts(
                                 primaryColor: primaryColor),
                           ] else ...[

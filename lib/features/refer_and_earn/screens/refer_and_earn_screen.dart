@@ -20,7 +20,6 @@ class ReferAndEarnScreen extends StatefulWidget {
 }
 
 class _ReferAndEarnScreenState extends State<ReferAndEarnScreen> {
-
   @override
   void initState() {
     Get.find<ReferAndEarnController>().getEarningHistoryList(1);
@@ -30,19 +29,34 @@ class _ReferAndEarnScreenState extends State<ReferAndEarnScreen> {
     super.initState();
   }
 
+  String _tabLabel(List<String> labels, int index) {
+    if (index == 0) {
+      return 'Detalhes';
+    }
+
+    if (index < labels.length) {
+      return labels[index];
+    }
+
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvokedWithResult: (res,val){
-        if(Get.find<ReferAndEarnController>().currentTabIndex == 1){
-          Get.find<ReferAndEarnController>().updateCurrentTabIndex(0,isUpdate: true);
-        }else{
-          if(!res){
-            if(Navigator.canPop(context)){
+      onPopInvokedWithResult: (res, val) {
+        if (Get.find<ReferAndEarnController>().currentTabIndex == 1) {
+          Get.find<ReferAndEarnController>().updateCurrentTabIndex(
+            0,
+            isUpdate: true,
+          );
+        } else {
+          if (!res) {
+            if (Navigator.canPop(context)) {
               Get.back();
-            }else{
-              Get.offAll(()=> const DashboardScreen());
+            } else {
+              Get.offAll(() => const DashboardScreen());
             }
           }
         }
@@ -51,50 +65,75 @@ class _ReferAndEarnScreenState extends State<ReferAndEarnScreen> {
         top: false,
         child: Scaffold(
           resizeToAvoidBottomInset: false,
-          body: GetBuilder<ReferAndEarnController>(builder: (referAndEarnController) {
-            return Stack(children: [
-              BodyWidget(
-                  appBar: AppBarWidget(
-                      title: 'refer_and_earn'.tr, centerTitle: true,
-                    onBackPressed: (){
-                      if(Get.find<ReferAndEarnController>().currentTabIndex == 1){
-                        Get.find<ReferAndEarnController>().updateCurrentTabIndex(0,isUpdate: true);
-                      }else {
-                        Get.back();
-                      }
-                    },
-                  ),
-                  body: Column(children: [
-                    const SizedBox(height: Dimensions.paddingSizeSignUp),
-
-                    Expanded(
-                        child: referAndEarnController.currentTabIndex == 0 ?
-                        const ReferralDetailsScreen() :
-                        const ReferralEarningScreen()
-                    ),
-                  ])
-              ),
-
-              Positioned(top: Get.height * (GetPlatform.isIOS ? ResponsiveHelper.isTab ? 0.08 : 0.15 :  0.11), left: Dimensions.paddingSizeSmall,
-                child: SizedBox(height: Get.find<LocalizationController>().isLtr? 45 : 50,
-                  width: Get.width-Dimensions.paddingSizeDefault,
-                  child: Center(
-                    child: ListView.builder(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        scrollDirection: Axis.horizontal,
-                        itemCount: referAndEarnController.referAndEarnType.length,
-                        itemBuilder: (context, index){
-                          return SizedBox(width: Get.width/2.1, child: ReferralTypeButtonWidget(
-                            profileTypeName : referAndEarnController.referAndEarnType[index], index: index,
-                          ));
+          body: GetBuilder<ReferAndEarnController>(
+            builder: (referAndEarnController) {
+              return Stack(
+                children: [
+                  BodyWidget(
+                    appBar: AppBarWidget(
+                      title: 'refer_and_earn'.tr,
+                      centerTitle: true,
+                      onBackPressed: () {
+                        if (Get.find<ReferAndEarnController>()
+                                .currentTabIndex ==
+                            1) {
+                          Get.find<ReferAndEarnController>()
+                              .updateCurrentTabIndex(0, isUpdate: true);
+                        } else {
+                          Get.back();
                         }
+                      },
+                    ),
+                    body: Column(
+                      children: [
+                        const SizedBox(height: Dimensions.paddingSizeSignUp),
+                        Expanded(
+                          child: referAndEarnController.currentTabIndex == 0
+                              ? const ReferralDetailsScreen()
+                              : const ReferralEarningScreen(),
+                        ),
+                      ],
                     ),
                   ),
-                ),
-              ),
-            ]);
-          }),
+                  Positioned(
+                    top: Get.height *
+                        (GetPlatform.isIOS
+                            ? ResponsiveHelper.isTab
+                                ? 0.08
+                                : 0.15
+                            : 0.11),
+                    left: Dimensions.paddingSizeSmall,
+                    child: SizedBox(
+                      height:
+                          Get.find<LocalizationController>().isLtr ? 45 : 50,
+                      width: Get.width - Dimensions.paddingSizeDefault,
+                      child: Center(
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          padding: EdgeInsets.zero,
+                          scrollDirection: Axis.horizontal,
+                          itemCount:
+                              referAndEarnController.referAndEarnType.length,
+                          itemBuilder: (context, index) {
+                            return SizedBox(
+                              width: Get.width / 2.1,
+                              child: ReferralTypeButtonWidget(
+                                profileTypeName: _tabLabel(
+                                  referAndEarnController.referAndEarnType,
+                                  index,
+                                ),
+                                index: index,
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     );
