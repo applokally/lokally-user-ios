@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -51,8 +51,8 @@ class ParcelDetailsWidget extends StatelessWidget {
             ),
             padding: EdgeInsets.all(Dimensions.paddingSizeSmall),
             child: TripRouteWidget(
-              pickupAddress: tripDetails.pickupAddress!,
-              destinationAddress: tripDetails.destinationAddress!,
+              pickupAddress: tripDetails.pickupAddress ?? '',
+              destinationAddress: tripDetails.destinationAddress ?? '',
               extraOne: firstRoute,extraTwo: secondRoute,entrance: tripDetails.entrance,
             ),
           ),
@@ -174,3 +174,4 @@ class _ParcelTrackWidget extends StatelessWidget {
   String _getParcelTrackUrl(String? refId) => '${AppConstants.baseUrl}/track-parcel/$refId';
 
 }
+

@@ -1,4 +1,4 @@
-import 'package:get/get_connect/http/src/response/response.dart';
+﻿import 'package:get/get_connect/http/src/response/response.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/features/splash/domain/repositories/config_repository_interface.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
@@ -31,7 +31,7 @@ class ConfigRepository implements ConfigRepositoryInterface{
 
   @override
   Future<bool> removeSharedData() {
-    return sharedPreferences.clear();
+    return Future.value(true);
   }
 
   @override

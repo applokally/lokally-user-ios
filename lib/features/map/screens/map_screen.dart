@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:just_the_tooltip/just_the_tooltip.dart';
@@ -46,6 +46,18 @@ class _MapScreenState extends State<MapScreen> with WidgetsBindingObserver{
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     Get.find<MapController>().setContainerHeight((widget.fromScreen == MapScreenType.parcel) ? 200 : 260, false);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      if (widget.fromScreen == MapScreenType.ride ||
+          widget.fromScreen == MapScreenType.splash ||
+          widget.fromScreen == MapScreenType.parcel) {
+        key.currentState?.expand(duration: 450);
+      }
+    });
   }
 
   @override
@@ -414,3 +426,4 @@ void _setMapCurrentRoutes(){
     }
   });
 }
+

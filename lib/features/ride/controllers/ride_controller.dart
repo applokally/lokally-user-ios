@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -530,25 +530,25 @@ class RideController extends GetxController implements GetxService {
   }
 
   Future<Response> getRideDetails(String tripId, {bool isUpdate = true}) async {
-    isLoading = true;
-
     if (isUpdate) {
+      isLoading = true;
       tripDetails = null;
       _thumbnailPaths = null;
       update();
-    } else {
-      _thumbnailPaths = null;
     }
 
     Response response = await rideServiceInterface.getRideDetails(tripId);
 
     if (response.statusCode == 200) {
-      Get.find<MapController>().notifyMapController();
       tripDetails = TripDetailsModel.fromJson(response.body).data!;
       estimatedDistance = tripDetails!.estimatedDistance!.toString();
       isLoading = false;
 
       encodedPolyLine = tripDetails!.encodedPolyline!;
+
+      if (isUpdate) {
+        Get.find<MapController>().notifyMapController();
+      }
 
       List<Attachments> attachments =
           tripDetails?.parcelRefund?.attachments ?? [];
@@ -1256,3 +1256,4 @@ class ThumbnailPathModel {
 
   ThumbnailPathModel(this.path);
 }
+

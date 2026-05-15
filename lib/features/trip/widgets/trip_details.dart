@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -67,17 +67,17 @@ class TripDetailWidget extends StatelessWidget {
 
     if (method == 'machine_debit') {
       return _localizedText(
-        pt: 'Maquininha Débito',
+        pt: 'Maquininha DÃ©bito',
         en: 'Debit card machine',
-        es: 'Datáfono débito',
+        es: 'DatÃ¡fono dÃ©bito',
       );
     }
 
     if (method == 'machine_credit') {
       return _localizedText(
-        pt: 'Maquininha Crédito',
+        pt: 'Maquininha CrÃ©dito',
         en: 'Credit card machine',
-        es: 'Datáfono crédito',
+        es: 'DatÃ¡fono crÃ©dito',
       );
     }
 
@@ -193,8 +193,8 @@ class TripDetailWidget extends StatelessWidget {
                 ),
                 padding: const EdgeInsets.all(Dimensions.paddingSizeSmall),
                 child: TripRouteWidget(
-                  pickupAddress: tripDetails.pickupAddress!,
-                  destinationAddress: tripDetails.destinationAddress!,
+                  pickupAddress: tripDetails.pickupAddress ?? '',
+                  destinationAddress: tripDetails.destinationAddress ?? '',
                   extraOne: firstRoute,
                   extraTwo: secondRoute,
                   entrance: tripDetails.entrance,
@@ -211,7 +211,7 @@ class TripDetailWidget extends StatelessWidget {
           children: [
             Text(
               _localizedText(
-                pt: 'Resumo da cobrança',
+                pt: 'Resumo da cobranÃ§a',
                 en: 'Billing Summary',
                 es: 'Resumen de cobro',
               ),
@@ -290,7 +290,7 @@ class TripDetailWidget extends StatelessWidget {
                 title: _localizedText(
                   pt: 'Taxa de cancelamento',
                   en: 'Cancellation Fee',
-                  es: 'Tarifa de cancelación',
+                  es: 'Tarifa de cancelaciÃ³n',
                 ),
                 amount: tripDetails.cancellationFee ?? 0,
               ),
@@ -299,7 +299,7 @@ class TripDetailWidget extends StatelessWidget {
                 title: _localizedText(
                   pt: 'Cupom',
                   en: 'Coupon',
-                  es: 'Cupón',
+                  es: 'CupÃ³n',
                 ),
                 amount: tripDetails.couponAmount ?? 0,
                 discount: true,
@@ -397,3 +397,4 @@ class TripDetailWidget extends StatelessWidget {
     );
   }
 }
+

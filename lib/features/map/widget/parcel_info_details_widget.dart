@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/common_widgets/button_widget.dart';
@@ -31,6 +31,15 @@ class ParcelInfoDetailsWidget extends StatefulWidget {
 }
 
 class _ParcelInfoDetailsWidgetState extends State<ParcelInfoDetailsWidget> {
+  String _lokallyCleanParcelText(String? value) {
+    final String text = (value ?? '').trim();
+
+    if (text.isEmpty || text.toLowerCase() == 'null') {
+      return '';
+    }
+
+    return text;
+  }
   @override
   Widget build(BuildContext context) {
     return GetBuilder<ParcelController>(
@@ -84,7 +93,7 @@ class _ParcelInfoDetailsWidgetState extends State<ParcelInfoDetailsWidget> {
                       .estimatedDistance!
                       .toString(),
                   fromAddress:
-                      Get.find<ParcelController>().senderAddressController.text,
+                      _lokallyCleanParcelText(Get.find<ParcelController>().senderAddressController.text),
                   toAddress: Get.find<ParcelController>()
                       .receiverAddressController
                       .text,
@@ -100,22 +109,22 @@ class _ParcelInfoDetailsWidgetState extends State<ParcelInfoDetailsWidget> {
                   const SizedBox(height: Dimensions.paddingSizeDefault),
                 ],
                 UserDetailsWidget(
-                  name: parcelController.senderNameController.text,
-                  contactNumber: parcelController.senderContactController.text,
+                  name: _lokallyCleanParcelText(parcelController.senderNameController.text),
+                  contactNumber: _lokallyCleanParcelText(parcelController.senderContactController.text),
                   type: 'sender',
                 ),
                 UserDetailsWidget(
-                  name: parcelController.receiverNameController.text,
+                  name: _lokallyCleanParcelText(parcelController.receiverNameController.text),
                   contactNumber:
-                      parcelController.receiverContactController.text,
+                      _lokallyCleanParcelText(parcelController.receiverContactController.text),
                   type: 'receiver',
                 ),
                 const SizedBox(height: Dimensions.paddingSizeDefault),
                 if (!isMarketplaceShipping &&
-                    rideController.parcelEstimatedFare?.data?.extraFareReason !=
+                    _lokallyCleanParcelText(rideController.parcelEstimatedFare?.data?.extraFareReason) !=
                         '') ...[
                   Text(
-                    '${'fares_are_a_bit_higher'.tr}${rideController.parcelEstimatedFare?.data?.extraFareReason}',
+                    '${'fares_are_a_bit_higher'.tr}${_lokallyCleanParcelText(rideController.parcelEstimatedFare?.data?.extraFareReason)}',
                     style: textRegular.copyWith(
                       color: Theme.of(context).colorScheme.inverseSurface,
                       fontSize: 11,
@@ -279,7 +288,7 @@ class MarketplaceShippingFareWidget extends StatelessWidget {
                                     children: [
                                       Expanded(
                                         child: Text(
-                                          'Preço da tarifa',
+                                          'PreÃ§o da tarifa',
                                           style: textRegular.copyWith(
                                             color: Theme.of(context)
                                                 .textTheme
@@ -293,7 +302,7 @@ class MarketplaceShippingFareWidget extends StatelessWidget {
                                       ),
                                       Text(
                                         isFree
-                                            ? 'Frete Grátis'
+                                            ? 'Frete GrÃ¡tis'
                                             : PriceConverter.convertPrice(
                                                 finalFare,
                                               ),
@@ -377,3 +386,4 @@ class MarketplaceShippingFareWidget extends StatelessWidget {
     );
   }
 }
+

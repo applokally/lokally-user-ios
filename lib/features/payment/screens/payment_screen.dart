@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:get/get.dart';
@@ -111,7 +111,12 @@ class _PaymentScreenState extends State<PaymentScreen>
               ),
               body: GetBuilder<CouponController>(builder: (couponController) {
                 return SingleChildScrollView(
-                    child: Column(children: [
+                    physics: const ClampingScrollPhysics(),
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.of(context).padding.bottom +
+                          Dimensions.paddingSizeDefault,
+                    ),
+                    child: Column(mainAxisSize: MainAxisSize.min, children: [
                   GetBuilder<RideController>(builder: (rideController) {
                     String firstRoute = '';
                     String secondRoute = '';
@@ -601,7 +606,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                                 const SizedBox(
                                     height: Dimensions.paddingSizeExtraSmall),
                                 Text(
-                                  'Confirmação do pagamento: ${_displayPaymentMethod()}',
+                                  'ConfirmaÃ§Ã£o do pagamento: ${_displayPaymentMethod()}',
                                   style: textRegular.copyWith(
                                     color: Theme.of(context)
                                         .textTheme
@@ -666,3 +671,4 @@ class _PaymentScreenState extends State<PaymentScreen>
     );
   }
 }
+

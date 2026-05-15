@@ -1,4 +1,4 @@
-import 'dart:convert';
+﻿import 'dart:convert';
 import 'package:dart_pusher_channels/dart_pusher_channels.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.dart';
@@ -69,18 +69,22 @@ class PusherHelper {
       if(pusherDriverAccepted.currentStatus ==  null){
         pusherDriverAccepted.subscribe();
         pusherDriverAccepted.bind("driver-trip-accepted.$tripId").listen((event) {
-          Get.find<RideController>().getRideDetails(jsonDecode(event.data!)['id']).then((value){
+          Get.find<RideController>().getRideDetails(jsonDecode(event.data!)['id'], isUpdate: false).then((value){
             if(value.statusCode == 200){
               if(jsonDecode(event.data!)['type'] == AppConstants.parcel){
                 Get.find<ParcelController>().updateParcelState(ParcelDeliveryState.acceptRider);
                 Get.find<RideController>().startLocationRecord();
                 Get.find<MapController>().notifyMapController();
-                Get.offAll(() => const MapScreen(fromScreen: MapScreenType.parcel));
+                if (Get.currentRoute != '/MapScreen') {
+                  Get.offAll(() => const MapScreen(fromScreen: MapScreenType.parcel));
+                }
               }else{
                 Get.find<RideController>().updateRideCurrentState(RideState.outForPickup);
                 Get.find<RideController>().startLocationRecord();
                 Get.find<MapController>().notifyMapController();
-                Get.offAll(() => const MapScreen(fromScreen: MapScreenType.splash));
+                if (Get.currentRoute != '/MapScreen') {
+                  Get.offAll(() => const MapScreen(fromScreen: MapScreenType.splash));
+                }
               }
             }
           });
@@ -133,7 +137,9 @@ class PusherHelper {
           }else{
             Get.find<RideController>().updateRideCurrentState(RideState.ongoingRide);
             Get.find<SafetyAlertController>().checkDriverNeedSafety();
-            Get.to(() => const MapScreen(fromScreen: MapScreenType.splash));
+            if (Get.currentRoute != '/MapScreen') {
+              Get.to(() => const MapScreen(fromScreen: MapScreenType.splash));
+            }
           }
         });
       }
@@ -226,7 +232,9 @@ class PusherHelper {
               if(Get.find<RideController>().tripDetails?.parcelInformation?.payer == 'sender'){
                 Get.find<ParcelController>().updateParcelState(ParcelDeliveryState.parcelOngoing);
                 Get.find<RideController>().startLocationRecord();
-                Get.offAll(() => const MapScreen(fromScreen: MapScreenType.parcel));
+                if (Get.currentRoute != '/MapScreen') {
+                  Get.offAll(() => const MapScreen(fromScreen: MapScreenType.parcel));
+                }
               }else{
                 Get.offAll(() => const DashboardScreen());
                 Get.find<RideController>().tripDetails = null;
