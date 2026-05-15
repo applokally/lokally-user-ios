@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -529,7 +529,7 @@ class RideController extends GetxController implements GetxService {
     Get.find<LocationController>().extraRouteTwoAddress = null;
   }
 
-  Future<Response> getRideDetails(String tripId, {bool isUpdate = true}) async {
+  Future<Response> getRideDetails(String tripId, {bool isUpdate = true, bool notifyMap = true}) async {
     if (isUpdate) {
       isLoading = true;
       tripDetails = null;
@@ -547,7 +547,9 @@ class RideController extends GetxController implements GetxService {
       encodedPolyLine = tripDetails!.encodedPolyline!;
 
       if (isUpdate) {
-        Get.find<MapController>().notifyMapController();
+        if (notifyMap) {
+          Get.find<MapController>().notifyMapController();
+        }
       }
 
       List<Attachments> attachments =
@@ -767,7 +769,7 @@ class RideController extends GetxController implements GetxService {
 
     Future.microtask(() => syncActiveRideStatus());
 
-    _rideStatusSyncTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _rideStatusSyncTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       syncActiveRideStatus();
     });
   }
@@ -787,13 +789,29 @@ class RideController extends GetxController implements GetxService {
       return;
     }
 
+    final String? previousStatus = tripDetails?.currentStatus;
+    final String? previousPaymentStatus = tripDetails?.paymentStatus;
+    final String? previousOtp = tripDetails?.otp;
+
     _isRideStatusSyncing = true;
 
     try {
-      final Response response = await getRideDetails(tripId, isUpdate: false);
+      final Response response = await getRideDetails(tripId, isUpdate: false, notifyMap: false);
 
       if (response.statusCode == 200 && tripDetails != null) {
-        await _applyLatestTripStatus(navigate: navigate);
+        final String? currentStatus = tripDetails?.currentStatus;
+        final String? currentPaymentStatus = tripDetails?.paymentStatus;
+        final String? currentOtp = tripDetails?.otp;
+
+        if (currentStatus == previousStatus &&
+            currentPaymentStatus == previousPaymentStatus &&
+            currentOtp == previousOtp) {
+          return;
+        }
+
+        await _applyLatestTripStatus(
+          navigate: navigate && Get.currentRoute == '/MapScreen',
+        );
       }
     } catch (e) {
       customPrint('Ride status sync failed: $e');

@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:get/get.dart';
@@ -100,6 +100,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           return;
         },
         child: Scaffold(
+          backgroundColor: Theme.of(context).cardColor,
           body: GetBuilder<PaymentController>(builder: (paymentController) {
             tipsAmountController.text =
                 '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
@@ -110,7 +111,9 @@ class _PaymentScreenState extends State<PaymentScreen>
                     Get.find<BottomMenuController>().navigateToDashboard(),
               ),
               body: GetBuilder<CouponController>(builder: (couponController) {
-                return SingleChildScrollView(
+                return ColoredBox(
+                    color: Theme.of(context).cardColor,
+                    child: SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
                     padding: EdgeInsets.only(
                       bottom: MediaQuery.of(context).padding.bottom +
@@ -207,7 +210,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                           ),
                           child: Column(children: [
                             Text(
-                              'Aguardando confirmação do pagamento',
+                              'Aguardando confirma\u00e7\u00e3o do pagamento',
                               textAlign: TextAlign.center,
                               style: textSemiBold.copyWith(
                                 color: Theme.of(context).primaryColor,
@@ -557,7 +560,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                                     Get.find<RideController>().finalFare!.id!),
                         ])
                       : const SizedBox(),
-                ]));
+                ])));
               }),
             );
           }),
@@ -606,7 +609,7 @@ class _PaymentScreenState extends State<PaymentScreen>
                                 const SizedBox(
                                     height: Dimensions.paddingSizeExtraSmall),
                                 Text(
-                                  'ConfirmaÃ§Ã£o do pagamento: ${_displayPaymentMethod()}',
+                                  'Confirma\u00e7\u00e3o do pagamento: ${_displayPaymentMethod()}',
                                   style: textRegular.copyWith(
                                     color: Theme.of(context)
                                         .textTheme
