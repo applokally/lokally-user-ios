@@ -22,7 +22,6 @@ import 'package:ride_sharing_user_app/features/payment/controllers/payment_contr
 import 'package:ride_sharing_user_app/features/profile/controllers/profile_controller.dart';
 import 'package:ride_sharing_user_app/features/ride/controllers/ride_controller.dart';
 import 'package:ride_sharing_user_app/common_widgets/app_bar_widget.dart';
-import 'package:ride_sharing_user_app/common_widgets/body_widget.dart';
 import 'package:ride_sharing_user_app/common_widgets/button_widget.dart';
 
 class PaymentScreen extends StatefulWidget {
@@ -104,22 +103,36 @@ class _PaymentScreenState extends State<PaymentScreen>
           body: GetBuilder<PaymentController>(builder: (paymentController) {
             tipsAmountController.text =
                 '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
-            return BodyWidget(
-              appBar: AppBarWidget(
-                title: 'payment'.tr,
-                onBackPressed: () =>
-                    Get.find<BottomMenuController>().navigateToDashboard(),
-              ),
-              body: GetBuilder<CouponController>(builder: (couponController) {
-                return ColoredBox(
+            return Column(
+              children: [
+                AppBarWidget(
+                  title: 'payment'.tr,
+                  onBackPressed: () =>
+                      Get.find<BottomMenuController>().navigateToDashboard(),
+                ),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
                     color: Colors.white,
-                    child: SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    padding: EdgeInsets.only(
-                      bottom: MediaQuery.of(context).padding.bottom +
-                          Dimensions.paddingSizeDefault,
-                    ),
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    child: GetBuilder<CouponController>(
+                      builder: (couponController) {
+                        return LayoutBuilder(
+                          builder: (context, constraints) {
+                            return SingleChildScrollView(
+                              physics: const ClampingScrollPhysics(),
+                              padding: EdgeInsets.only(
+                                bottom: MediaQuery.of(context).padding.bottom +
+                                    Dimensions.paddingSizeDefault,
+                              ),
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  minHeight: constraints.maxHeight,
+                                ),
+                                child: ColoredBox(
+                                  color: Colors.white,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
                   GetBuilder<RideController>(builder: (rideController) {
                     String firstRoute = '';
                     String secondRoute = '';
@@ -499,9 +512,8 @@ class _PaymentScreenState extends State<PaymentScreen>
                                 ? EdgeInsets.zero
                                 : const EdgeInsets.symmetric(
                                     horizontal: Dimensions.paddingSizeSmall),
-                            collapsedBackgroundColor: Theme.of(context)
-                                .primaryColor
-                                .withValues(alpha: .4),
+                            backgroundColor: Colors.white,
+                            collapsedBackgroundColor: Colors.white,
                             collapsedShape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                             title: Row(
@@ -560,8 +572,18 @@ class _PaymentScreenState extends State<PaymentScreen>
                                     Get.find<RideController>().finalFare!.id!),
                         ])
                       : const SizedBox(),
-                ])));
-              }),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
             );
           }),
           bottomNavigationBar:
