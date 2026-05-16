@@ -71,6 +71,28 @@ class TripFareSummery extends StatelessWidget {
     return 'pay_to_driver'.tr;
   }
 
+  IconData _currentPaymentIcon(PaymentController paymentController) {
+    final String label = _currentPaymentLabel(paymentController);
+
+    if (label == 'pix'.tr) {
+      return Icons.qr_code_2_rounded;
+    }
+
+    if (label == 'machine_debit'.tr || label == 'machine_credit'.tr) {
+      return Icons.credit_card_rounded;
+    }
+
+    if (paymentController.paymentTypeIndex == 1) {
+      return Icons.phone_iphone_rounded;
+    }
+
+    if (paymentController.paymentTypeIndex == 2) {
+      return Icons.account_balance_wallet_rounded;
+    }
+
+    return Icons.payments_rounded;
+  }
+
   void _selectPaymentMethod({
     required BuildContext context,
     required PaymentController paymentController,
@@ -110,136 +132,156 @@ class TripFareSummery extends StatelessWidget {
   }) {
     showModalBottomSheet<void>(
       context: context,
-      isScrollControlled: false,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
       builder: (modalContext) {
         final String selectedLabel = _currentPaymentLabel(paymentController);
+        final double bottomPadding = MediaQuery.of(modalContext).padding.bottom;
 
         return SafeArea(
+          top: false,
+          bottom: false,
           child: Container(
-            margin: const EdgeInsets.all(Dimensions.paddingSizeDefault),
-            padding: const EdgeInsets.fromLTRB(
-              Dimensions.paddingSizeDefault,
-              Dimensions.paddingSizeDefault,
-              Dimensions.paddingSizeDefault,
-              Dimensions.paddingSizeSmall,
+            width: double.infinity,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(modalContext).size.height * 0.84,
             ),
             decoration: BoxDecoration(
               color: Theme.of(context).cardColor,
-              borderRadius: BorderRadius.circular(Dimensions.radiusLarge),
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(Dimensions.radiusLarge),
+                topRight: Radius.circular(Dimensions.radiusLarge),
+              ),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.12),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 28,
+                  offset: const Offset(0, -8),
                 ),
               ],
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).hintColor.withValues(alpha: 0.25),
-                    borderRadius:
-                        BorderRadius.circular(Dimensions.radiusOverLarge),
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                Dimensions.paddingSizeDefault,
+                Dimensions.paddingSizeDefault,
+                Dimensions.paddingSizeDefault,
+                bottomPadding + Dimensions.paddingSizeExtraLarge,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.18),
+                      borderRadius:
+                          BorderRadius.circular(Dimensions.radiusOverLarge),
+                    ),
                   ),
-                ),
-                const SizedBox(height: Dimensions.paddingSizeDefault),
-                Text(
-                  'choose_payment_method'.tr,
-                  style: textBold.copyWith(
-                    fontSize: Dimensions.fontSizeLarge,
-                    color: Theme.of(context).textTheme.bodyMedium?.color,
+                  const SizedBox(height: Dimensions.paddingSizeDefault),
+                  Text(
+                    'choose_payment_method'.tr,
+                    textAlign: TextAlign.center,
+                    style: textBold.copyWith(
+                      fontSize: Dimensions.fontSizeLarge,
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
                   ),
-                ),
-                const SizedBox(height: Dimensions.paddingSizeDefault),
-                _PaymentGroup(
-                  title: 'pay_to_driver'.tr,
-                  children: [
-                    _PaymentOptionTile(
-                      title: 'cash'.tr,
-                      selected: selectedLabel == 'cash'.tr,
-                      onTap: () => _selectPaymentMethod(
-                        context: modalContext,
-                        paymentController: paymentController,
-                        label: 'cash'.tr,
-                        groupLabel: 'pay_to_driver'.tr,
-                        paymentTypeIndex: 0,
-                        fareAmount: fareAmount,
+                  const SizedBox(height: Dimensions.paddingSizeLarge),
+                  _PaymentGroup(
+                    title: 'pay_to_driver'.tr,
+                    children: [
+                      _PaymentOptionTile(
+                        title: 'cash'.tr,
+                        icon: Icons.payments_rounded,
+                        selected: selectedLabel == 'cash'.tr,
+                        onTap: () => _selectPaymentMethod(
+                          context: modalContext,
+                          paymentController: paymentController,
+                          label: 'cash'.tr,
+                          groupLabel: 'pay_to_driver'.tr,
+                          paymentTypeIndex: 0,
+                          fareAmount: fareAmount,
+                        ),
                       ),
-                    ),
-                    _PaymentOptionTile(
-                      title: 'machine_debit'.tr,
-                      selected: selectedLabel == 'machine_debit'.tr,
-                      onTap: () => _selectPaymentMethod(
-                        context: modalContext,
-                        paymentController: paymentController,
-                        label: 'machine_debit'.tr,
-                        groupLabel: 'pay_to_driver'.tr,
-                        paymentTypeIndex: 0,
-                        fareAmount: fareAmount,
+                      _PaymentOptionTile(
+                        title: 'machine_debit'.tr,
+                        icon: Icons.credit_card_rounded,
+                        selected: selectedLabel == 'machine_debit'.tr,
+                        onTap: () => _selectPaymentMethod(
+                          context: modalContext,
+                          paymentController: paymentController,
+                          label: 'machine_debit'.tr,
+                          groupLabel: 'pay_to_driver'.tr,
+                          paymentTypeIndex: 0,
+                          fareAmount: fareAmount,
+                        ),
                       ),
-                    ),
-                    _PaymentOptionTile(
-                      title: 'machine_credit'.tr,
-                      selected: selectedLabel == 'machine_credit'.tr,
-                      onTap: () => _selectPaymentMethod(
-                        context: modalContext,
-                        paymentController: paymentController,
-                        label: 'machine_credit'.tr,
-                        groupLabel: 'pay_to_driver'.tr,
-                        paymentTypeIndex: 0,
-                        fareAmount: fareAmount,
+                      _PaymentOptionTile(
+                        title: 'machine_credit'.tr,
+                        icon: Icons.credit_score_rounded,
+                        selected: selectedLabel == 'machine_credit'.tr,
+                        onTap: () => _selectPaymentMethod(
+                          context: modalContext,
+                          paymentController: paymentController,
+                          label: 'machine_credit'.tr,
+                          groupLabel: 'pay_to_driver'.tr,
+                          paymentTypeIndex: 0,
+                          fareAmount: fareAmount,
+                        ),
                       ),
-                    ),
-                    _PaymentOptionTile(
-                      title: 'pix'.tr,
-                      selected: selectedLabel == 'pix'.tr,
-                      onTap: () => _selectPaymentMethod(
-                        context: modalContext,
-                        paymentController: paymentController,
-                        label: 'pix'.tr,
-                        groupLabel: 'pay_to_driver'.tr,
-                        paymentTypeIndex: 0,
-                        fareAmount: fareAmount,
+                      _PaymentOptionTile(
+                        title: 'pix'.tr,
+                        icon: Icons.qr_code_2_rounded,
+                        selected: selectedLabel == 'pix'.tr,
+                        onTap: () => _selectPaymentMethod(
+                          context: modalContext,
+                          paymentController: paymentController,
+                          label: 'pix'.tr,
+                          groupLabel: 'pay_to_driver'.tr,
+                          paymentTypeIndex: 0,
+                          fareAmount: fareAmount,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Dimensions.paddingSizeDefault),
-                _PaymentGroup(
-                  title: 'pay_in_app'.tr,
-                  children: [
-                    _PaymentOptionTile(
-                      title: 'digital_pay'.tr,
-                      selected: selectedLabel == 'digital_pay'.tr,
-                      onTap: () => _selectPaymentMethod(
-                        context: modalContext,
-                        paymentController: paymentController,
-                        label: 'digital_pay'.tr,
-                        groupLabel: 'pay_in_app'.tr,
-                        paymentTypeIndex: 1,
-                        fareAmount: fareAmount,
+                    ],
+                  ),
+                  const SizedBox(height: Dimensions.paddingSizeDefault),
+                  _PaymentGroup(
+                    title: 'pay_in_app'.tr,
+                    children: [
+                      _PaymentOptionTile(
+                        title: 'digital_pay'.tr,
+                        icon: Icons.phone_iphone_rounded,
+                        selected: selectedLabel == 'digital_pay'.tr,
+                        onTap: () => _selectPaymentMethod(
+                          context: modalContext,
+                          paymentController: paymentController,
+                          label: 'digital_pay'.tr,
+                          groupLabel: 'pay_in_app'.tr,
+                          paymentTypeIndex: 1,
+                          fareAmount: fareAmount,
+                        ),
                       ),
-                    ),
-                    _PaymentOptionTile(
-                      title: 'wallet'.tr,
-                      selected: selectedLabel == 'wallet'.tr,
-                      onTap: () => _selectPaymentMethod(
-                        context: modalContext,
-                        paymentController: paymentController,
-                        label: 'wallet'.tr,
-                        groupLabel: 'pay_in_app'.tr,
-                        paymentTypeIndex: 2,
-                        fareAmount: fareAmount,
+                      _PaymentOptionTile(
+                        title: 'wallet'.tr,
+                        icon: Icons.account_balance_wallet_rounded,
+                        selected: selectedLabel == 'wallet'.tr,
+                        onTap: () => _selectPaymentMethod(
+                          context: modalContext,
+                          paymentController: paymentController,
+                          label: 'wallet'.tr,
+                          groupLabel: 'pay_in_app'.tr,
+                          paymentTypeIndex: 2,
+                          fareAmount: fareAmount,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -263,78 +305,83 @@ class TripFareSummery extends StatelessWidget {
           return Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(Dimensions.radiusLarge),
-              color: fromPayment
+              color: fromPayment ? null : Theme.of(context).cardColor,
+              border: fromPayment
                   ? null
-                  : Theme.of(context).hintColor.withValues(alpha: 0.07),
+                  : Border.all(
+                      color: Theme.of(context).hintColor.withValues(alpha: 0.10),
+                    ),
+              boxShadow: fromPayment
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.04),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
             ),
             padding: const EdgeInsets.all(Dimensions.paddingSizeDefault),
             child: Column(
               children: [
                 if (!fromPayment)
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Row(
-                        children: [
-                          Image.asset(
-                            Images.farePrice,
-                            height: 15,
-                            width: 15,
-                            color:
-                                Theme.of(context).textTheme.bodyMedium?.color,
-                          ),
-                          const SizedBox(width: Dimensions.paddingSizeSmall),
-                          Text(
-                            'fare_price'.tr,
-                            style: textRegular.copyWith(
-                              color:
-                                  Theme.of(context).textTheme.bodyMedium?.color,
-                              fontSize: Dimensions.fontSizeDefault,
-                            ),
-                          ),
-                        ],
+                      _SummaryIcon(
+                        icon: Icons.receipt_long_rounded,
+                        color: Theme.of(context).textTheme.bodyMedium?.color,
                       ),
-                      Row(
-                        children: [
-                          if (discountAmount != null &&
-                              discountAmount!.toDouble() > 0)
-                            Text(
-                              PriceConverter.convertPrice(tripFare!),
-                              style: textRobotoBold.copyWith(
-                                fontSize: Dimensions.fontSizeSmall,
-                                color: Theme.of(context).hintColor,
-                                decoration: TextDecoration.lineThrough,
-                                decorationColor: Theme.of(context).hintColor,
-                              ),
-                            ),
-                          const SizedBox(
-                            width: Dimensions.paddingSizeExtraSmall,
+                      const SizedBox(width: Dimensions.paddingSizeSmall),
+                      Expanded(
+                        child: Text(
+                          'fare_price'.tr,
+                          style: textSemiBold.copyWith(
+                            color: Theme.of(context).textTheme.bodyMedium?.color,
+                            fontSize: Dimensions.fontSizeDefault,
                           ),
-                          Container(
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .primaryColor
-                                  .withValues(alpha: 0.5),
-                              borderRadius: BorderRadius.circular(
-                                Dimensions.paddingSizeExtraSmall,
-                              ),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: Dimensions.paddingSizeSmall,
-                              vertical: Dimensions.paddingSizeExtraSmall,
-                            ),
-                            child: Text(
-                              PriceConverter.convertPrice(_currentFareAmount()),
-                              style: textRobotoBold.copyWith(
-                                fontSize: Dimensions.fontSizeDefault,
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.color,
-                              ),
+                        ),
+                      ),
+                      if (discountAmount != null &&
+                          discountAmount!.toDouble() > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(
+                            right: Dimensions.paddingSizeExtraSmall,
+                          ),
+                          child: Text(
+                            PriceConverter.convertPrice(tripFare!),
+                            style: textRobotoBold.copyWith(
+                              fontSize: Dimensions.fontSizeSmall,
+                              color: Theme.of(context).hintColor,
+                              decoration: TextDecoration.lineThrough,
+                              decorationColor: Theme.of(context).hintColor,
                             ),
                           ),
-                        ],
+                        ),
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(
+                            Dimensions.radiusDefault,
+                          ),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .primaryColor
+                                .withValues(alpha: 0.18),
+                          ),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: Dimensions.paddingSizeDefault,
+                          vertical: Dimensions.paddingSizeExtraSmall,
+                        ),
+                        child: Text(
+                          PriceConverter.convertPrice(_currentFareAmount()),
+                          style: textRobotoBold.copyWith(
+                            fontSize: Dimensions.fontSizeDefault,
+                            color: Theme.of(context).textTheme.bodyMedium?.color,
+                          ),
+                        ),
                       ),
                     ],
                   ),
@@ -491,34 +538,37 @@ class TripFareSummery extends StatelessWidget {
                     isSubTotal: true,
                   ),
                 if (!fromPayment)
-                  const SizedBox(height: Dimensions.paddingSizeSmall),
+                  const SizedBox(height: Dimensions.paddingSizeDefault),
                 if (fromPayment)
                   const SizedBox(height: Dimensions.paddingSizeExtraSmall),
                 if (!fromPayment)
                   GetBuilder<ParcelController>(
                     builder: (parcelController) {
                       return !parcelController.payReceiver
-                          ? Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          ? Column(
                               children: [
-                                Expanded(
-                                  child: Row(
-                                    children: [
-                                      Image.asset(
-                                        Images.paymentTypeIcon,
-                                        height: 15,
-                                        width: 15,
-                                        color: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.color,
-                                      ),
-                                      const SizedBox(
-                                        width: Dimensions.paddingSizeSmall,
-                                      ),
-                                      Text(
+                                Divider(
+                                  height: Dimensions.paddingSizeDefault,
+                                  color: Theme.of(context)
+                                      .hintColor
+                                      .withValues(alpha: 0.12),
+                                ),
+                                Row(
+                                  children: [
+                                    _SummaryIcon(
+                                      icon: Icons.wallet_rounded,
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color,
+                                    ),
+                                    const SizedBox(
+                                      width: Dimensions.paddingSizeSmall,
+                                    ),
+                                    Expanded(
+                                      child: Text(
                                         'payment'.tr,
-                                        style: textRegular.copyWith(
+                                        style: textSemiBold.copyWith(
                                           color: Theme.of(context)
                                               .textTheme
                                               .bodyMedium
@@ -526,76 +576,127 @@ class TripFareSummery extends StatelessWidget {
                                           fontSize: Dimensions.fontSizeDefault,
                                         ),
                                       ),
-                                    ],
-                                  ),
-                                ),
-                                InkWell(
-                                  onTap: () => _openPaymentMethodModal(
-                                    context: context,
-                                    paymentController: paymentController,
-                                    fareAmount: _currentFareAmount(),
-                                  ),
-                                  borderRadius: BorderRadius.circular(
-                                    Dimensions.radiusDefault,
-                                  ),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: Dimensions.paddingSizeSmall,
-                                      vertical:
-                                          Dimensions.paddingSizeExtraSmall,
                                     ),
-                                    decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .cardColor
-                                          .withValues(alpha: 0.92),
+                                    InkWell(
+                                      onTap: () => _openPaymentMethodModal(
+                                        context: context,
+                                        paymentController: paymentController,
+                                        fareAmount: _currentFareAmount(),
+                                      ),
                                       borderRadius: BorderRadius.circular(
                                         Dimensions.radiusDefault,
                                       ),
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
+                                      child: Container(
+                                        constraints: BoxConstraints(
+                                          maxWidth: Get.width * 0.46,
+                                        ),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal:
+                                              Dimensions.paddingSizeSmall,
+                                          vertical:
+                                              Dimensions.paddingSizeExtraSmall,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context)
+                                              .primaryColor
+                                              .withValues(alpha: 0.08),
+                                          borderRadius: BorderRadius.circular(
+                                            Dimensions.radiusDefault,
+                                          ),
+                                          border: Border.all(
+                                            color: Theme.of(context)
+                                                .primaryColor
+                                                .withValues(alpha: 0.14),
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
                                           children: [
-                                            Text(
-                                              _currentPaymentGroupLabel(
-                                                paymentController,
-                                              ),
-                                              style: textSemiBold.copyWith(
-                                                fontSize:
-                                                    Dimensions.fontSizeSmall,
+                                            Container(
+                                              width: 30,
+                                              height: 30,
+                                              decoration: BoxDecoration(
                                                 color: Theme.of(context)
                                                     .primaryColor
-                                                    .withValues(alpha: 0.92),
+                                                    .withValues(alpha: 0.14),
+                                                borderRadius:
+                                                    BorderRadius.circular(
+                                                  Dimensions.radiusSmall,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 1),
-                                            Text(
-                                              _currentPaymentLabel(
-                                                paymentController,
-                                              ),
-                                              style: textRegular.copyWith(
-                                                fontSize:
-                                                    Dimensions.fontSizeDefault,
+                                              child: Icon(
+                                                _currentPaymentIcon(
+                                                  paymentController,
+                                                ),
                                                 color: Theme.of(context)
                                                     .primaryColor,
+                                                size: 17,
                                               ),
+                                            ),
+                                            const SizedBox(
+                                              width:
+                                                  Dimensions.paddingSizeSmall,
+                                            ),
+                                            Flexible(
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
+                                                children: [
+                                                  Text(
+                                                    _currentPaymentGroupLabel(
+                                                      paymentController,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style:
+                                                        textSemiBold.copyWith(
+                                                      fontSize: Dimensions
+                                                          .fontSizeSmall,
+                                                      color: Theme.of(context)
+                                                          .primaryColor
+                                                          .withValues(
+                                                            alpha: 0.92,
+                                                          ),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 1),
+                                                  Text(
+                                                    _currentPaymentLabel(
+                                                      paymentController,
+                                                    ),
+                                                    maxLines: 1,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style:
+                                                        textMedium.copyWith(
+                                                      fontSize: Dimensions
+                                                          .fontSizeDefault,
+                                                      color: Theme.of(context)
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.color,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(
+                                              width:
+                                                  Dimensions.paddingSizeExtraSmall,
+                                            ),
+                                            Icon(
+                                              Icons.keyboard_arrow_down_rounded,
+                                              color:
+                                                  Theme.of(context).primaryColor,
+                                              size: 20,
                                             ),
                                           ],
                                         ),
-                                        const SizedBox(
-                                          width: Dimensions.paddingSizeSmall,
-                                        ),
-                                        Icon(
-                                          Icons.keyboard_arrow_down_rounded,
-                                          color: Theme.of(context).primaryColor,
-                                          size: 20,
-                                        ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ),
                               ],
                             )
@@ -608,6 +709,33 @@ class TripFareSummery extends StatelessWidget {
         });
       });
     });
+  }
+}
+
+class _SummaryIcon extends StatelessWidget {
+  final IconData icon;
+  final Color? color;
+
+  const _SummaryIcon({
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: Theme.of(context).hintColor.withValues(alpha: 0.07),
+        borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+      ),
+      child: Icon(
+        icon,
+        color: color,
+        size: 20,
+      ),
+    );
   }
 }
 
@@ -626,8 +754,11 @@ class _PaymentGroup extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(Dimensions.paddingSizeSmall),
       decoration: BoxDecoration(
-        color: Theme.of(context).hintColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+        color: Theme.of(context).hintColor.withValues(alpha: 0.045),
+        borderRadius: BorderRadius.circular(Dimensions.radiusLarge),
+        border: Border.all(
+          color: Theme.of(context).hintColor.withValues(alpha: 0.08),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -653,11 +784,13 @@ class _PaymentGroup extends StatelessWidget {
 
 class _PaymentOptionTile extends StatelessWidget {
   final String title;
+  final IconData icon;
   final bool selected;
   final VoidCallback onTap;
 
   const _PaymentOptionTile({
     required this.title,
+    required this.icon,
     required this.selected,
     required this.onTap,
   });
@@ -671,7 +804,7 @@ class _PaymentOptionTile extends StatelessWidget {
         width: double.infinity,
         margin: const EdgeInsets.only(top: Dimensions.paddingSizeExtraSmall),
         padding: const EdgeInsets.symmetric(
-          horizontal: Dimensions.paddingSizeDefault,
+          horizontal: Dimensions.paddingSizeSmall,
           vertical: Dimensions.paddingSizeSmall,
         ),
         decoration: BoxDecoration(
@@ -682,11 +815,29 @@ class _PaymentOptionTile extends StatelessWidget {
           border: Border.all(
             color: selected
                 ? Theme.of(context).primaryColor
-                : Theme.of(context).hintColor.withValues(alpha: 0.16),
+                : Theme.of(context).hintColor.withValues(alpha: 0.14),
           ),
         ),
         child: Row(
           children: [
+            Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: selected
+                    ? Theme.of(context).primaryColor.withValues(alpha: 0.16)
+                    : Theme.of(context).hintColor.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(Dimensions.radiusSmall),
+              ),
+              child: Icon(
+                icon,
+                color: selected
+                    ? Theme.of(context).primaryColor
+                    : Theme.of(context).textTheme.bodyMedium?.color,
+                size: 19,
+              ),
+            ),
+            const SizedBox(width: Dimensions.paddingSizeSmall),
             Expanded(
               child: Text(
                 title,
@@ -698,12 +849,15 @@ class _PaymentOptionTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (selected)
-              Icon(
-                Icons.check_circle_rounded,
-                color: Theme.of(context).primaryColor,
-                size: 20,
-              ),
+            Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: selected
+                  ? Theme.of(context).primaryColor
+                  : Theme.of(context).hintColor.withValues(alpha: 0.45),
+              size: 21,
+            ),
           ],
         ),
       ),
