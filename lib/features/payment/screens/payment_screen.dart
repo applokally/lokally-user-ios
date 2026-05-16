@@ -100,600 +100,910 @@ class _PaymentScreenState extends State<PaymentScreen>
         },
         child: Scaffold(
           backgroundColor: Colors.white,
-          body: GetBuilder<PaymentController>(builder: (paymentController) {
-            tipsAmountController.text =
-                '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
-            return Column(
-              children: [
-                AppBarWidget(
-                  title: 'payment'.tr,
-                  onBackPressed: () =>
-                      Get.find<BottomMenuController>().navigateToDashboard(),
-                ),
-                Expanded(
-                  child: Container(
-                    width: double.infinity,
-                    color: Colors.white,
-                    child: GetBuilder<CouponController>(
-                      builder: (couponController) {
-                        return LayoutBuilder(
-                          builder: (context, constraints) {
-                            return SingleChildScrollView(
-                              physics: const ClampingScrollPhysics(),
-                              padding: EdgeInsets.only(
-                                bottom: MediaQuery.of(context).padding.bottom +
-                                    Dimensions.paddingSizeDefault,
-                              ),
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  minHeight: constraints.maxHeight,
-                                ),
-                                child: ColoredBox(
-                                  color: Colors.white,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                  GetBuilder<RideController>(builder: (rideController) {
-                    String firstRoute = '';
-                    String secondRoute = '';
-                    List<dynamic> extraRoute = [];
-                    if (rideController.tripDetails?.intermediateAddresses !=
-                            null &&
-                        rideController.tripDetails?.intermediateAddresses !=
-                            '["",""]') {
-                      extraRoute = jsonDecode(
-                          rideController.tripDetails!.intermediateAddresses!);
+          resizeToAvoidBottomInset: false,
+          body: ColoredBox(
+            color: Colors.white,
+            child: GetBuilder<PaymentController>(
+              builder: (paymentController) {
+                tipsAmountController.text =
+                    '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
 
-                      if (extraRoute.isNotEmpty) {
-                        firstRoute = extraRoute[0];
-                      }
-                      if (extraRoute.isNotEmpty && extraRoute.length > 1) {
-                        secondRoute = extraRoute[1];
-                      }
-                    }
+                return Column(
+                  children: [
+                    AppBarWidget(
+                      title: 'payment'.tr,
+                      onBackPressed: () => Get.find<BottomMenuController>()
+                          .navigateToDashboard(),
+                    ),
+                    Expanded(
+                      child: ColoredBox(
+                        color: Colors.white,
+                        child: GetBuilder<CouponController>(
+                          builder: (couponController) {
+                            return ScrollConfiguration(
+                              behavior: const _LokallyNoOverscrollBehavior(),
+                              child: GetBuilder<RideController>(
+                                builder: (rideController) {
+                                  String firstRoute = '';
+                                  String secondRoute = '';
+                                  List<dynamic> extraRoute = [];
 
-                    final bool isPayToDriverPayment =
-                        rideController.tripDetails?.isPayToDriverPayment ??
-                            false;
-                    final String displayPaymentMethod =
-                        rideController.tripDetails?.displayPaymentMethod ??
-                            paymentController.paymentType.tr;
-
-                    return Column(children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: Dimensions.paddingSizeDefault,
-                          vertical: Dimensions.paddingSizeExtraLarge,
-                        ),
-                        child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'payment'.tr,
-                                style: textSemiBold.copyWith(
-                                    color: Theme.of(context).primaryColor),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: Dimensions.paddingSizeExtraSmall,
-                                  vertical: Dimensions.paddingSizeThree,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: Theme.of(context)
-                                      .primaryColor
-                                      .withValues(alpha: .2),
-                                  borderRadius: BorderRadius.circular(
-                                      Dimensions.paddingSizeExtraSmall),
-                                ),
-                                child: Row(children: [
-                                  Text(
-                                    displayPaymentMethod,
-                                    style: textMedium.copyWith(
-                                        color: Theme.of(context).primaryColor),
-                                  ),
-                                  const SizedBox(
-                                      width: Dimensions.paddingSizeExtraSmall),
-                                  SizedBox(
-                                    width: Dimensions.iconSizeSmall,
-                                    child: Image.asset(Images.paymentTypeIcon),
-                                  ),
-                                ]),
-                              ),
-                            ]),
-                      ),
-                      if (isPayToDriverPayment)
-                        Container(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: Dimensions.paddingSizeDefault,
-                            vertical: Dimensions.paddingSizeSmall,
-                          ),
-                          padding: const EdgeInsets.all(
-                              Dimensions.paddingSizeDefault),
-                          decoration: BoxDecoration(
-                            color: Theme.of(context)
-                                .primaryColor
-                                .withValues(alpha: 0.10),
-                            borderRadius:
-                                BorderRadius.circular(Dimensions.radiusLarge),
-                            border: Border.all(
-                              color: Theme.of(context)
-                                  .primaryColor
-                                  .withValues(alpha: 0.25),
-                            ),
-                          ),
-                          child: Column(children: [
-                            Text(
-                              'Aguardando confirma\u00e7\u00e3o do pagamento',
-                              textAlign: TextAlign.center,
-                              style: textSemiBold.copyWith(
-                                color: Theme.of(context).primaryColor,
-                                fontSize: Dimensions.fontSizeDefault,
-                              ),
-                            ),
-                            const SizedBox(height: Dimensions.paddingSizeSmall),
-                            Text(
-                              'O motorista precisa confirmar o recebimento do pagamento para finalizar esta etapa.',
-                              textAlign: TextAlign.center,
-                              style: textRegular.copyWith(
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.color,
-                                fontSize: Dimensions.fontSizeSmall,
-                              ),
-                            ),
-                            const SizedBox(
-                                height: Dimensions.paddingSizeExtraSmall),
-                            Text(
-                              'Forma escolhida: $displayPaymentMethod',
-                              textAlign: TextAlign.center,
-                              style: textMedium.copyWith(
-                                color: Theme.of(context)
-                                    .textTheme
-                                    .bodyMedium
-                                    ?.color,
-                                fontSize: Dimensions.fontSizeSmall,
-                              ),
-                            ),
-                          ]),
-                        ),
-                      Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('this_trip_is'.tr),
-                            const SizedBox(
-                                width: Dimensions.paddingSizeExtraSmall),
-                            if (rideController.finalFare != null &&
-                                rideController.finalFare!.currentStatus != null)
-                              Text(
-                                rideController
-                                    .finalFare!.currentStatus!.capitalize!,
-                                style: textSemiBold.copyWith(
-                                    color: Theme.of(context).primaryColor),
-                              ),
-                          ]),
-                      (rideController.finalFare != null)
-                          ? Padding(
-                              padding: const EdgeInsets.symmetric(
-                                  vertical: Dimensions.paddingSizeDefault),
-                              child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      PriceConverter.convertPrice(
-                                        rideController.finalFare!.paidFare! +
-                                            double.parse(
-                                                paymentController.tipAmount),
-                                      ),
-                                      style: textRobotoMedium.copyWith(
-                                        fontSize: Dimensions.fontSizeOverLarge,
-                                        color: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium!
-                                            .color,
-                                      ),
-                                    ),
-                                    const SizedBox(
-                                        width: Dimensions.paddingSizeSmall),
-                                    if (double.parse(
-                                            paymentController.tipAmount) >
-                                        0)
-                                      Text('( ${'tips_added'.tr} )')
-                                  ]),
-                            )
-                          : const SizedBox(),
-                      Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('your'.tr,
-                                style: textMedium.copyWith(
-                                  color: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium!
-                                      .color,
-                                )),
-                            const SizedBox(
-                                width: Dimensions.paddingSizeExtraSmall),
-                            Text('total_fare'.tr,
-                                style: textSemiBold.copyWith(
-                                  color: Theme.of(context).primaryColor,
-                                )),
-                            const SizedBox(
-                                width: Dimensions.paddingSizeExtraSmall),
-                            Text('for_this_trip'.tr,
-                                style: textMedium.copyWith(
-                                  color: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium!
-                                      .color,
-                                )),
-                          ]),
-                      if (!isPayToDriverPayment)
-                        Row(
-                          crossAxisAlignment:
-                              paymentController.paymentTypeIndex == 2
-                                  ? CrossAxisAlignment.end
-                                  : CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                                child: ListView.builder(
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              itemCount:
-                                  paymentController.paymentTypeList.length,
-                              itemBuilder: (context, index) {
-                                return PaymentTypeItem(
-                                  title:
-                                      paymentController.paymentTypeList[index],
-                                  index: index,
-                                  selectedIndex:
-                                      paymentController.paymentTypeIndex,
-                                );
-                              },
-                            )),
-                            paymentController.paymentTypeIndex == 2
-                                ? GetBuilder<ProfileController>(
-                                    builder: (profileController) {
-                                    return Padding(
-                                      padding: const EdgeInsets.all(
-                                          Dimensions.paddingSizeDefault),
-                                      child: Text.rich(
-                                        TextSpan(children: [
-                                          TextSpan(
-                                            text: '${'available'.tr}: ',
-                                            style: textRegular.copyWith(
-                                                color: Theme.of(context)
-                                                    .hintColor),
-                                          ),
-                                          TextSpan(
-                                            text: PriceConverter.convertPrice(
-                                              profileController
-                                                      .profileModel
-                                                      ?.data
-                                                      ?.wallet
-                                                      ?.walletBalance ??
-                                                  0,
-                                            ),
-                                            style: textRobotoMedium.copyWith(
-                                                color: Theme.of(context)
-                                                    .hintColor),
-                                          ),
-                                        ]),
-                                      ),
+                                  if (rideController.tripDetails
+                                              ?.intermediateAddresses !=
+                                          null &&
+                                      rideController.tripDetails
+                                              ?.intermediateAddresses !=
+                                          '["",""]') {
+                                    extraRoute = jsonDecode(
+                                      rideController
+                                          .tripDetails!.intermediateAddresses!,
                                     );
-                                  })
-                                : const SizedBox(),
-                          ],
-                        ),
-                      if (!isPayToDriverPayment)
-                        paymentController.paymentTypeIndex == 1
-                            ? Padding(
-                                padding: const EdgeInsets.only(
-                                    left: Dimensions.paddingSizeLarge),
-                                child: SizedBox(
-                                    height: 105,
-                                    child: ListView.builder(
-                                      itemCount: paymentController
-                                          .paymentGateways?.length,
-                                      padding: EdgeInsets.zero,
-                                      scrollDirection: Axis.horizontal,
-                                      itemBuilder: (context, index) {
-                                        return DigitalCardPaymentWidget(
-                                          digitalPaymentModel: paymentController
-                                              .paymentGateways![index],
-                                          index: index,
-                                        );
-                                      },
-                                    )),
-                              )
-                            : const SizedBox(),
-                      if (!isPayToDriverPayment)
-                        paymentController.paymentTypeIndex == 1
-                            ? Container(
-                                width: MediaQuery.of(context).size.width,
-                                margin: const EdgeInsets.only(
-                                  left: Dimensions.paddingSizeDefault,
-                                  right: Dimensions.paddingSizeDefault,
-                                  bottom: Dimensions.paddingSizeDefault,
-                                  top: Dimensions.paddingSizeExtraSmall,
-                                ),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(
-                                    Dimensions.paddingSizeExtraSmall,
-                                  ),
-                                  border: Border.all(
-                                    width: .5,
-                                    color: Theme.of(context)
-                                        .primaryColor
-                                        .withValues(alpha: .9),
-                                  ),
-                                ),
-                                child: Row(children: [
-                                  Expanded(
-                                      child: SizedBox(
-                                          child: Padding(
+
+                                    if (extraRoute.isNotEmpty) {
+                                      firstRoute = extraRoute[0];
+                                    }
+                                    if (extraRoute.isNotEmpty &&
+                                        extraRoute.length > 1) {
+                                      secondRoute = extraRoute[1];
+                                    }
+                                  }
+
+                                  final bool isPayToDriverPayment =
+                                      rideController.tripDetails
+                                              ?.isPayToDriverPayment ??
+                                          false;
+                                  final String displayPaymentMethod =
+                                      rideController.tripDetails
+                                              ?.displayPaymentMethod ??
+                                          paymentController.paymentType.tr;
+
+                                  return ListView(
+                                    physics: const ClampingScrollPhysics(),
                                     padding: EdgeInsets.only(
-                                      left: Get.find<LocalizationController>()
-                                              .isLtr
-                                          ? Dimensions.paddingSizeExtraSmall
-                                          : 0,
-                                      right: Get.find<LocalizationController>()
-                                              .isLtr
-                                          ? 0
-                                          : Dimensions.paddingSizeExtraSmall,
+                                      bottom: MediaQuery.of(context)
+                                              .padding
+                                              .bottom +
+                                          104,
                                     ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: Dimensions.iconSizeSmall,
-                                        vertical: Dimensions.paddingSizeSmall,
-                                      ),
-                                      child: Text(
-                                        (paymentController.tipAmount == '0' ||
-                                                paymentController
-                                                    .tipAmount.isEmpty)
-                                            ? 'give_tips'.tr
-                                            : '${'tips'.tr}: ${PriceConverter.convertPrice(double.parse(paymentController.tipAmount))}',
-                                        style: textRobotoMedium.copyWith(
-                                            color: Theme.of(context)
-                                                .primaryColorDark),
-                                      ),
-                                    ),
-                                  ))),
-                                  const SizedBox(
-                                      width: Dimensions.paddingSizeSmall),
-                                  InkWell(
-                                    onTap: () => showDialog(
-                                      barrierDismissible: false,
-                                      context: context,
-                                      builder: (_) => const TipsWidget(),
-                                    ),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: Dimensions.paddingSizeSmall,
-                                        vertical: Dimensions.paddingSizeSmall,
-                                      ),
-                                      margin: const EdgeInsets.all(
-                                          Dimensions.paddingSizeSmall),
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context)
-                                            .primaryColor
-                                            .withValues(alpha: .35),
-                                        borderRadius: const BorderRadius.all(
-                                            Radius.circular(
-                                                Dimensions.paddingSizeSmall)),
-                                      ),
-                                      child: Center(
-                                          child: Text(
-                                        (paymentController.tipAmount == '0' ||
-                                                paymentController
-                                                    .tipAmount.isEmpty)
-                                            ? 'add_tips'.tr
-                                            : 'change'.tr,
-                                        style: textBold.copyWith(
-                                          color: Theme.of(context)
-                                              .primaryColorDark,
-                                          fontSize: Dimensions.fontSizeDefault,
+                                    children: [
+                                      ColoredBox(
+                                        color: Colors.white,
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: Dimensions
+                                                    .paddingSizeDefault,
+                                                vertical: Dimensions
+                                                    .paddingSizeExtraLarge,
+                                              ),
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment
+                                                        .spaceBetween,
+                                                children: [
+                                                  Text(
+                                                    'payment'.tr,
+                                                    style:
+                                                        textSemiBold.copyWith(
+                                                      color: Theme.of(context)
+                                                          .primaryColor,
+                                                    ),
+                                                  ),
+                                                  Container(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      horizontal: Dimensions
+                                                          .paddingSizeExtraSmall,
+                                                      vertical: Dimensions
+                                                          .paddingSizeThree,
+                                                    ),
+                                                    decoration: BoxDecoration(
+                                                      color: Theme.of(context)
+                                                          .primaryColor
+                                                          .withValues(
+                                                            alpha: .2,
+                                                          ),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                        Dimensions
+                                                            .paddingSizeExtraSmall,
+                                                      ),
+                                                    ),
+                                                    child: Row(
+                                                      children: [
+                                                        Text(
+                                                          displayPaymentMethod,
+                                                          style: textMedium
+                                                              .copyWith(
+                                                            color: Theme.of(
+                                                              context,
+                                                            ).primaryColor,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: Dimensions
+                                                              .paddingSizeExtraSmall,
+                                                        ),
+                                                        SizedBox(
+                                                          width: Dimensions
+                                                              .iconSizeSmall,
+                                                          child: Image.asset(
+                                                            Images
+                                                                .paymentTypeIcon,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            if (isPayToDriverPayment)
+                                              Container(
+                                                margin:
+                                                    const EdgeInsets.symmetric(
+                                                  horizontal: Dimensions
+                                                      .paddingSizeDefault,
+                                                  vertical: Dimensions
+                                                      .paddingSizeSmall,
+                                                ),
+                                                padding: const EdgeInsets.all(
+                                                  Dimensions.paddingSizeDefault,
+                                                ),
+                                                decoration: BoxDecoration(
+                                                  color: Theme.of(context)
+                                                      .primaryColor
+                                                      .withValues(alpha: 0.10),
+                                                  borderRadius:
+                                                      BorderRadius.circular(
+                                                    Dimensions.radiusLarge,
+                                                  ),
+                                                  border: Border.all(
+                                                    color: Theme.of(context)
+                                                        .primaryColor
+                                                        .withValues(
+                                                          alpha: 0.25,
+                                                        ),
+                                                  ),
+                                                ),
+                                                child: Column(
+                                                  children: [
+                                                    Text(
+                                                      'Aguardando confirmação do pagamento',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style:
+                                                          textSemiBold.copyWith(
+                                                        color: Theme.of(context)
+                                                            .primaryColor,
+                                                        fontSize: Dimensions
+                                                            .fontSizeDefault,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(
+                                                      height: Dimensions
+                                                          .paddingSizeSmall,
+                                                    ),
+                                                    Text(
+                                                      'O motorista precisa confirmar o recebimento do pagamento para finalizar esta etapa.',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style:
+                                                          textRegular.copyWith(
+                                                        color: Theme.of(context)
+                                                            .textTheme
+                                                            .bodyMedium
+                                                            ?.color,
+                                                        fontSize: Dimensions
+                                                            .fontSizeSmall,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(
+                                                      height: Dimensions
+                                                          .paddingSizeExtraSmall,
+                                                    ),
+                                                    Text(
+                                                      'Forma escolhida: $displayPaymentMethod',
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style:
+                                                          textMedium.copyWith(
+                                                        color: Theme.of(context)
+                                                            .textTheme
+                                                            .bodyMedium
+                                                            ?.color,
+                                                        fontSize: Dimensions
+                                                            .fontSizeSmall,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text('this_trip_is'.tr),
+                                                const SizedBox(
+                                                  width: Dimensions
+                                                      .paddingSizeExtraSmall,
+                                                ),
+                                                if (rideController.finalFare !=
+                                                        null &&
+                                                    rideController.finalFare!
+                                                            .currentStatus !=
+                                                        null)
+                                                  Text(
+                                                    rideController
+                                                        .finalFare!
+                                                        .currentStatus!
+                                                        .capitalize!,
+                                                    style:
+                                                        textSemiBold.copyWith(
+                                                      color: Theme.of(context)
+                                                          .primaryColor,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                            (rideController.finalFare != null)
+                                                ? Padding(
+                                                    padding: const EdgeInsets
+                                                        .symmetric(
+                                                      vertical: Dimensions
+                                                          .paddingSizeDefault,
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment
+                                                              .center,
+                                                      children: [
+                                                        Text(
+                                                          PriceConverter
+                                                              .convertPrice(
+                                                            rideController
+                                                                    .finalFare!
+                                                                    .paidFare! +
+                                                                double.parse(
+                                                                  paymentController
+                                                                      .tipAmount,
+                                                                ),
+                                                          ),
+                                                          style:
+                                                              textRobotoMedium
+                                                                  .copyWith(
+                                                            fontSize: Dimensions
+                                                                .fontSizeOverLarge,
+                                                            color: Theme.of(
+                                                              context,
+                                                            )
+                                                                .textTheme
+                                                                .bodyMedium!
+                                                                .color,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(
+                                                          width: Dimensions
+                                                              .paddingSizeSmall,
+                                                        ),
+                                                        if (double.parse(
+                                                              paymentController
+                                                                  .tipAmount,
+                                                            ) >
+                                                            0)
+                                                          Text(
+                                                            '( ${'tips_added'.tr} )',
+                                                          ),
+                                                      ],
+                                                    ),
+                                                  )
+                                                : const SizedBox(),
+                                            Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Text(
+                                                  'your'.tr,
+                                                  style: textMedium.copyWith(
+                                                    color: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium!
+                                                        .color,
+                                                  ),
+                                                ),
+                                                const SizedBox(
+                                                  width: Dimensions
+                                                      .paddingSizeExtraSmall,
+                                                ),
+                                                Text(
+                                                  'total_fare'.tr,
+                                                  style: textSemiBold.copyWith(
+                                                    color: Theme.of(context)
+                                                        .primaryColor,
+                                                  ),
+                                                ),
+                                                const SizedBox(
+                                                  width: Dimensions
+                                                      .paddingSizeExtraSmall,
+                                                ),
+                                                Text(
+                                                  'for_this_trip'.tr,
+                                                  style: textMedium.copyWith(
+                                                    color: Theme.of(context)
+                                                        .textTheme
+                                                        .bodyMedium!
+                                                        .color,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (!isPayToDriverPayment)
+                                              Row(
+                                                crossAxisAlignment:
+                                                    paymentController
+                                                                .paymentTypeIndex ==
+                                                            2
+                                                        ? CrossAxisAlignment.end
+                                                        : CrossAxisAlignment
+                                                            .center,
+                                                children: [
+                                                  Expanded(
+                                                    child: ListView.builder(
+                                                      shrinkWrap: true,
+                                                      physics:
+                                                          const NeverScrollableScrollPhysics(),
+                                                      itemCount:
+                                                          paymentController
+                                                              .paymentTypeList
+                                                              .length,
+                                                      itemBuilder:
+                                                          (context, index) {
+                                                        return PaymentTypeItem(
+                                                          title: paymentController
+                                                                  .paymentTypeList[
+                                                              index],
+                                                          index: index,
+                                                          selectedIndex:
+                                                              paymentController
+                                                                  .paymentTypeIndex,
+                                                        );
+                                                      },
+                                                    ),
+                                                  ),
+                                                  paymentController
+                                                              .paymentTypeIndex ==
+                                                          2
+                                                      ? GetBuilder<
+                                                          ProfileController>(
+                                                          builder:
+                                                              (profileController) {
+                                                            return Padding(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .all(
+                                                                Dimensions
+                                                                    .paddingSizeDefault,
+                                                              ),
+                                                              child: Text.rich(
+                                                                TextSpan(
+                                                                  children: [
+                                                                    TextSpan(
+                                                                      text:
+                                                                          '${'available'.tr}: ',
+                                                                      style: textRegular
+                                                                          .copyWith(
+                                                                        color: Theme
+                                                                            .of(
+                                                                          context,
+                                                                        ).hintColor,
+                                                                      ),
+                                                                    ),
+                                                                    TextSpan(
+                                                                      text: PriceConverter
+                                                                          .convertPrice(
+                                                                        profileController.profileModel?.data?.wallet?.walletBalance ??
+                                                                            0,
+                                                                      ),
+                                                                      style: textRobotoMedium
+                                                                          .copyWith(
+                                                                        color: Theme
+                                                                            .of(
+                                                                          context,
+                                                                        ).hintColor,
+                                                                      ),
+                                                                    ),
+                                                                  ],
+                                                                ),
+                                                              ),
+                                                            );
+                                                          },
+                                                        )
+                                                      : const SizedBox(),
+                                                ],
+                                              ),
+                                            if (!isPayToDriverPayment)
+                                              paymentController
+                                                          .paymentTypeIndex ==
+                                                      1
+                                                  ? Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                        left: Dimensions
+                                                            .paddingSizeLarge,
+                                                      ),
+                                                      child: SizedBox(
+                                                        height: 105,
+                                                        child: ListView.builder(
+                                                          itemCount:
+                                                              paymentController
+                                                                  .paymentGateways
+                                                                  ?.length,
+                                                          padding:
+                                                              EdgeInsets.zero,
+                                                          scrollDirection:
+                                                              Axis.horizontal,
+                                                          itemBuilder:
+                                                              (context, index) {
+                                                            return DigitalCardPaymentWidget(
+                                                              digitalPaymentModel:
+                                                                  paymentController
+                                                                          .paymentGateways![
+                                                                      index],
+                                                              index: index,
+                                                            );
+                                                          },
+                                                        ),
+                                                      ),
+                                                    )
+                                                  : const SizedBox(),
+                                            if (!isPayToDriverPayment)
+                                              paymentController
+                                                          .paymentTypeIndex ==
+                                                      1
+                                                  ? Container(
+                                                      width:
+                                                          MediaQuery.of(context)
+                                                              .size
+                                                              .width,
+                                                      margin:
+                                                          const EdgeInsets.only(
+                                                        left: Dimensions
+                                                            .paddingSizeDefault,
+                                                        right: Dimensions
+                                                            .paddingSizeDefault,
+                                                        bottom: Dimensions
+                                                            .paddingSizeDefault,
+                                                        top: Dimensions
+                                                            .paddingSizeExtraSmall,
+                                                      ),
+                                                      decoration: BoxDecoration(
+                                                        borderRadius:
+                                                            BorderRadius
+                                                                .circular(
+                                                          Dimensions
+                                                              .paddingSizeExtraSmall,
+                                                        ),
+                                                        border: Border.all(
+                                                          width: .5,
+                                                          color: Theme.of(
+                                                            context,
+                                                          )
+                                                              .primaryColor
+                                                              .withValues(
+                                                                alpha: .9,
+                                                              ),
+                                                        ),
+                                                      ),
+                                                      child: Row(
+                                                        children: [
+                                                          Expanded(
+                                                            child: SizedBox(
+                                                              child: Padding(
+                                                                padding:
+                                                                    EdgeInsets
+                                                                        .only(
+                                                                  left: Get.find<
+                                                                              LocalizationController>()
+                                                                          .isLtr
+                                                                      ? Dimensions
+                                                                          .paddingSizeExtraSmall
+                                                                      : 0,
+                                                                  right: Get.find<
+                                                                              LocalizationController>()
+                                                                          .isLtr
+                                                                      ? 0
+                                                                      : Dimensions
+                                                                          .paddingSizeExtraSmall,
+                                                                ),
+                                                                child: Padding(
+                                                                  padding:
+                                                                      const EdgeInsets
+                                                                          .symmetric(
+                                                                    horizontal:
+                                                                        Dimensions
+                                                                            .iconSizeSmall,
+                                                                    vertical:
+                                                                        Dimensions
+                                                                            .paddingSizeSmall,
+                                                                  ),
+                                                                  child: Text(
+                                                                    (paymentController.tipAmount ==
+                                                                                '0' ||
+                                                                            paymentController
+                                                                                .tipAmount.isEmpty)
+                                                                        ? 'give_tips'
+                                                                            .tr
+                                                                        : '${'tips'.tr}: ${PriceConverter.convertPrice(double.parse(paymentController.tipAmount))}',
+                                                                    style: textRobotoMedium
+                                                                        .copyWith(
+                                                                      color: Theme
+                                                                          .of(
+                                                                        context,
+                                                                      ).primaryColorDark,
+                                                                    ),
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                          const SizedBox(
+                                                            width: Dimensions
+                                                                .paddingSizeSmall,
+                                                          ),
+                                                          InkWell(
+                                                            onTap: () =>
+                                                                showDialog(
+                                                              barrierDismissible:
+                                                                  false,
+                                                              context: context,
+                                                              builder: (_) =>
+                                                                  const TipsWidget(),
+                                                            ),
+                                                            child: Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                horizontal:
+                                                                    Dimensions
+                                                                        .paddingSizeSmall,
+                                                                vertical: Dimensions
+                                                                    .paddingSizeSmall,
+                                                              ),
+                                                              margin:
+                                                                  const EdgeInsets
+                                                                      .all(
+                                                                Dimensions
+                                                                    .paddingSizeSmall,
+                                                              ),
+                                                              decoration:
+                                                                  BoxDecoration(
+                                                                color: Theme.of(
+                                                                  context,
+                                                                )
+                                                                    .primaryColor
+                                                                    .withValues(
+                                                                      alpha:
+                                                                          .35,
+                                                                    ),
+                                                                borderRadius:
+                                                                    const BorderRadius
+                                                                        .all(
+                                                                  Radius
+                                                                      .circular(
+                                                                    Dimensions
+                                                                        .paddingSizeSmall,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                              child: Center(
+                                                                child: Text(
+                                                                  (paymentController
+                                                                                  .tipAmount ==
+                                                                              '0' ||
+                                                                          paymentController
+                                                                              .tipAmount
+                                                                              .isEmpty)
+                                                                      ? 'add_tips'
+                                                                          .tr
+                                                                      : 'change'
+                                                                          .tr,
+                                                                  style: textBold
+                                                                      .copyWith(
+                                                                    color: Theme
+                                                                        .of(
+                                                                      context,
+                                                                    ).primaryColorDark,
+                                                                    fontSize:
+                                                                        Dimensions
+                                                                            .fontSizeDefault,
+                                                                  ),
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    )
+                                                  : const SizedBox(),
+                                            Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: Dimensions
+                                                    .paddingSizeDefault,
+                                              ),
+                                              child: Theme(
+                                                data:
+                                                    Theme.of(context).copyWith(
+                                                  dividerColor:
+                                                      Colors.transparent,
+                                                ),
+                                                child: ExpansionTile(
+                                                  initiallyExpanded: true,
+                                                  tilePadding: collapsed
+                                                      ? EdgeInsets.zero
+                                                      : const EdgeInsets
+                                                          .symmetric(
+                                                          horizontal: Dimensions
+                                                              .paddingSizeSmall,
+                                                        ),
+                                                  backgroundColor: Colors.white,
+                                                  collapsedBackgroundColor:
+                                                      Colors.white,
+                                                  collapsedShape:
+                                                      RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                      10,
+                                                    ),
+                                                  ),
+                                                  title: Row(
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment
+                                                            .spaceBetween,
+                                                    children: [
+                                                      Text(
+                                                        'trip_details'.tr,
+                                                        style:
+                                                            textMedium.copyWith(
+                                                          color: Theme.of(
+                                                            context,
+                                                          ).primaryColor,
+                                                          fontSize: Dimensions
+                                                              .fontSizeLarge,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                  onExpansionChanged:
+                                                      (bool expanded) {
+                                                    setState(() {
+                                                      collapsed = expanded;
+                                                    });
+                                                  },
+                                                  children: [
+                                                    const SizedBox(
+                                                      height: Dimensions
+                                                          .paddingSizeSmall,
+                                                    ),
+                                                    if (rideController
+                                                            .tripDetails !=
+                                                        null)
+                                                      Container(
+                                                        width: double.infinity,
+                                                        color: Colors.white,
+                                                        child: RouteWidget(
+                                                          totalDistance: rideController
+                                                                  .finalFare
+                                                                  ?.actualDistance
+                                                                  ?.toString() ??
+                                                              '0',
+                                                          fromAddress:
+                                                              rideController
+                                                                  .tripDetails!
+                                                                  .pickupAddress!,
+                                                          toAddress: rideController
+                                                              .tripDetails!
+                                                              .destinationAddress!,
+                                                          extraOneAddress:
+                                                              firstRoute,
+                                                          extraTwoAddress:
+                                                              secondRoute,
+                                                          entrance: rideController
+                                                                  .tripDetails!
+                                                                  .entrance ??
+                                                              '',
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ],
                                         ),
-                                      )),
-                                    ),
-                                  ),
-                                ]),
-                              )
-                            : const SizedBox(),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: Dimensions.paddingSizeDefault),
-                        child: Theme(
-                          data: Theme.of(context)
-                              .copyWith(dividerColor: Colors.transparent),
-                          child: ExpansionTile(
-                            initiallyExpanded: true,
-                            tilePadding: collapsed
-                                ? EdgeInsets.zero
-                                : const EdgeInsets.symmetric(
-                                    horizontal: Dimensions.paddingSizeSmall),
-                            backgroundColor: Colors.white,
-                            collapsedBackgroundColor: Colors.white,
-                            collapsedShape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                            title: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text('trip_details'.tr,
-                                    style: textMedium.copyWith(
-                                      color: Theme.of(context).primaryColor,
-                                      fontSize: Dimensions.fontSizeLarge,
-                                    )),
-                              ],
-                            ),
-                            onExpansionChanged: (bool expanded) {
-                              setState(() {
-                                collapsed = expanded;
-                              });
-                            },
-                            children: [
-                              const SizedBox(
-                                  height: Dimensions.paddingSizeSmall),
-                              if (rideController.tripDetails != null)
-                                RouteWidget(
-                                  totalDistance: rideController
-                                          .finalFare?.actualDistance
-                                          ?.toString() ??
-                                      '0',
-                                  fromAddress: rideController
-                                      .tripDetails!.pickupAddress!,
-                                  toAddress: rideController
-                                      .tripDetails!.destinationAddress!,
-                                  extraOneAddress: firstRoute,
-                                  extraTwoAddress: secondRoute,
-                                  entrance:
-                                      rideController.tripDetails!.entrance ??
-                                          '',
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ]);
-                  }),
-                  Get.find<RideController>().finalFare != null
-                      ? Column(children: [
-                          TripFareSummery(
-                            fromPayment: true,
-                            tripFare:
-                                Get.find<RideController>().finalFare!.paidFare!,
-                            fromParcel: widget.fromParcel,
-                          ),
-                          if (!Get.find<RideController>()
-                              .tripDetails!
-                              .isPayToDriverPayment)
-                            ApplyCoupon(
-                                tripId:
-                                    Get.find<RideController>().finalFare!.id!),
-                        ])
-                      : const SizedBox(),
+                                      ),
+                                      if (rideController.finalFare != null)
+                                        ColoredBox(
+                                          color: Colors.white,
+                                          child: Column(
+                                            children: [
+                                              TripFareSummery(
+                                                fromPayment: true,
+                                                tripFare: rideController
+                                                    .finalFare!.paidFare!,
+                                                fromParcel: widget.fromParcel,
+                                              ),
+                                              if (!rideController.tripDetails!
+                                                  .isPayToDriverPayment)
+                                                ApplyCoupon(
+                                                  tripId: rideController
+                                                      .finalFare!.id!,
+                                                ),
+                                            ],
+                                          ),
+                                        ),
                                     ],
-                                  ),
-                                ),
+                                  );
+                                },
                               ),
                             );
                           },
-                        );
-                      },
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              ],
-            );
-          }),
-          bottomNavigationBar:
-              GetBuilder<PaymentController>(builder: (paymentController) {
-            if (_isPayToDriverPayment()) {
-              return Container(
-                color: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: Dimensions.paddingSizeDefault,
-                  vertical: Dimensions.paddingSizeDefault,
-                ),
-                child: SafeArea(
+                  ],
+                );
+              },
+            ),
+          ),
+          bottomNavigationBar: ColoredBox(
+            color: Colors.white,
+            child: GetBuilder<PaymentController>(
+              builder: (paymentController) {
+                if (_isPayToDriverPayment()) {
+                  return Container(
+                    color: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Dimensions.paddingSizeDefault,
+                      vertical: Dimensions.paddingSizeDefault,
+                    ),
+                    child: SafeArea(
+                      top: false,
+                      child: Container(
+                        padding:
+                            const EdgeInsets.all(Dimensions.paddingSizeDefault),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context)
+                              .primaryColor
+                              .withValues(alpha: 0.10),
+                          borderRadius:
+                              BorderRadius.circular(Dimensions.radiusLarge),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Icons.hourglass_bottom_rounded,
+                              color: Theme.of(context).primaryColor,
+                              size: 22,
+                            ),
+                            const SizedBox(
+                              width: Dimensions.paddingSizeSmall,
+                            ),
+                            Expanded(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Aguardando o motorista',
+                                    style: textSemiBold.copyWith(
+                                      color: Theme.of(context).primaryColor,
+                                      fontSize: Dimensions.fontSizeDefault,
+                                    ),
+                                  ),
+                                  const SizedBox(
+                                    height: Dimensions.paddingSizeExtraSmall,
+                                  ),
+                                  Text(
+                                    'Confirmação do pagamento: ${_displayPaymentMethod()}',
+                                    style: textRegular.copyWith(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.color,
+                                      fontSize: Dimensions.fontSizeSmall,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }
+
+                return SafeArea(
                   top: false,
                   child: Container(
-                    padding:
-                        const EdgeInsets.all(Dimensions.paddingSizeDefault),
-                    decoration: BoxDecoration(
-                      color: Theme.of(context)
-                          .primaryColor
-                          .withValues(alpha: 0.10),
-                      borderRadius:
-                          BorderRadius.circular(Dimensions.radiusLarge),
+                    color: Colors.white,
+                    height: 80,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: Dimensions.paddingSizeDefault,
+                      vertical: Dimensions.paddingSizeDefault,
                     ),
-                    child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            Icons.hourglass_bottom_rounded,
-                            color: Theme.of(context).primaryColor,
-                            size: 22,
-                          ),
-                          const SizedBox(width: Dimensions.paddingSizeSmall),
-                          Expanded(
-                              child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                Text(
-                                  'Aguardando o motorista',
-                                  style: textSemiBold.copyWith(
-                                    color: Theme.of(context).primaryColor,
-                                    fontSize: Dimensions.fontSizeDefault,
+                    child: paymentController.isLoading
+                        ? Center(
+                            child: SpinKitCircle(
+                              color: Theme.of(context).primaryColor,
+                              size: 40.0,
+                            ),
+                          )
+                        : ButtonWidget(
+                            buttonText: 'pay_now'.tr,
+                            onPressed: () {
+                              if (paymentController.paymentTypeIndex == 1 &&
+                                  paymentController.paymentGatewayIndex != -1) {
+                                Get.to(
+                                  () => DigitalPaymentScreen(
+                                    tripId: Get.find<RideController>()
+                                        .finalFare!
+                                        .id!,
+                                    paymentMethod: paymentController.gateWay,
+                                    fromParcel: widget.fromParcel,
+                                    tips: paymentController.tipAmount,
                                   ),
-                                ),
-                                const SizedBox(
-                                    height: Dimensions.paddingSizeExtraSmall),
-                                Text(
-                                  'Confirma\u00e7\u00e3o do pagamento: ${_displayPaymentMethod()}',
-                                  style: textRegular.copyWith(
-                                    color: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium
-                                        ?.color,
-                                    fontSize: Dimensions.fontSizeSmall,
-                                  ),
-                                ),
-                              ])),
-                        ]),
-                  ),
-                ),
-              );
-            }
-
-            return Container(
-              color: Colors.white,
-              height: 80,
-              padding: const EdgeInsets.symmetric(
-                horizontal: Dimensions.paddingSizeDefault,
-                vertical: Dimensions.paddingSizeDefault,
-              ),
-              child: paymentController.isLoading
-                  ? Center(
-                      child: SpinKitCircle(
-                      color: Theme.of(context).primaryColor,
-                      size: 40.0,
-                    ))
-                  : ButtonWidget(
-                      buttonText: 'pay_now'.tr,
-                      onPressed: () {
-                        if (paymentController.paymentTypeIndex == 1 &&
-                            paymentController.paymentGatewayIndex != -1) {
-                          Get.to(() => DigitalPaymentScreen(
-                                tripId:
+                                );
+                              }
+                              if (paymentController.paymentTypeIndex == 1 &&
+                                  paymentController.paymentGatewayIndex == -1) {
+                                showCustomSnackBar(
+                                  'select_payment_method'.tr,
+                                );
+                              } else if (paymentController.paymentTypeIndex ==
+                                      0 ||
+                                  paymentController.paymentTypeIndex == 2) {
+                                if (Get.find<RideController>().finalFare !=
+                                    null) {
+                                  paymentController.paymentSubmit(
                                     Get.find<RideController>().finalFare!.id!,
-                                paymentMethod: paymentController.gateWay,
-                                fromParcel: widget.fromParcel,
-                                tips: paymentController.tipAmount,
-                              ));
-                        }
-                        if (paymentController.paymentTypeIndex == 1 &&
-                            paymentController.paymentGatewayIndex == -1) {
-                          showCustomSnackBar('select_payment_method'.tr);
-                        } else if (paymentController.paymentTypeIndex == 0 ||
-                            paymentController.paymentTypeIndex == 2) {
-                          if (Get.find<RideController>().finalFare != null) {
-                            paymentController.paymentSubmit(
-                              Get.find<RideController>().finalFare!.id!,
-                              paymentController.paymentTypeList[
-                                  paymentController.paymentTypeIndex],
-                              fromParcel: widget.fromParcel,
-                            );
-                          }
-                        }
-                      },
-                    ),
-            );
-          }),
+                                    paymentController.paymentTypeList[
+                                        paymentController.paymentTypeIndex],
+                                    fromParcel: widget.fromParcel,
+                                  );
+                                }
+                              }
+                            },
+                          ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
+class _LokallyNoOverscrollBehavior extends ScrollBehavior {
+  const _LokallyNoOverscrollBehavior();
+
+  @override
+  Widget buildOverscrollIndicator(
+    BuildContext context,
+    Widget child,
+    ScrollableDetails details,
+  ) {
+    return child;
+  }
+
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) {
+    return const ClampingScrollPhysics();
+  }
+}

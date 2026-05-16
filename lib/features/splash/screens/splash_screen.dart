@@ -79,39 +79,53 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
+    final double safeTop = MediaQuery.of(context).padding.top;
+    final double splashBackgroundTopOffset = safeTop > 0 ? 18 : 10;
+
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(color: Theme.of(context).cardColor),
         alignment: Alignment.bottomCenter,
         child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              Stack(alignment: AlignmentDirectional.bottomCenter, children: [
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Stack(
+              alignment: AlignmentDirectional.bottomCenter,
+              children: [
                 Container(
                   transform: Matrix4.translationValues(
-                      0,
-                      320 -
-                          (320 * double.tryParse(_animation.value.toString())!),
-                      0),
-                  child: Column(children: [
-                    Opacity(
-                      opacity: _animation.value,
-                      child: Padding(
-                        padding: EdgeInsets.only(
+                    0,
+                    320 - (320 * double.tryParse(_animation.value.toString())!),
+                    0,
+                  ),
+                  child: Column(
+                    children: [
+                      Opacity(
+                        opacity: _animation.value,
+                        child: Padding(
+                          padding: EdgeInsets.only(
                             left: 120 -
                                 ((120 *
                                     double.tryParse(
-                                        _animation.value.toString())!))),
-                        child: Image.asset(Images.splashLogo, width: 220),
+                                      _animation.value.toString(),
+                                    )!)),
+                          ),
+                          child: Image.asset(Images.splashLogo, width: 220),
+                        ),
                       ),
-                    ),
-                    SizedBox(height: Get.height * 0.25),
-                    SvgPicture.asset(Images.splashSvgBackground)
-                  ]),
+                      SizedBox(height: Get.height * 0.25),
+                      Transform.translate(
+                        offset: Offset(0, splashBackgroundTopOffset),
+                        child: SvgPicture.asset(Images.splashSvgBackground),
+                      ),
+                    ],
+                  ),
                 ),
-              ]),
-            ]),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
