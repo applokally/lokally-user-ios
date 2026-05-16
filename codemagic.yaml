@@ -1,6 +1,6 @@
 workflows:
   lokally-passenger-ios-testflight:
-    name: Lokally Passenger iOS TestFlight
+    name: Lokally Passenger iOS App Store
     max_build_duration: 120
     instance_type: mac_mini_m2
 
@@ -111,8 +111,6 @@ workflows:
               <key>com.lokallyapp.passageiro</key>
               <string>$PROFILE_NAME</string>
             </dict>
-            <key>testFlightInternalTestingOnly</key>
-            <true/>
           </dict>
           </plist>
           EOF
