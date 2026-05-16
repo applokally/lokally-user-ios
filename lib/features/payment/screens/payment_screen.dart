@@ -100,7 +100,7 @@ class _PaymentScreenState extends State<PaymentScreen>
           return;
         },
         child: Scaffold(
-          backgroundColor: Theme.of(context).cardColor,
+          backgroundColor: Colors.white,
           body: GetBuilder<PaymentController>(builder: (paymentController) {
             tipsAmountController.text =
                 '${'tips'.tr}-${'\$${paymentController.tipAmount}'}';
@@ -112,7 +112,7 @@ class _PaymentScreenState extends State<PaymentScreen>
               ),
               body: GetBuilder<CouponController>(builder: (couponController) {
                 return ColoredBox(
-                    color: Theme.of(context).cardColor,
+                    color: Colors.white,
                     child: SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
                     padding: EdgeInsets.only(
@@ -568,7 +568,7 @@ class _PaymentScreenState extends State<PaymentScreen>
               GetBuilder<PaymentController>(builder: (paymentController) {
             if (_isPayToDriverPayment()) {
               return Container(
-                color: Theme.of(context).cardColor,
+                color: Colors.white,
                 padding: const EdgeInsets.symmetric(
                   horizontal: Dimensions.paddingSizeDefault,
                   vertical: Dimensions.paddingSizeDefault,
@@ -626,7 +626,7 @@ class _PaymentScreenState extends State<PaymentScreen>
             }
 
             return Container(
-              color: Theme.of(context).cardColor,
+              color: Colors.white,
               height: 80,
               padding: const EdgeInsets.symmetric(
                 horizontal: Dimensions.paddingSizeDefault,
