@@ -1,4 +1,5 @@
- import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
 import 'package:ride_sharing_user_app/theme/custom_theme_color.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 
@@ -8,17 +9,16 @@ ThemeData lightTheme = ThemeData(
   primaryColorDark: const Color(0xFF007B6C),
   disabledColor: const Color(0xFFBABFC4),
   scaffoldBackgroundColor: const Color(0xFF008C7B),
-  shadowColor: Colors.black.withValues(alpha:0.03),
-  textTheme:  const TextTheme(
+  shadowColor: Colors.black.withValues(alpha: 0.03),
+  textTheme: const TextTheme(
     bodyMedium: TextStyle(color: Color(0xff1D2D2B)),
     bodySmall: TextStyle(color: Color(0xff6B7675)),
     bodyLarge: TextStyle(color: Color(0xff48615E)),
     titleMedium: TextStyle(color: Color(0xff1D2D2B)),
   ),
   dialogTheme: DialogThemeData(
-    backgroundColor: const Color(0xFFEEEEEE)
+    backgroundColor: const Color(0xFFEEEEEE),
   ),
-
   pageTransitionsTheme: const PageTransitionsTheme(
     builders: <TargetPlatform, PageTransitionsBuilder>{
       TargetPlatform.android: CupertinoPageTransitionsBuilder(),
@@ -27,7 +27,6 @@ ThemeData lightTheme = ThemeData(
       TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
     },
   ),
-
   brightness: Brightness.light,
   hintColor: const Color(0xFF9F9F9F),
   cardColor: Colors.white,
@@ -54,8 +53,11 @@ ThemeData lightTheme = ThemeData(
     surfaceContainer: Color(0xFF0094FF),
     secondaryFixedDim: Color(0xff808080),
   ),
-  textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: const Color(0xFF14B19E))),
-
+  textButtonTheme: TextButtonThemeData(
+    style: TextButton.styleFrom(
+      foregroundColor: const Color(0xFF14B19E),
+    ),
+  ),
   extensions: <ThemeExtension<CustomThemeColors>>[
     CustomThemeColors.light(),
   ],
