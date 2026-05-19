@@ -1,4 +1,4 @@
-package com.sixamtech.hexarideuser
+package com.lokallyapp.passageiro
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -63,6 +63,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   bool hasLoadedBoostedProducts = false;
   bool isLoadingBoostedCategories = false;
   bool hasLoadedBoostedCategories = false;
+  bool isPreparingMarketplaceInitialLayout = true;
   String? currentMarketplaceZoneId;
 
   StoreMarketplaceSettings marketplaceSettings =
@@ -443,62 +444,81 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   }
 
   Future<void> loadPublicStore() async {
-    final StoreMarketplaceSettings settings = await loadMarketplaceSettings();
+    final bool shouldPrepareInitialLayout = !hasLoadedPublicStore &&
+        !hasLoadedMarketplaceBanners &&
+        products.isEmpty &&
+        marketplaceBanners.isEmpty;
 
-    final String? resolvedZoneId = await resolveMarketplaceZoneId();
-
-    if (mounted) {
+    if (shouldPrepareInitialLayout && mounted) {
       setState(() {
-        currentMarketplaceZoneId = resolvedZoneId;
+        isPreparingMarketplaceInitialLayout = true;
       });
     }
 
-    if (!settings.marketplaceEnabled) {
-      if (!mounted) {
+    try {
+      final StoreMarketplaceSettings settings = await loadMarketplaceSettings();
+
+      final String? resolvedZoneId = await resolveMarketplaceZoneId();
+
+      if (mounted) {
+        setState(() {
+          currentMarketplaceZoneId = resolvedZoneId;
+        });
+      }
+
+      if (!settings.marketplaceEnabled) {
+        if (!mounted) {
+          return;
+        }
+
+        stopMarketplaceBannerCarousel();
+        stopBoostedProductsCarousel();
+
+        setState(() {
+          products = <StoreProductData>[];
+          boostedProducts = <StoreProductData>[];
+          boostedCategories = <StoreBoostedCategoryData>[];
+          marketplaceBanners = <StoreMarketplaceBannerData>[];
+          selectedMarketplaceBannerIndex = 0;
+          mainCategories = <StoreCategoryData>[StoreCategoryData.all()];
+          selectedMainCategoryIndex = 0;
+          selectedSubcategoryId = '';
+          searchQuery = '';
+          isLoadingPublicStore = false;
+          hasLoadedPublicStore = true;
+          isLoadingMarketplaceBanners = false;
+          hasLoadedMarketplaceBanners = true;
+          isLoadingBoostedProducts = false;
+          hasLoadedBoostedProducts = true;
+          isLoadingBoostedCategories = false;
+          hasLoadedBoostedCategories = true;
+          selectedBoostedProductIndex = 0;
+        });
         return;
       }
 
-      stopMarketplaceBannerCarousel();
-      stopBoostedProductsCarousel();
+      if (resolvedZoneId == null || resolvedZoneId.isEmpty) {
+        if (!mounted) {
+          return;
+        }
 
-      setState(() {
-        products = <StoreProductData>[];
-        boostedProducts = <StoreProductData>[];
-        boostedCategories = <StoreBoostedCategoryData>[];
-        marketplaceBanners = <StoreMarketplaceBannerData>[];
-        selectedMarketplaceBannerIndex = 0;
-        mainCategories = <StoreCategoryData>[StoreCategoryData.all()];
-        selectedMainCategoryIndex = 0;
-        selectedSubcategoryId = '';
-        searchQuery = '';
-        isLoadingPublicStore = false;
-        hasLoadedPublicStore = true;
-        isLoadingMarketplaceBanners = false;
-        hasLoadedMarketplaceBanners = true;
-        isLoadingBoostedProducts = false;
-        hasLoadedBoostedProducts = true;
-        isLoadingBoostedCategories = false;
-        hasLoadedBoostedCategories = true;
-        selectedBoostedProductIndex = 0;
-      });
-      return;
-    }
-
-    if (resolvedZoneId == null || resolvedZoneId.isEmpty) {
-      if (!mounted) {
+        clearPublicStoreForUnavailableZone();
         return;
       }
 
-      clearPublicStoreForUnavailableZone();
-      return;
+      await loadPublicCategories();
+      await loadMarketplaceBanners();
+      await loadPublicProducts();
+      await loadBoostedProducts();
+      await loadBoostedCategories();
+      await checkSellerStatusOnOpen();
+    } finally {
+      if (mounted) {
+        setState(() {
+          isPreparingMarketplaceInitialLayout = false;
+        });
+      }
     }
-
-    await loadPublicCategories();
-    await loadPublicProducts();
-    await loadMarketplaceBanners();
-    await loadBoostedProducts();
-    await loadBoostedCategories();
-    await checkSellerStatusOnOpen();
   }
 
   String get marketplaceBannerRequestUri {
@@ -521,7 +541,10 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     if (mounted) {
       setState(() {
         isLoadingMarketplaceBanners = true;
-        hasLoadedMarketplaceBanners = false;
+
+        if (marketplaceBanners.isEmpty) {
+          hasLoadedMarketplaceBanners = false;
+        }
       });
     }
 
@@ -1707,11 +1730,39 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final bool marketplaceAvailable = marketplaceSettings.marketplaceEnabled;
     final bool showMarketplaceUnavailable =
         hasLoadedMarketplaceSettings && !marketplaceAvailable;
+    final bool shouldShowInitialMarketplaceLoading = marketplaceAvailable &&
+        !showMarketplaceUnavailable &&
+        (isPreparingMarketplaceInitialLayout ||
+            (!hasLoadedPublicStore && products.isEmpty) ||
+            (!hasLoadedMarketplaceBanners && marketplaceBanners.isEmpty));
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
         children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 360,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      primaryColor,
+                      primaryColor.withValues(alpha: 0.92),
+                      primaryColor.withValues(alpha: 0.58),
+                      Colors.white.withValues(alpha: 0),
+                    ],
+                    stops: const [0.0, 0.38, 0.75, 1.0],
+                  ),
+                ),
+              ),
+            ),
+          ),
           Column(
             children: [
               StoreMarketplaceHeader(
@@ -1746,7 +1797,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.fromLTRB(
                       Dimensions.paddingSizeDefault,
-                      14,
+                      10,
                       Dimensions.paddingSizeDefault,
                       150,
                     ),
@@ -1765,6 +1816,10 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                             onSupportTap: marketplaceSettings.hasSupportWhatsapp
                                 ? openSellerSupportWhatsApp
                                 : null,
+                          ),
+                        ] else if (shouldShowInitialMarketplaceLoading) ...[
+                          StoreMarketplaceInitialLoadingBlock(
+                            primaryColor: primaryColor,
                           ),
                         ] else ...[
                           if (searchQuery.trim().isNotEmpty) ...[
@@ -1791,22 +1846,30 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                             ),
                           ],
                           const SizedBox(height: 14),
-                          if (isLoadingMarketplaceBanners &&
-                              !hasLoadedMarketplaceBanners) ...[
-                            StoreBannerLoading(primaryColor: primaryColor),
-                            const SizedBox(height: 18),
-                          ] else if (marketplaceBanners.isNotEmpty) ...[
-                            StoreBannerCarousel(
-                              banners: marketplaceBanners,
-                              selectedIndex: selectedMarketplaceBannerIndex,
-                              pageController: marketplaceBannerPageController,
+                          if (marketplaceBanners.isNotEmpty) ...[
+                            StoreStableBannerSlot(
                               primaryColor: primaryColor,
-                              onPageChanged: (index) {
-                                setState(() {
-                                  selectedMarketplaceBannerIndex = index;
-                                });
-                              },
-                              onBannerTap: handleMarketplaceBannerTap,
+                              child: StoreBannerCarousel(
+                                banners: marketplaceBanners,
+                                selectedIndex: selectedMarketplaceBannerIndex,
+                                pageController: marketplaceBannerPageController,
+                                primaryColor: primaryColor,
+                                onPageChanged: (index) {
+                                  setState(() {
+                                    selectedMarketplaceBannerIndex = index;
+                                  });
+                                },
+                                onBannerTap: handleMarketplaceBannerTap,
+                              ),
+                            ),
+                            const SizedBox(height: 18),
+                          ] else if (isLoadingMarketplaceBanners &&
+                              !hasLoadedMarketplaceBanners) ...[
+                            StoreStableBannerSlot(
+                              primaryColor: primaryColor,
+                              child: StoreBannerLoading(
+                                primaryColor: primaryColor,
+                              ),
                             ),
                             const SizedBox(height: 18),
                           ],
@@ -1856,7 +1919,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                               ),
                               const SizedBox(height: 12),
                               SizedBox(
-                                height: 432,
+                                height: 372,
                                 child: ListView.builder(
                                   controller: welcomeCarouselController,
                                   scrollDirection: Axis.horizontal,
@@ -1903,7 +1966,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                                 crossAxisCount: 2,
                                 crossAxisSpacing: 12,
                                 mainAxisSpacing: 14,
-                                mainAxisExtent: 432,
+                                mainAxisExtent: 372,
                               ),
                               itemBuilder: (context, index) {
                                 final StoreProductData product =
@@ -2184,13 +2247,14 @@ class StoreMainCategoryMenu extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 34,
+      height: 94,
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
         itemCount: categories.length,
         itemBuilder: (context, index) {
           return StoreCategoryTextItem(
-            label: categories[index].name,
+            category: categories[index],
             isSelected: index == selectedIndex,
             primaryColor: primaryColor,
             onTap: () => onSelected(index),
@@ -2249,7 +2313,7 @@ class StoreSubcategoryMenu extends StatelessWidget {
                     item.name,
                     style: textBold.copyWith(
                       color: selected ? primaryColor : Colors.grey.shade700,
-                      fontSize: 12.3,
+                      fontSize: 12.0,
                     ),
                   ),
                 ),
@@ -2263,14 +2327,14 @@ class StoreSubcategoryMenu extends StatelessWidget {
 }
 
 class StoreCategoryTextItem extends StatelessWidget {
-  final String label;
+  final StoreCategoryData category;
   final bool isSelected;
   final Color primaryColor;
   final VoidCallback onTap;
 
   const StoreCategoryTextItem({
     super.key,
-    required this.label,
+    required this.category,
     required this.isSelected,
     required this.primaryColor,
     required this.onTap,
@@ -2278,20 +2342,95 @@ class StoreCategoryTextItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String? localIconAsset = category.localIconAsset;
+    final bool hasNetworkIcon = category.iconUrl.isNotEmpty;
+    final bool hasIcon = localIconAsset != null || hasNetworkIcon;
+    final Color labelColor =
+        Colors.white.withValues(alpha: isSelected ? 1 : 0.94);
+
+    Widget iconWidget() {
+      if (!hasIcon) {
+        return SizedBox(
+          width: 58,
+          height: 58,
+          child: Icon(
+            category.isAll ? Icons.apps_rounded : Icons.storefront_rounded,
+            color: Colors.white.withValues(alpha: 0.92),
+            size: 36,
+          ),
+        );
+      }
+
+      final Widget image = localIconAsset != null
+          ? Image.asset(
+              localIconAsset,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) {
+                return Icon(
+                  category.isAll
+                      ? Icons.apps_rounded
+                      : Icons.storefront_rounded,
+                  color: Colors.white.withValues(alpha: 0.92),
+                  size: 36,
+                );
+              },
+            )
+          : Image.network(
+              category.iconUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) {
+                return Icon(
+                  category.isAll
+                      ? Icons.apps_rounded
+                      : Icons.storefront_rounded,
+                  color: Colors.white.withValues(alpha: 0.92),
+                  size: 36,
+                );
+              },
+            );
+
+      return SizedBox(
+        width: 58,
+        height: 58,
+        child: image,
+      );
+    }
+
     return GestureDetector(
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.only(right: 18),
-        child: Center(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: (isSelected ? textBold : textMedium).copyWith(
-              color: isSelected ? primaryColor : Colors.grey.shade700,
-              fontSize: isSelected ? 15 : 14,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 88,
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.only(top: 2, bottom: 6),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            iconWidget(),
+            const SizedBox(height: 3),
+            Text(
+              category.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: (isSelected ? textBold : textMedium).copyWith(
+                color: labelColor,
+                fontSize: category.isAll ? 12.8 : 12.0,
+                height: 1.0,
+              ),
             ),
-          ),
+            const SizedBox(height: 6),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: isSelected ? 30 : 0,
+              height: 3,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2301,12 +2440,14 @@ class StoreCategoryTextItem extends StatelessWidget {
 class StoreBanner extends StatelessWidget {
   final String imageUrl;
   final VoidCallback onTap;
+  final Color primaryColor;
   final bool showFallbackWhenEmpty;
 
   const StoreBanner({
     super.key,
     required this.imageUrl,
     required this.onTap,
+    required this.primaryColor,
     this.showFallbackWhenEmpty = true,
   });
 
@@ -2356,6 +2497,29 @@ class StoreBanner extends StatelessWidget {
   }
 }
 
+class StoreStableBannerSlot extends StatelessWidget {
+  final Color primaryColor;
+  final Widget child;
+
+  const StoreStableBannerSlot({
+    super.key,
+    required this.primaryColor,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 160,
+      width: double.infinity,
+      child: Align(
+        alignment: Alignment.topCenter,
+        child: child,
+      ),
+    );
+  }
+}
+
 class StoreBannerCarousel extends StatelessWidget {
   final List<StoreMarketplaceBannerData> banners;
   final int selectedIndex;
@@ -2391,6 +2555,7 @@ class StoreBannerCarousel extends StatelessWidget {
               return StoreBanner(
                 imageUrl: banner.bestImageUrl,
                 onTap: () => onBannerTap(banner),
+                primaryColor: primaryColor,
                 showFallbackWhenEmpty: false,
               );
             },
@@ -2961,26 +3126,25 @@ class StoreProductCard extends StatelessWidget {
       child: Container(
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: Colors.grey.shade200),
           boxShadow: [
             BoxShadow(
-              offset: const Offset(0, 6),
-              blurRadius: 16,
-              color: Colors.black.withValues(alpha: 0.05),
+              offset: const Offset(0, 5),
+              blurRadius: 13,
+              color: Colors.black.withValues(alpha: 0.04),
             ),
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(18),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Stack(
                 children: [
-                  SizedBox(
-                    height: 176,
-                    width: double.infinity,
+                  AspectRatio(
+                    aspectRatio: 1,
                     child: StoreProductHeroImage(
                       imageUrl: product.mainImageUrl,
                       primaryColor: primaryColor,
@@ -2998,44 +3162,31 @@ class StoreProductCard extends StatelessWidget {
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 9, 12, 6),
+                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      SizedBox(
-                        height: 35,
-                        child: Text(
-                          product.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: textBold.copyWith(
-                            color: textColor,
-                            fontSize: 14.2,
-                            height: 1.13,
-                          ),
+                      Text(
+                        product.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.clip,
+                        softWrap: true,
+                        style: textBold.copyWith(
+                          color: textColor,
+                          fontSize: 13.0,
+                          height: 1.10,
                         ),
                       ),
                       const SizedBox(height: 5),
-                      Text(
-                        'Vendido por: ${product.storeName}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: textRegular.copyWith(
-                          color: Colors.grey.shade600,
-                          fontSize: 11.4,
-                        ),
-                      ),
-                      const SizedBox(height: 7),
                       ProductPriceColumn(
                         product: product,
                         primaryColor: primaryColor,
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 5),
                       StoreDeliveryInfo(
                         product: product,
                         primaryColor: primaryColor,
                       ),
-                      const Spacer(),
                     ],
                   ),
                 ),
@@ -3106,14 +3257,12 @@ class StoreProductHeroImage extends StatelessWidget {
   Widget build(BuildContext context) {
     if (imageUrl.isEmpty) {
       return Container(
-        color: primaryColor.withValues(alpha: 0.08),
-        child: Center(
-          child: Image.asset(
-            'assets/image/produto.webp',
-            width: double.infinity,
-            height: double.infinity,
-            fit: BoxFit.cover,
-          ),
+        color: Colors.white,
+        child: Image.asset(
+          'assets/image/produto.webp',
+          width: double.infinity,
+          height: double.infinity,
+          fit: BoxFit.cover,
         ),
       );
     }
@@ -3126,7 +3275,7 @@ class StoreProductHeroImage extends StatelessWidget {
       alignment: Alignment.center,
       errorBuilder: (_, __, ___) {
         return Container(
-          color: primaryColor.withValues(alpha: 0.08),
+          color: Colors.white,
           child: Image.asset(
             'assets/image/produto.webp',
             width: double.infinity,
@@ -3233,7 +3382,7 @@ class ProductPriceColumn extends StatelessWidget {
               maxLines: 1,
               style: textBold.copyWith(
                 color: primaryColor,
-                fontSize: 16,
+                fontSize: 15.2,
               ),
             ),
           ),
@@ -3245,7 +3394,7 @@ class ProductPriceColumn extends StatelessWidget {
       fit: BoxFit.scaleDown,
       alignment: Alignment.centerLeft,
       child: Text(
-        product.formattedFinalPrice,
+        'Por ${product.formattedFinalPrice}',
         maxLines: 1,
         style: textBold.copyWith(
           color: primaryColor,
@@ -3296,7 +3445,7 @@ class ProductPriceInline extends StatelessWidget {
     }
 
     return Text(
-      product.formattedFinalPrice,
+      'Por ${product.formattedFinalPrice}',
       maxLines: 1,
       style: textBold.copyWith(
         color: primaryColor,
@@ -3318,85 +3467,35 @@ class StoreDeliveryInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (product.isService) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Formato do serviço',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 11.4,
-              height: 1.12,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            product.serviceDeliveryLabel.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: textBold.copyWith(
-              color: primaryColor,
-              fontSize: 10.8,
-              height: 1.12,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            product.serviceDeliveryDescription,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: textMedium.copyWith(
-              color: Colors.grey.shade700,
-              fontSize: 10.4,
-              height: 1.12,
-            ),
-          ),
-        ],
-      );
-    }
+    final String label = product.isService ? 'Formato do serviço' : 'Entrega';
+    final String value = product.isService
+        ? product.compactServiceDeliveryLabel
+        : 'Retire grátis ou receba em casa';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(
-          'Opções de entrega',
-          style: textBold.copyWith(
-            color: Colors.black87,
-            fontSize: 11.4,
-            height: 1.12,
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: textMedium.copyWith(
+            color: Colors.grey.shade600,
+            fontSize: 9.2,
+            height: 1,
           ),
         ),
-        const SizedBox(height: 5),
+        const SizedBox(height: 2),
         Text(
-          'RETIRE GRÁTIS HOJE',
+          value,
+          maxLines: 2,
+          softWrap: true,
+          overflow: TextOverflow.clip,
           style: textBold.copyWith(
             color: primaryColor,
-            fontSize: 10.8,
-            height: 1.12,
-          ),
-        ),
-        const SizedBox(height: 5),
-        RichText(
-          text: TextSpan(
-            children: [
-              TextSpan(
-                text: 'Lokally Envios',
-                style: textBold.copyWith(
-                  color: primaryColor,
-                  fontSize: 10.4,
-                  height: 1.12,
-                ),
-              ),
-              TextSpan(
-                text: ' em até 24h receba em sua casa, à partir de R\$8,50',
-                style: textMedium.copyWith(
-                  color: Colors.grey.shade700,
-                  fontSize: 10.4,
-                  height: 1.12,
-                ),
-              ),
-            ],
+            fontSize: 10.4,
+            height: 1.08,
           ),
         ),
       ],
@@ -3417,9 +3516,9 @@ class StoreBottomActionStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 40,
+      height: 34,
       width: double.infinity,
-      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 7),
       decoration: BoxDecoration(
         color: primaryColor,
         borderRadius: BorderRadius.circular(18),
@@ -3431,11 +3530,169 @@ class StoreBottomActionStrip extends StatelessWidget {
           textAlign: TextAlign.center,
           style: textBold.copyWith(
             color: Colors.white,
-            fontSize: 12.3,
+            fontSize: 11.8,
             letterSpacing: 0.2,
           ),
         ),
       ),
+    );
+  }
+}
+
+class StoreMarketplaceInitialLoadingBlock extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreMarketplaceInitialLoadingBlock({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 94,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 3,
+            separatorBuilder: (_, __) => const SizedBox(width: 20),
+            itemBuilder: (context, index) {
+              final String label = index == 0
+                  ? 'Todos'
+                  : index == 1
+                      ? 'Beleza'
+                      : 'Serviços';
+
+              return SizedBox(
+                width: 72,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.20),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 11.8,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 14),
+        StoreStableBannerSlot(
+          primaryColor: primaryColor,
+          child: StoreBannerLoading(primaryColor: primaryColor),
+        ),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            Expanded(
+              child: Container(
+                height: 28,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Container(
+              width: 104,
+              height: 28,
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 372,
+          child: Row(
+            children: List.generate(2, (index) {
+              return Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(right: index == 0 ? 12 : 0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: 1,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(18),
+                              topRight: Radius.circular(18),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              height: 12,
+                              width: double.infinity,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 12,
+                              width: 90,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              height: 16,
+                              width: 104,
+                              decoration: BoxDecoration(
+                                color: primaryColor.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3497,7 +3754,7 @@ class StoreEmptyPublicProducts extends StatelessWidget {
             'Nenhum produto disponível',
             style: textBold.copyWith(
               color: Colors.black87,
-              fontSize: 16,
+              fontSize: 15.2,
             ),
           ),
           const SizedBox(height: 6),
@@ -3906,6 +4163,7 @@ class StoreCategoryData {
   final String name;
   final String slug;
   final String imageUrl;
+  final String iconUrl;
   final List<StoreCategoryData> subcategories;
 
   StoreCategoryData({
@@ -3914,6 +4172,7 @@ class StoreCategoryData {
     required this.name,
     required this.slug,
     required this.imageUrl,
+    this.iconUrl = '',
     this.subcategories = const <StoreCategoryData>[],
   });
 
@@ -3924,6 +4183,7 @@ class StoreCategoryData {
       name: 'Todos',
       slug: 'all',
       imageUrl: '',
+      iconUrl: '',
     );
   }
 
@@ -3934,6 +4194,7 @@ class StoreCategoryData {
       name: 'Todas',
       slug: 'all_subcategories',
       imageUrl: '',
+      iconUrl: '',
     );
   }
 
@@ -3942,12 +4203,17 @@ class StoreCategoryData {
     final List<dynamic> subcategoryList =
         subcategoriesValue is List ? subcategoriesValue : <dynamic>[];
 
+    final String imageUrl = '${map['image_url'] ?? ''}';
+    final String iconUrl =
+        '${map['icon_url'] ?? map['icon_image_url'] ?? map['icon'] ?? imageUrl}';
+
     return StoreCategoryData(
       id: '${map['id'] ?? ''}',
       parentId: '${map['parent_id'] ?? ''}',
       name: '${map['name'] ?? ''}',
       slug: '${map['slug'] ?? ''}',
-      imageUrl: '${map['image_url'] ?? ''}',
+      imageUrl: imageUrl,
+      iconUrl: iconUrl,
       subcategories: subcategoryList
           .whereType<Map>()
           .map((item) => StoreCategoryData.fromMap(
@@ -3959,6 +4225,43 @@ class StoreCategoryData {
   }
 
   bool get isAll => id.isEmpty;
+
+  String get normalizedIdentifier {
+    return '$name $slug'
+        .toLowerCase()
+        .replaceAll('ç', 'c')
+        .replaceAll('ã', 'a')
+        .replaceAll('á', 'a')
+        .replaceAll('à', 'a')
+        .replaceAll('â', 'a')
+        .replaceAll('é', 'e')
+        .replaceAll('ê', 'e')
+        .replaceAll('í', 'i')
+        .replaceAll('ó', 'o')
+        .replaceAll('ô', 'o')
+        .replaceAll('õ', 'o')
+        .replaceAll('ú', 'u');
+  }
+
+  String? get localIconAsset {
+    final String normalized = normalizedIdentifier;
+
+    if (isAll || normalized.contains('todos') || normalized.contains('all')) {
+      return 'assets/image/todos.png';
+    }
+
+    if (normalized.contains('beleza')) {
+      return 'assets/image/beleza_icon.png';
+    }
+
+    if (normalized.contains('servico') ||
+        normalized.contains('service') ||
+        normalized.contains('servicos')) {
+      return 'assets/image/servicos_icon.png';
+    }
+
+    return null;
+  }
 }
 
 class StoreProductData {
@@ -4129,6 +4432,24 @@ class StoreProductData {
   }
 
   bool get isService => productType == 'service';
+
+  String get compactServiceDeliveryLabel {
+    switch (serviceDeliveryType) {
+      case 'download':
+        return 'Digital com download';
+      case 'home_office':
+      case 'homeoffice':
+        return 'Home office';
+      case 'digital':
+      case 'online':
+        return 'Digital';
+      case 'presential':
+      case 'presencial':
+        return 'Presencial';
+      default:
+        return 'Serviço';
+    }
+  }
 
   String get serviceDeliveryLabel {
     switch (serviceDeliveryType) {

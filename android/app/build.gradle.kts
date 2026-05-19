@@ -5,6 +5,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
+    id("com.google.gms.google-services")
 }
 
 val keystoreProperties = Properties()
@@ -15,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     ndkVersion = "28.2.13676358"
-namespace = "com.sixamtech.hexarideuser"
+    namespace = "com.lokallyapp.passageiro"
     compileSdk = 36
 
     compileOptions {
@@ -30,7 +31,7 @@ namespace = "com.sixamtech.hexarideuser"
 
     defaultConfig {
         multiDexEnabled = true
-        applicationId = "com.sixamtech.hexarideuser"
+        applicationId = "com.lokallyapp.passageiro"
         minSdk = flutter.minSdkVersion
         targetSdk = 36
         versionCode = flutter.versionCode
@@ -48,7 +49,7 @@ namespace = "com.sixamtech.hexarideuser"
 
     buildTypes {
         getByName("release") {
-            signingConfig = signingConfigs.getByName("debug") // or "release" if you have real keystore
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 }
@@ -57,9 +58,7 @@ flutter {
     source = "../.."
 }
 
-
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
     implementation("com.google.firebase:firebase-messaging:23.4.1")
 }
-
