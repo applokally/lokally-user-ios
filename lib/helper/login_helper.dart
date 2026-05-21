@@ -26,8 +26,9 @@ import 'package:ride_sharing_user_app/localization/language_selection_screen.dar
 import 'package:ride_sharing_user_app/localization/localization_controller.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 
-class LoginHelper {
-  void handleIncomingLinks(Map<String, dynamic>? notificationData) async {
+class LoginHelper{
+
+  void handleIncomingLinks(Map<String,dynamic>? notificationData) async{
     Get.find<TripController>().getRideCancellationReasonList();
     Get.find<TripController>().getParcelCancellationReasonList();
     Get.find<RefundRequestController>().getParcelRefundReasonList();
@@ -35,17 +36,20 @@ class LoginHelper {
     FirebaseHelper().subscribeFirebaseTopic();
     String? path = await initDynamicLinks();
 
-    Get.find<ConfigController>().getConfigData().then((value) {
-      if (_isForceUpdate(Get.find<ConfigController>().config)) {
-        Get.offAll(() => const AppVersionWarningScreen());
-      } else {
-        if (path != null) {
-          Get.offAll(() => LiveLocationScreen(trackingUrl: path));
-        } else {
-          route(notificationData);
-        }
+    Get.find<ConfigController>().getConfigData().then((value){
+      if(_isForceUpdate(Get.find<ConfigController>().config)) {
+        Get.offAll(()=> const AppVersionWarningScreen());
+      }else{
+       if(path != null){
+         Get.offAll(()=> LiveLocationScreen(trackingUrl: path));
+       }else{
+         route(notificationData);
+       }
+
       }
+
     });
+
   }
 
   Future<String?> initDynamicLinks() async {
@@ -54,112 +58,95 @@ class LoginHelper {
     String? path;
     if (uri != null) {
       path = uri.path;
-    } else {
+
+    }else{
       path = null;
     }
     return path;
+
   }
 
   bool _isForceUpdate(ConfigModel? config) {
     double minimumVersion = Platform.isAndroid
         ? config?.androidAppMinimumVersion ?? 0
         : Platform.isIOS
-            ? config?.iosAppMinimumVersion ?? 0
-            : 0;
+        ? config?.iosAppMinimumVersion ?? 0
+        : 0;
 
     return minimumVersion > 0 && minimumVersion > AppConstants.appVersion;
   }
 
-  void route(Map<String, dynamic>? notificationData) async {
-    if (Get.find<AuthController>().getUserToken().isNotEmpty) {
+  void route(Map<String,dynamic>? notificationData) async {
+
+    if(Get.find<AuthController>().getUserToken().isNotEmpty){
       PusherHelper.initializePusher();
     }
 
     Future.delayed(const Duration(milliseconds: 100), () {
-      if (Get.find<LocalizationController>().haveLocalLanguageCode()) {
-        if (Get.find<AuthController>().isLoggedIn()) {
+      if(Get.find<AuthController>().isLoggedIn()) {
+        if(Get.find<LocalizationController>().haveLocalLanguageCode()){
           forLoginUserRoute(notificationData);
-        } else {
-          forNotLoginUserRoute(notificationData);
+        }else{
+          Get.offAll(()=> LanguageSelectionScreen(notificationData: notificationData));
         }
-      } else {
-        Get.offAll(
-            () => LanguageSelectionScreen(notificationData: notificationData));
+
+      }else{
+        forNotLoginUserRoute(notificationData);
       }
     });
+
   }
 
-  void forNotLoginUserRoute(Map<String, dynamic>? notificationData) {
-    if (Get.find<ConfigController>().config!.maintenanceMode != null &&
-        Get.find<ConfigController>()
-                .config!
-                .maintenanceMode!
-                .maintenanceStatus ==
-            1 &&
-        Get.find<ConfigController>()
-                .config!
-                .maintenanceMode!
-                .selectedMaintenanceSystem!
-                .userApp ==
-            1) {
+  void forNotLoginUserRoute(Map<String,dynamic>? notificationData){
+    if(Get.find<ConfigController>().config!.maintenanceMode != null &&
+        Get.find<ConfigController>().config!.maintenanceMode!.maintenanceStatus == 1 &&
+        Get.find<ConfigController>().config!.maintenanceMode!.selectedMaintenanceSystem!.userApp == 1
+    ){
       Get.offAll(() => const MaintenanceScreen());
-    } else {
+    }else{
       if (Get.find<ConfigController>().showIntro()) {
         Get.offAll(() => OnBoardingScreen(notificationData: notificationData));
-      } else {
-        if (Get.find<LocalizationController>().haveLocalLanguageCode()) {
-          forGuestUserRoute();
-        } else {
-          Get.offAll(() =>
-              LanguageSelectionScreen(notificationData: notificationData));
+
+      }else {
+        if(Get.find<LocalizationController>().haveLocalLanguageCode()){
+          checkLoginMedium();
+
+        }else{
+          Get.offAll(()=> LanguageSelectionScreen(notificationData: notificationData));
         }
+
       }
     }
   }
 
-  void forGuestUserRoute() {
-    if (Get.find<LocationController>().getUserAddress() != null &&
-        Get.find<LocationController>().getUserAddress()!.address != null &&
-        Get.find<LocationController>().getUserAddress()!.address!.isNotEmpty) {
-      Get.offAll(() => const DashboardScreen());
-    } else {
-      Get.offAll(() => const AccessLocationScreen());
-    }
-  }
+  void forLoginUserRoute(Map<String,dynamic>? notificationData){
+    if(notificationData != null) {
+      NotificationHelper.notificationRouteCheck(notificationData, formSplash: true, userName: notificationData['user_name']);
 
-  void forLoginUserRoute(Map<String, dynamic>? notificationData) {
-    if (notificationData != null) {
-      NotificationHelper.notificationRouteCheck(notificationData,
-          formSplash: true, userName: notificationData['user_name']);
-    } else if (Get.find<LocationController>().getUserAddress() != null &&
-        Get.find<LocationController>().getUserAddress()!.address != null &&
-        Get.find<LocationController>().getUserAddress()!.address!.isNotEmpty) {
+    }else if(Get.find<LocationController>().getUserAddress() != null
+        && Get.find<LocationController>().getUserAddress()!.address != null
+        && Get.find<LocationController>().getUserAddress()!.address!.isNotEmpty) {
+
       Get.find<ProfileController>().getProfileInfo().then((value) {
-        if (value.statusCode == 200) {
+        if(value.statusCode == 200) {
           Get.find<AuthController>().updateToken();
           Get.find<AuthController>().remainingFindingRideTime();
-          Get.offAll(() => const DashboardScreen());
+          Get.offAll(()=> const DashboardScreen());
         }
       });
-    } else {
+
+    }else{
       Get.offAll(() => const AccessLocationScreen());
     }
   }
 
-  static void checkLoginMedium() {
-    LoginHelper().forGuestUserRoute();
-  }
-
-  static void openLoginScreen() {
-    final bool isManualLogin = Get.find<ConfigController>()
-            .config
-            ?.customerLoginOptions
-            ?.manualLogin ??
-        false;
-    if (isManualLogin) {
-      Get.to(() => const SignInScreen());
-    } else {
-      Get.to(() => const OtpLoginScreen(from: VerificationForm.login));
+  static void checkLoginMedium(){
+    final bool isManualLogin = Get.find<ConfigController>().config?.customerLoginOptions?.manualLogin ?? false;
+    if(isManualLogin){
+      Get.offAll(()=> const SignInScreen());
+    }else{
+      Get.offAll(()=> const OtpLoginScreen(from: VerificationForm.login));
     }
   }
+
 }

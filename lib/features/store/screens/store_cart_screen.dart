@@ -5,10 +5,8 @@ import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/features/address/controllers/address_controller.dart';
 import 'package:ride_sharing_user_app/features/address/domain/models/address_model.dart';
 import 'package:ride_sharing_user_app/features/address/screens/add_new_address.dart';
-import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.dart';
 import 'package:ride_sharing_user_app/features/profile/controllers/profile_controller.dart';
 import 'package:ride_sharing_user_app/features/wallet/screens/wallet_screen.dart';
-import 'package:ride_sharing_user_app/helper/login_helper.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -182,13 +180,8 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   StoreShippingPreview shippingPreview = StoreShippingPreview.empty();
   int shippingPreviewRequestId = 0;
 
-  bool get isCustomerLoggedIn {
-    return Get.isRegistered<AuthController>() &&
-        Get.find<AuthController>().isLoggedIn();
-  }
-
   double get appBalance {
-    if (!Get.isRegistered<ProfileController>() || !isCustomerLoggedIn) {
+    if (!Get.isRegistered<ProfileController>()) {
       return 0;
     }
 
@@ -213,7 +206,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       );
     }
 
-    if (Get.isRegistered<ProfileController>() && isCustomerLoggedIn) {
+    if (Get.isRegistered<ProfileController>()) {
       Get.find<ProfileController>().getProfileInfo();
     }
   }
@@ -358,11 +351,6 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       return;
     }
 
-    if (!isCustomerLoggedIn) {
-      clearShippingPreview();
-      return;
-    }
-
     if (!Get.isRegistered<ApiClient>()) {
       setState(() {
         isShippingPreviewLoading = false;
@@ -433,8 +421,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   void refreshShippingPreviewIfNeeded() {
-    if (isCustomerLoggedIn &&
-        hasPhysicalItems &&
+    if (hasPhysicalItems &&
         deliveryMode == StoreCartDeliveryMode.lokallyShipping) {
       loadShippingPreview();
     }
@@ -474,10 +461,6 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   Future<void> loadCustomerAddresses() async {
-    if (!isCustomerLoggedIn) {
-      return;
-    }
-
     if (!Get.isRegistered<AddressController>()) {
       return;
     }
@@ -495,11 +478,6 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   Future<void> openAddNewDeliveryAddress() async {
-    if (!isCustomerLoggedIn) {
-      showLoginRequiredDialog();
-      return;
-    }
-
     await Get.to(() => const AddNewAddress());
 
     if (!mounted) {
@@ -526,22 +504,12 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   void openWalletRecharge() {
-    if (!isCustomerLoggedIn) {
-      showLoginRequiredDialog();
-      return;
-    }
-
     Get.to(() => const WalletScreen());
   }
 
   void closeOrder() {
     if (cartItems.isEmpty) {
       showCartMessage('Seu carrinho está vazio.');
-      return;
-    }
-
-    if (!isCustomerLoggedIn) {
-      showLoginRequiredDialog();
       return;
     }
 
@@ -609,36 +577,6 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
         orderTotal: orderTotal,
         hasPhysicalItems: hasPhysicalItems,
       ),
-    );
-  }
-
-  void showLoginRequiredDialog() {
-    if (Get.isDialogOpen ?? false) {
-      return;
-    }
-
-    Get.dialog(
-      AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Para prosseguir, realize seu cadastro'),
-        content: const Text(
-          'Crie sua conta ou entre na Lokally para fechar o pedido com segurança.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('Continuar navegando'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Get.back();
-              LoginHelper.openLoginScreen();
-            },
-            child: const Text('Entrar ou cadastrar'),
-          ),
-        ],
-      ),
-      barrierDismissible: true,
     );
   }
 
