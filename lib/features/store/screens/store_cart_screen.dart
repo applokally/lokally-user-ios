@@ -711,14 +711,6 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                                 primaryColor: primaryColor,
                                 deliveryMode: deliveryMode,
                                 onChanged: (value) {
-                                  if (value ==
-                                          StoreCartDeliveryMode
-                                              .lokallyShipping &&
-                                      !isCustomerLoggedIn) {
-                                    showLoginRequiredDialog();
-                                    return;
-                                  }
-
                                   setState(() {
                                     deliveryMode = value;
 

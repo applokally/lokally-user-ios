@@ -87,31 +87,16 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   bool clickedMenu = false;
-
-  bool get isCustomerLoggedIn {
-    return Get.isRegistered<AuthController>() &&
-        Get.find<AuthController>().isLoggedIn();
-  }
-
   Future<void> loadData({bool isReload = false}) async {
     if (isReload) {
       Get.find<ConfigController>().getConfigData();
     }
 
-    final bool loggedIn = isCustomerLoggedIn;
-
+    Get.find<ParcelController>().getUnpaidParcelList();
     Get.find<BannerController>().getBannerList();
     Get.find<CategoryController>().getCategoryList();
-    Get.find<CategoryController>().setCouponFilterIndex(0, isUpdate: false);
-
-    if (!loggedIn) {
-      Get.find<RideController>().clearBiddingList();
-      HomeScreenHelper.checkMaintanceMode();
-      return;
-    }
-
-    Get.find<ParcelController>().getUnpaidParcelList();
     Get.find<AddressController>().getAddressList(1);
+    Get.find<CategoryController>().setCouponFilterIndex(0, isUpdate: false);
     Get.find<OfferController>().getOfferList(1);
 
     if (Get.find<ProfileController>().profileModel == null) {
@@ -134,20 +119,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     await Get.find<ParcelController>().getRunningParcelList();
-    if (Get.find<ParcelController>().parcelListModel?.data?.isNotEmpty ??
-        false) {
+    if (Get.find<ParcelController>().parcelListModel!.data!.isNotEmpty) {
       for (var element in Get.find<ParcelController>().parcelListModel!.data!) {
         PusherHelper().pusherDriverStatus(element.id!);
       }
     }
 
-    final userAddress = Get.find<LocationController>().getUserAddress();
-    if (userAddress?.latitude != null && userAddress?.longitude != null) {
-      await Get.find<RideController>().getNearestDriverList(
-        userAddress!.latitude!.toString(),
-        userAddress.longitude!.toString(),
-      );
-    }
+    await Get.find<RideController>().getNearestDriverList(
+      Get.find<LocationController>().getUserAddress()!.latitude!.toString(),
+      Get.find<LocationController>().getUserAddress()!.longitude!.toString(),
+    );
 
     HomeScreenHelper.checkMaintanceMode();
   }
@@ -155,7 +136,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     ConfigModel? config = Get.find<ConfigController>().config;
-    final bool loggedIn = isCustomerLoggedIn;
 
     return Scaffold(
       body: GetBuilder<ProfileController>(builder: (profileController) {
@@ -164,7 +144,7 @@ class _HomeScreenState extends State<HomeScreen> {
             return BodyWidget(
               appBar: AppBarWidget(
                 title:
-                    '${greetingMessage()}, ${loggedIn ? profileController.customerFirstName() : 'Visitante'}',
+                    '${greetingMessage()}, ${profileController.customerFirstName()}',
                 showBackButton: false,
                 isHome: true,
                 fontSize: Dimensions.fontSizeLarge,
@@ -192,7 +172,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: CategoryView(),
                           ),
                           if ((config?.externalSystem ?? false) &&
-                              loggedIn) ...[
+                              Get.find<AuthController>().isLoggedIn()) ...[
                             const VisitToMartWidget(),
                             const SizedBox(
                                 height: Dimensions.paddingSizeDefault)
@@ -205,23 +185,21 @@ class _HomeScreenState extends State<HomeScreen> {
                           padding: EdgeInsets.symmetric(
                               horizontal: Dimensions.paddingSizeDefault),
                           child: HomeMapView(title: 'rider_around_you')),
-                      if (loggedIn) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(
-                            top: Dimensions.paddingSize,
-                            left: Dimensions.paddingSize,
-                            right: Dimensions.paddingSize,
-                          ),
-                          child: HomeMyAddress(),
+                      const Padding(
+                        padding: EdgeInsets.only(
+                          top: Dimensions.paddingSize,
+                          left: Dimensions.paddingSize,
+                          right: Dimensions.paddingSize,
                         ),
-                        if (config?.referralEarningStatus ?? false)
-                          Padding(
-                              padding: EdgeInsets.symmetric(
-                                  horizontal: Dimensions.paddingSizeDefault),
-                              child: const HomeReferralViewWidget()),
-                        const BestOfferWidget(),
-                        const HomeCouponWidget(),
-                      ],
+                        child: const HomeMyAddress(),
+                      ),
+                      if (config?.referralEarningStatus ?? false)
+                        Padding(
+                            padding: EdgeInsets.symmetric(
+                                horizontal: Dimensions.paddingSizeDefault),
+                            child: const HomeReferralViewWidget()),
+                      const BestOfferWidget(),
+                      const HomeCouponWidget(),
                       const SizedBox(height: 100)
                     ])),
                   ],
@@ -233,10 +211,6 @@ class _HomeScreenState extends State<HomeScreen> {
       }),
       floatingActionButton:
           GetBuilder<RideController>(builder: (rideController) {
-        if (!isCustomerLoggedIn) {
-          return const SizedBox();
-        }
-
         if (Get.find<ConfigController>().isShowToolTips) {
           showToolTips();
         }
@@ -457,10 +431,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void showToolTips() {
-    if (!isCustomerLoggedIn) {
-      return;
-    }
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Future.delayed(const Duration(seconds: 1)).then((_) {
         int ridingCount =
