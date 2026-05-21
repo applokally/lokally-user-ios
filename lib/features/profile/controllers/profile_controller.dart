@@ -89,7 +89,7 @@ class ProfileController extends GetxController implements GetxService {
     if (profileModel != null) {
       return '${profileModel!.data!.firstName ?? ''} ${profileModel!.data!.lastName ?? ''}';
     } else {
-      return 'Guest';
+      return 'Visitante';
     }
   }
 
@@ -97,7 +97,7 @@ class ProfileController extends GetxController implements GetxService {
     if (profileModel != null) {
       return profileModel!.data!.firstName ?? '';
     } else {
-      return 'Guest';
+      return 'Visitante';
     }
   }
 

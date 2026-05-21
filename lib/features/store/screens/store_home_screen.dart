@@ -5,11 +5,13 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.dart';
 import 'package:ride_sharing_user_app/features/store/screens/seller/store_seller_dashboard_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_seller_registration_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_product_details_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_cart_screen.dart';
 import 'package:ride_sharing_user_app/features/store/widgets/store_marketplace_header.dart';
+import 'package:ride_sharing_user_app/helper/login_helper.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -64,6 +66,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   bool isLoadingBoostedCategories = false;
   bool hasLoadedBoostedCategories = false;
   bool isPreparingMarketplaceInitialLayout = true;
+  bool isRefreshingMarketplaceZoneInBackground = false;
   String? currentMarketplaceZoneId;
 
   StoreMarketplaceSettings marketplaceSettings =
@@ -79,6 +82,11 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   Timer? boostedProductsTimer;
   final Set<String> trackedBoostViewIds = <String>{};
   final Set<String> trackedBoostCategoryViewIds = <String>{};
+
+  bool get isCustomerLoggedIn {
+    return Get.isRegistered<AuthController>() &&
+        Get.find<AuthController>().isLoggedIn();
+  }
 
   List<StoreCategoryData> mainCategories = <StoreCategoryData>[
     StoreCategoryData.all(),
@@ -205,6 +213,42 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     return null;
   }
 
+  String? resolveImmediateMarketplaceZoneId() {
+    final String? savedZoneId = resolveSavedMarketplaceZoneId();
+
+    if (savedZoneId != null && savedZoneId.isNotEmpty) {
+      return savedZoneId;
+    }
+
+    try {
+      final ApiClient apiClient = Get.find<ApiClient>();
+      final String? cachedZoneId = normalizeMarketplaceZoneId(
+        apiClient.sharedPreferences.getString(marketplaceZoneCacheIdKey),
+      );
+      final int? cachedCheckedAt = int.tryParse(
+        apiClient.sharedPreferences
+                .getString(marketplaceZoneCacheCheckedAtKey) ??
+            '',
+      );
+
+      if (cachedZoneId == null ||
+          cachedZoneId.isEmpty ||
+          cachedCheckedAt == null) {
+        return null;
+      }
+
+      final Duration cacheAge = DateTime.now().difference(
+        DateTime.fromMillisecondsSinceEpoch(cachedCheckedAt),
+      );
+
+      if (cacheAge <= marketplaceZoneCacheDuration) {
+        return cachedZoneId;
+      }
+    } catch (_) {}
+
+    return null;
+  }
+
   Future<String?> resolveMarketplaceZoneId() async {
     final ApiClient apiClient = Get.find<ApiClient>();
     final String? savedZoneId = resolveSavedMarketplaceZoneId();
@@ -313,6 +357,45 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       return null;
     } catch (_) {
       return savedZoneId;
+    }
+  }
+
+  Future<void> refreshMarketplaceZoneInBackground() async {
+    if (isRefreshingMarketplaceZoneInBackground) {
+      return;
+    }
+
+    isRefreshingMarketplaceZoneInBackground = true;
+
+    try {
+      final String? previousZoneId = currentMarketplaceZoneId;
+      final String? refreshedZoneId = await resolveMarketplaceZoneId();
+
+      if (!mounted ||
+          refreshedZoneId == null ||
+          refreshedZoneId.isEmpty ||
+          refreshedZoneId == previousZoneId) {
+        return;
+      }
+
+      setState(() {
+        currentMarketplaceZoneId = refreshedZoneId;
+        selectedMainCategoryIndex = 0;
+        selectedSubcategoryId = '';
+        selectedMarketplaceBannerIndex = 0;
+        selectedBoostedProductIndex = 0;
+      });
+
+      await Future.wait<void>(<Future<void>>[
+        loadPublicCategories(),
+        loadMarketplaceBanners(),
+        loadPublicProducts(),
+      ]);
+
+      unawaited(loadBoostedProducts());
+      unawaited(loadBoostedCategories());
+    } finally {
+      isRefreshingMarketplaceZoneInBackground = false;
     }
   }
 
@@ -444,27 +527,28 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   }
 
   Future<void> loadPublicStore() async {
-    final bool shouldPrepareInitialLayout = !hasLoadedPublicStore &&
-        !hasLoadedMarketplaceBanners &&
-        products.isEmpty &&
-        marketplaceBanners.isEmpty;
+    final bool hasNoVisibleStoreContent = products.isEmpty &&
+        marketplaceBanners.isEmpty &&
+        mainCategories.length <= 1;
 
-    if (shouldPrepareInitialLayout && mounted) {
+    if (hasNoVisibleStoreContent && mounted) {
       setState(() {
         isPreparingMarketplaceInitialLayout = true;
       });
     }
 
     try {
-      final StoreMarketplaceSettings settings = await loadMarketplaceSettings();
+      final Future<StoreMarketplaceSettings> settingsFuture =
+          loadMarketplaceSettings();
+      String? resolvedZoneId = resolveImmediateMarketplaceZoneId();
 
-      final String? resolvedZoneId = await resolveMarketplaceZoneId();
-
-      if (mounted) {
+      if (resolvedZoneId != null && resolvedZoneId.isNotEmpty && mounted) {
         setState(() {
           currentMarketplaceZoneId = resolvedZoneId;
         });
       }
+
+      final StoreMarketplaceSettings settings = await settingsFuture;
 
       if (!settings.marketplaceEnabled) {
         if (!mounted) {
@@ -493,8 +577,21 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
           isLoadingBoostedCategories = false;
           hasLoadedBoostedCategories = true;
           selectedBoostedProductIndex = 0;
+          isPreparingMarketplaceInitialLayout = false;
         });
         return;
+      }
+
+      if (resolvedZoneId == null || resolvedZoneId.isEmpty) {
+        resolvedZoneId = await resolveMarketplaceZoneId();
+
+        if (mounted) {
+          setState(() {
+            currentMarketplaceZoneId = resolvedZoneId;
+          });
+        }
+      } else {
+        unawaited(refreshMarketplaceZoneInBackground());
       }
 
       if (resolvedZoneId == null || resolvedZoneId.isEmpty) {
@@ -506,12 +603,28 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
         return;
       }
 
-      await loadPublicCategories();
-      await loadMarketplaceBanners();
-      await loadPublicProducts();
-      await loadBoostedProducts();
-      await loadBoostedCategories();
-      await checkSellerStatusOnOpen();
+      if (mounted) {
+        setState(() {
+          isPreparingMarketplaceInitialLayout = false;
+        });
+      }
+
+      await Future.wait<void>(<Future<void>>[
+        loadPublicCategories(),
+        loadMarketplaceBanners(),
+        loadPublicProducts(),
+      ]);
+
+      unawaited(loadBoostedProducts());
+      unawaited(loadBoostedCategories());
+
+      if (isCustomerLoggedIn) {
+        unawaited(checkSellerStatusOnOpen());
+      } else if (mounted && isApprovedSeller) {
+        setState(() {
+          isApprovedSeller = false;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() {
@@ -1038,7 +1151,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   }
 
   Future<void> checkSellerStatusOnOpen() async {
-    if (!marketplaceSettings.marketplaceEnabled) {
+    if (!isCustomerLoggedIn || !marketplaceSettings.marketplaceEnabled) {
       return;
     }
 
@@ -1339,10 +1452,24 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   }
 
   void openSellerDashboardScreen() {
+    if (!isCustomerLoggedIn) {
+      showLoginRequiredDialog(
+        'Crie sua conta ou entre na Lokally para acessar sua loja com seguran\u00e7a.',
+      );
+      return;
+    }
+
     Get.to(() => const StoreSellerDashboardScreen());
   }
 
   Future<void> openSellerRegistrationScreen() async {
+    if (!isCustomerLoggedIn) {
+      showLoginRequiredDialog(
+        'Crie sua conta ou entre na Lokally para cadastrar sua loja com seguran\u00e7a.',
+      );
+      return;
+    }
+
     if (!marketplaceSettings.sellerRegistrationEnabled) {
       showSellerStatusSheet(
         title: 'Cadastro de lojistas indisponível',
@@ -1390,6 +1517,13 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
     if (!marketplaceSettings.marketplaceEnabled) {
       showStoreMessage('Marketplace temporariamente indisponível.');
+      return;
+    }
+
+    if (!isCustomerLoggedIn) {
+      showLoginRequiredDialog(
+        'Crie sua conta ou entre na Lokally para vender ou acessar sua loja com seguran\u00e7a.',
+      );
       return;
     }
 
@@ -1551,6 +1685,34 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     if (!opened && mounted) {
       showStoreMessage('Não foi possível abrir o WhatsApp do suporte.');
     }
+  }
+
+  void showLoginRequiredDialog(String message) {
+    if (Get.isDialogOpen ?? false) {
+      return;
+    }
+
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Para prosseguir, realize seu cadastro'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Continuar navegando'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              LoginHelper.openLoginScreen();
+            },
+            child: const Text('Entrar ou cadastrar'),
+          ),
+        ],
+      ),
+      barrierDismissible: true,
+    );
   }
 
   void showStoreMessage(String message) {
@@ -1730,11 +1892,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final bool marketplaceAvailable = marketplaceSettings.marketplaceEnabled;
     final bool showMarketplaceUnavailable =
         hasLoadedMarketplaceSettings && !marketplaceAvailable;
-    final bool shouldShowInitialMarketplaceLoading = marketplaceAvailable &&
-        !showMarketplaceUnavailable &&
-        (isPreparingMarketplaceInitialLayout ||
-            (!hasLoadedPublicStore && products.isEmpty) ||
-            (!hasLoadedMarketplaceBanners && marketplaceBanners.isEmpty));
+    final bool shouldShowInitialMarketplaceLoading = false;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1805,10 +1963,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (isLoadingMarketplaceSettings &&
-                            !hasLoadedMarketplaceSettings) ...[
-                          StorePublicLoadingBlock(primaryColor: primaryColor),
-                        ] else if (showMarketplaceUnavailable) ...[
+                        if (showMarketplaceUnavailable) ...[
                           StoreMarketplaceUnavailableBlock(
                             primaryColor: primaryColor,
                             supportWhatsappAvailable:
@@ -1863,7 +2018,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                               ),
                             ),
                             const SizedBox(height: 18),
-                          ] else if (isLoadingMarketplaceBanners &&
+                          ] else if (isLoadingMarketplaceBanners ||
                               !hasLoadedMarketplaceBanners) ...[
                             StoreStableBannerSlot(
                               primaryColor: primaryColor,

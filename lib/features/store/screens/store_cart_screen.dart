@@ -358,6 +358,11 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       return;
     }
 
+    if (!isCustomerLoggedIn) {
+      clearShippingPreview();
+      return;
+    }
+
     if (!Get.isRegistered<ApiClient>()) {
       setState(() {
         isShippingPreviewLoading = false;
@@ -428,7 +433,8 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   void refreshShippingPreviewIfNeeded() {
-    if (hasPhysicalItems &&
+    if (isCustomerLoggedIn &&
+        hasPhysicalItems &&
         deliveryMode == StoreCartDeliveryMode.lokallyShipping) {
       loadShippingPreview();
     }
@@ -520,6 +526,11 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   void openWalletRecharge() {
+    if (!isCustomerLoggedIn) {
+      showLoginRequiredDialog();
+      return;
+    }
+
     Get.to(() => const WalletScreen());
   }
 
@@ -700,6 +711,14 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                                 primaryColor: primaryColor,
                                 deliveryMode: deliveryMode,
                                 onChanged: (value) {
+                                  if (value ==
+                                          StoreCartDeliveryMode
+                                              .lokallyShipping &&
+                                      !isCustomerLoggedIn) {
+                                    showLoginRequiredDialog();
+                                    return;
+                                  }
+
                                   setState(() {
                                     deliveryMode = value;
 
