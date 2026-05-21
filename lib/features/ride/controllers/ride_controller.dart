@@ -30,6 +30,7 @@ import 'package:ride_sharing_user_app/features/safety_setup/controllers/safety_a
 import 'package:ride_sharing_user_app/features/splash/controllers/config_controller.dart';
 import 'package:ride_sharing_user_app/features/trip/controllers/trip_controller.dart';
 import 'package:ride_sharing_user_app/helper/display_helper.dart';
+import 'package:ride_sharing_user_app/helper/login_helper.dart';
 import 'package:ride_sharing_user_app/helper/pusher_helper.dart';
 import 'package:ride_sharing_user_app/helper/ride_controller_helper.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
@@ -337,6 +338,15 @@ class RideController extends GetxController implements GetxService {
     bool parcel, {
     String categoryId = '',
   }) async {
+    if (!Get.find<AuthController>().isLoggedIn()) {
+      _showLoginRequiredDialog();
+      isSubmit = false;
+      isLoading = false;
+      update();
+
+      return Response(statusCode: 401, statusText: 'login_required');
+    }
+
     initCountingTimeStates();
     isSubmit = true;
     update();
@@ -529,7 +539,38 @@ class RideController extends GetxController implements GetxService {
     Get.find<LocationController>().extraRouteTwoAddress = null;
   }
 
-  Future<Response> getRideDetails(String tripId, {bool isUpdate = true, bool notifyMap = true}) async {
+  void _showLoginRequiredDialog() {
+    if (Get.isDialogOpen ?? false) {
+      return;
+    }
+
+    Get.dialog(
+      AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Para prosseguir, realize seu cadastro'),
+        content: const Text(
+          'Crie sua conta ou entre na Lokally para solicitar uma viagem com segurança.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Continuar navegando'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              LoginHelper.openLoginScreen();
+            },
+            child: const Text('Entrar ou cadastrar'),
+          ),
+        ],
+      ),
+      barrierDismissible: true,
+    );
+  }
+
+  Future<Response> getRideDetails(String tripId,
+      {bool isUpdate = true, bool notifyMap = true}) async {
     if (isUpdate) {
       isLoading = true;
       tripDetails = null;
@@ -796,7 +837,8 @@ class RideController extends GetxController implements GetxService {
     _isRideStatusSyncing = true;
 
     try {
-      final Response response = await getRideDetails(tripId, isUpdate: false, notifyMap: false);
+      final Response response =
+          await getRideDetails(tripId, isUpdate: false, notifyMap: false);
 
       if (response.statusCode == 200 && tripDetails != null) {
         final String? currentStatus = tripDetails?.currentStatus;
@@ -1274,4 +1316,3 @@ class ThumbnailPathModel {
 
   ThumbnailPathModel(this.path);
 }
-
