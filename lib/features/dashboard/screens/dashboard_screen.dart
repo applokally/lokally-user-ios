@@ -71,36 +71,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 bucket: bucket,
                 child: item[menuController.currentTab].screen,
               ),
-              bottomNavigationBar: Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-                child: Container(
-                  height: 62,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.95),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: primaryColor,
-                      width: 1.2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        offset: const Offset(0, 8),
-                        blurRadius: 20,
-                        color: Colors.black.withValues(alpha: 0.08),
+              bottomNavigationBar: menuController.currentTab == 2
+                  ? null
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                      child: Container(
+                        height: 62,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 3,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.95),
+                          borderRadius: BorderRadius.circular(22),
+                          border: Border.all(
+                            color: primaryColor,
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              offset: const Offset(0, 8),
+                              blurRadius: 20,
+                              color: Colors.black.withValues(alpha: 0.08),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: generateBottomNavigationItems(
+                            menuController,
+                            item,
+                            primaryColor,
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-                  child: Row(
-                    children: generateBottomNavigationItems(
-                      menuController,
-                      item,
-                      primaryColor,
                     ),
-                  ),
-                ),
-              ),
             ),
           );
         },

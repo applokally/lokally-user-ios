@@ -30,13 +30,19 @@
 
    <application
         android:label="Lokally"
-       android:requestLegacyExternalStorage="true"
+        android:requestLegacyExternalStorage="true"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:extractNativeLibs="true"
         android:fullBackupOnly="false">
 
+       <meta-data
+           android:name="com.google.firebase.messaging.default_notification_icon"
+           android:resource="@drawable/notification_icon" />
+       <meta-data
+           android:name="com.google.firebase.messaging.default_notification_color"
+           android:resource="@color/notification_color" />
 
        <meta-data android:name="com.google.android.geo.API_KEY"
            android:value="AIzaSyAu48i3Az9d4FSZ1YjKsg3JwvJa565K7Q4"/>
@@ -82,4 +88,3 @@
            android:value="hexaride" />
     </application>
 </manifest>
-

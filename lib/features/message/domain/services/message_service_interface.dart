@@ -2,11 +2,29 @@ import 'package:file_picker/file_picker.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:get/get_connect/http/src/response/response.dart';
 
-abstract class MessageServiceInterface{
+abstract class MessageServiceInterface {
   Future<dynamic> createChannel(String userId, String tripId);
+  Future<dynamic> createChannelWithAdmin({String supportContext = 'customer'});
   Future<dynamic> getChannelList(int offset);
-  Future<dynamic> getConversation(String channelId,int offset);
-  Future<Response> sendMessage(String message,String channelID, String tripId, List<MultipartBody> file, PlatformFile? platformFile);
+  Future<dynamic> getSupportChannelList(
+    int offset, {
+    String supportContext = 'customer',
+  });
+  Future<dynamic> getConversation(String channelId, int offset);
+  Future<dynamic> getSupportConversation(String channelId, int offset);
+  Future<Response> sendMessage(
+    String message,
+    String channelID,
+    String tripId,
+    List<MultipartBody> file,
+    PlatformFile? platformFile,
+  );
+  Future<Response> sendMessageToAdmin(
+    String message,
+    String channelID,
+    List<MultipartBody> file,
+    PlatformFile? platformFile,
+  );
+  Future<Response> deleteSupportChannel(String channelId);
   Future<dynamic> findChannelRideStatus(String channelId);
-
 }

@@ -2,11 +2,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_checker.dart';
+import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/features/auth/domain/enums/verification_from_enum.dart';
 import 'package:ride_sharing_user_app/features/auth/domain/models/sign_up_body.dart';
 import 'package:ride_sharing_user_app/features/auth/domain/services/auth_service_interface.dart';
 import 'package:ride_sharing_user_app/features/auth/screens/otp_signup_screen.dart';
 import 'package:ride_sharing_user_app/features/auth/widgets/manual_auth_waring_bottom_sheet_widget.dart';
+import 'package:ride_sharing_user_app/features/location/controllers/location_controller.dart';
 import 'package:ride_sharing_user_app/features/dashboard/controllers/bottom_menu_controller.dart';
 import 'package:ride_sharing_user_app/features/auth/screens/reset_password_screen.dart';
 import 'package:ride_sharing_user_app/features/auth/screens/verification_screen.dart';
@@ -44,13 +46,13 @@ class AuthController extends GetxController implements GetxService {
   TextEditingController confirmPasswordController = TextEditingController();
   TextEditingController referralCodeController = TextEditingController();
 
-  void toggleNavigationBar(){
+  void toggleNavigationBar() {
     showNavigationBar = false;
     update();
   }
 
-  void setCountryCode( String countryCode){
-    countryDialCode  = countryDialCode;
+  void setCountryCode(String countryCode) {
+    countryDialCode = countryDialCode;
     update();
   }
 
@@ -59,39 +61,40 @@ class AuthController extends GetxController implements GetxService {
     update();
 
     final String fullPhoneNumber = countryCode + phone;
-    Response? response = await authServiceInterface.login(phone: fullPhoneNumber, password: password);
+    Response? response = await authServiceInterface.login(
+        phone: fullPhoneNumber, password: password);
 
     _isLoading = false;
 
     if (response?.statusCode == 200) {
-
       saveUserNumberAndPassword(countryCode, phone, password, true);
-      setUserToken(response!.body['data']['token']);
+      await setUserToken(response!.body['data']['token']);
       PusherHelper.initializePusher();
       updateToken();
 
       await Get.find<ProfileController>().getProfileInfo();
       _navigateLogin(countryCode, phone, password);
-
     } else if (response?.statusCode == 202) {
-      final bool isPhoneNotVerified = response?.body['data']['is_phone_verified'] == 0;
+      final bool isPhoneNotVerified =
+          response?.body['data']['is_phone_verified'] == 0;
 
       if (isPhoneNotVerified) {
-        if (Get.find<ConfigController>().config?.isFirebaseOtpVerification ?? false) {
+        if (Get.find<ConfigController>().config?.isFirebaseOtpVerification ??
+            false) {
           firebaseOtpSend(fullPhoneNumber, from: VerificationForm.login);
-        } else if(Get.find<ConfigController>().config?.isSmsGateway ?? false){
-          sendOtp(fullPhoneNumber).then((_){
-            Get.to(() => VerificationScreen(number: fullPhoneNumber, form: VerificationForm.login));
+        } else if (Get.find<ConfigController>().config?.isSmsGateway ?? false) {
+          sendOtp(fullPhoneNumber).then((_) {
+            Get.to(() => VerificationScreen(
+                number: fullPhoneNumber, form: VerificationForm.login));
           });
-
-        }else{
+        } else {
           showCustomSnackBar('sms_gateway_not_integrate'.tr);
         }
       }
-
-    } else if(response?.statusCode == 408){
-      Get.bottomSheet(ManualAuthWaringBottomSheetWidget(phoneNumber: phone, from: VerificationForm.resetPassword));
-    }else {
+    } else if (response?.statusCode == 408) {
+      Get.bottomSheet(ManualAuthWaringBottomSheetWidget(
+          phoneNumber: phone, from: VerificationForm.resetPassword));
+    } else {
       ApiChecker.checkApi(response!);
     }
 
@@ -102,7 +105,7 @@ class AuthController extends GetxController implements GetxService {
     _isLoading = true;
     update();
     Response? response = await authServiceInterface.logOut();
-    if(response!.statusCode == 200){
+    if (response!.statusCode == 200) {
       Get.back();
       LoginHelper.checkLoginMedium();
       showCustomSnackBar('successfully_logout'.tr, isError: false);
@@ -110,7 +113,7 @@ class AuthController extends GetxController implements GetxService {
       Get.find<RideController>().clearRideDetails();
       Get.find<ParcelController>().clearParcelModel();
       Get.find<SafetyAlertController>().cancelDriverNeedSafetyStream();
-    }else{
+    } else {
       ApiChecker.checkApi(response);
     }
     _isLoading = false;
@@ -122,24 +125,27 @@ class AuthController extends GetxController implements GetxService {
     update();
 
     String countryCode = CountryCodeHelper.getCountryCode(signUpBody.phone!)!;
-    String phoneWithoutCountryCode = signUpBody.phone!.substring(countryCode.length);
+    String phoneWithoutCountryCode =
+        signUpBody.phone!.substring(countryCode.length);
 
-    Response? response = await authServiceInterface.registration(signUpBody: signUpBody);
-    if(response!.statusCode == 200){
+    Response? response =
+        await authServiceInterface.registration(signUpBody: signUpBody);
+    if (response!.statusCode == 200) {
       login(countryCode, phoneWithoutCountryCode, signUpBody.password!);
-    } else if(response.statusCode == 407){
-      Get.bottomSheet(ManualAuthWaringBottomSheetWidget(phoneNumber: phoneWithoutCountryCode, from: VerificationForm.verifyUser));
-    }else {
+    } else if (response.statusCode == 407) {
+      Get.bottomSheet(ManualAuthWaringBottomSheetWidget(
+          phoneNumber: phoneWithoutCountryCode,
+          from: VerificationForm.verifyUser));
+    } else {
       ApiChecker.checkApi(response);
     }
     _isLoading = false;
     update();
-
   }
 
-  void _navigateLogin(String code, String phone, String password){
+  void _navigateLogin(String code, String phone, String password) {
     if (_isActiveRememberMe) {
-      saveUserNumberAndPassword(code,phone, password,false);
+      saveUserNumberAndPassword(code, phone, password, false);
     } else {
       clearUserNumberAndPassword();
     }
@@ -147,15 +153,15 @@ class AuthController extends GetxController implements GetxService {
     Get.find<BottomMenuController>().navigateToDashboard();
   }
 
-  Future<Response> sendOtp(String phone) async{
+  Future<Response> sendOtp(String phone) async {
     _isOtpSending = true;
     update();
 
     Response? response = await authServiceInterface.sendOtp(phone: phone);
-    if(response!.statusCode == 200){
+    if (response!.statusCode == 200) {
       _isOtpSending = false;
       showCustomSnackBar('otp_sent_successfully'.tr, isError: false);
-    }else{
+    } else {
       _isOtpSending = false;
       ApiChecker.checkApi(response);
     }
@@ -164,7 +170,8 @@ class AuthController extends GetxController implements GetxService {
     return response;
   }
 
-  Future<void> firebaseOtpSend(String phoneNumber,{bool canRoute = true, required VerificationForm from})async {
+  Future<void> firebaseOtpSend(String phoneNumber,
+      {bool canRoute = true, required VerificationForm from}) async {
     _isOtpSending = true;
     update();
 
@@ -175,35 +182,33 @@ class AuthController extends GetxController implements GetxService {
         _isOtpSending = false;
         update();
 
-        if(e.code == 'invalid-phone-number') {
+        if (e.code == 'invalid-phone-number') {
           showCustomSnackBar('please_submit_a_valid_phone_number'.tr);
-        }else{
+        } else {
           showCustomSnackBar(e.message?.replaceAll('_', ' ') ?? '');
         }
-
       },
       codeSent: (String vId, int? resendToken) {
-
         _isOtpSending = false;
         update();
-        if(canRoute){
-          Get.to(() => VerificationScreen(number: phoneNumber, form: from, session: vId));
+        if (canRoute) {
+          Get.to(() => VerificationScreen(
+              number: phoneNumber, form: from, session: vId));
         }
-
       },
       codeAutoRetrievalTimeout: (String verificationId) {},
     );
-
-
   }
 
-  Future<Response> checkOAuth({required String countryCode,  required String number}) async{
+  Future<Response> checkOAuth(
+      {required String countryCode, required String number}) async {
     _isOtpSending = true;
     update();
-    Response? response = await authServiceInterface.isUserRegistered(phone: countryCode+number);
-    if(response!.statusCode == 200){
+    Response? response = await authServiceInterface.isUserRegistered(
+        phone: countryCode + number);
+    if (response!.statusCode == 200) {
       _isOtpSending = false;
-    }else{
+    } else {
       _isOtpSending = false;
       ApiChecker.checkApi(response);
     }
@@ -211,44 +216,44 @@ class AuthController extends GetxController implements GetxService {
     return response;
   }
 
-  Future<Response> otpVerification(String phone, String otp, { required VerificationForm from, String? session}) async{
+  Future<Response> otpVerification(String phone, String otp,
+      {required VerificationForm from, String? session}) async {
     otpVerifying = true;
     update();
     Response? response;
-    if(Get.find<ConfigController>().config?.isFirebaseOtpVerification ?? false){
-      response = await authServiceInterface.verifyFirebaseOtp(phone: phone, otp: otp,session: session!);
-    }else{
+    if (Get.find<ConfigController>().config?.isFirebaseOtpVerification ??
+        false) {
+      response = await authServiceInterface.verifyFirebaseOtp(
+          phone: phone, otp: otp, session: session!);
+    } else {
       response = await authServiceInterface.verifyOtp(phone: phone, otp: otp);
     }
-    if(response!.statusCode == 200) {
+    if (response!.statusCode == 200) {
       otpVerifying = false;
       _verificationCode = '';
       updateVerificationCode('');
-      if(from == VerificationForm.login) {
-        setUserToken(response.body['data']['token']);
+      if (from == VerificationForm.login) {
+        await setUserToken(response.body['data']['token']);
         updateToken();
         await Get.find<ProfileController>().getProfileInfo();
         Get.find<BottomMenuController>().navigateToDashboard();
-
-      }else if(from == VerificationForm.resetPassword){
+      } else if (from == VerificationForm.resetPassword) {
         otpVerifying = false;
-        Get.to(() =>  ResetPasswordScreen(phoneNumber: phone));
-      }else if(from == VerificationForm.verifyUser){
+        Get.to(() => ResetPasswordScreen(phoneNumber: phone));
+      } else if (from == VerificationForm.verifyUser) {
         registrationFromOtp(
-          SignUpBody(
-              fName: fNameController.text.trim(),
-              lName: lNameController.text.trim(),
-              phone: countryDialCode + phoneController.text.trim(),
-              password: passwordController.text.trim(),
-              confirmPassword: confirmPasswordController.text.trim(),
-              referralCode: referralCodeController.text.trim()
-          ), updateFromRegistration: true
-        );
+            SignUpBody(
+                fName: fNameController.text.trim(),
+                lName: lNameController.text.trim(),
+                phone: countryDialCode + phoneController.text.trim(),
+                password: passwordController.text.trim(),
+                confirmPassword: confirmPasswordController.text.trim(),
+                referralCode: referralCodeController.text.trim()),
+            updateFromRegistration: true);
       }
-
-    }else if(response.statusCode == 406){
-      Get.off(()=> OtpSignupScreen(phoneNumber: phone));
-    }else{
+    } else if (response.statusCode == 406) {
+      Get.off(() => OtpSignupScreen(phoneNumber: phone));
+    } else {
       otpVerifying = false;
       ApiChecker.checkApi(response);
     }
@@ -257,26 +262,26 @@ class AuthController extends GetxController implements GetxService {
     return response;
   }
 
-
-  Future<void> registrationFromOtp(SignUpBody signUpBody, {required bool updateFromRegistration}) async {
+  Future<void> registrationFromOtp(SignUpBody signUpBody,
+      {required bool updateFromRegistration}) async {
     _isLoading = true;
     update();
 
-    Response? response = await authServiceInterface.registrationFromOtp(signUpBody, updateFromRegistration: updateFromRegistration);
+    Response? response = await authServiceInterface.registrationFromOtp(
+        signUpBody,
+        updateFromRegistration: updateFromRegistration);
 
     _isLoading = false;
 
     if (response?.statusCode == 200) {
-
-      setUserToken(response!.body['data']['token']);
+      await setUserToken(response!.body['data']['token']);
       PusherHelper.initializePusher();
       updateToken();
 
       await Get.find<ProfileController>().getProfileInfo();
       Get.find<BottomMenuController>().resetNavBar();
       Get.find<BottomMenuController>().navigateToDashboard();
-
-    }else {
+    } else {
       ApiChecker.checkApi(response!);
     }
 
@@ -287,10 +292,10 @@ class AuthController extends GetxController implements GetxService {
     _isLoading = true;
     update();
     Response? response = await authServiceInterface.forgetPassword(phone);
-    if (response!.statusCode  == 200) {
+    if (response!.statusCode == 200) {
       _isLoading = false;
       showCustomSnackBar('successfully_sent_otp'.tr, isError: false);
-    }else{
+    } else {
       _isLoading = false;
       showCustomSnackBar('invalid_number'.tr);
     }
@@ -304,12 +309,12 @@ class AuthController extends GetxController implements GetxService {
   Future<void> resetPassword(String phone, String password) async {
     _isLoading = true;
     update();
-    Response? response = await authServiceInterface.resetPassword(phone, password);
+    Response? response =
+        await authServiceInterface.resetPassword(phone, password);
     if (response!.statusCode == 200) {
-
       showCustomSnackBar('password_change_successfully'.tr, isError: false);
       LoginHelper.checkLoginMedium();
-    }else{
+    } else {
       showCustomSnackBar(response.body['message']);
     }
     _isLoading = false;
@@ -319,11 +324,12 @@ class AuthController extends GetxController implements GetxService {
   Future<void> changePassword(String password, String newPassword) async {
     _isLoading = true;
     update();
-    Response? response = await authServiceInterface.changePassword(password, newPassword);
+    Response? response =
+        await authServiceInterface.changePassword(password, newPassword);
     if (response!.statusCode == 200) {
-      Get.offAll(()=> const DashboardScreen());
+      Get.offAll(() => const DashboardScreen());
       showCustomSnackBar('password_change_successfully'.tr, isError: false);
-    }else{
+    } else {
       ApiChecker.checkApi(response);
     }
     _isLoading = false;
@@ -332,7 +338,7 @@ class AuthController extends GetxController implements GetxService {
 
   void updateVerificationCode(String query, {bool isUpdate = true}) {
     _verificationCode = query;
-    if(isUpdate){
+    if (isUpdate) {
       update();
     }
   }
@@ -350,12 +356,14 @@ class AuthController extends GetxController implements GetxService {
     return authServiceInterface.isLoggedIn();
   }
 
-  Future <bool> clearSharedData() async {
+  Future<bool> clearSharedData() async {
     return authServiceInterface.clearSharedData();
   }
 
-  void saveUserNumberAndPassword(String code,String number, String password,bool externalUser) {
-    authServiceInterface.saveUserNumberAndPassword(code, number, password, externalUser);
+  void saveUserNumberAndPassword(
+      String code, String number, String password, bool externalUser) {
+    authServiceInterface.saveUserNumberAndPassword(
+        code, number, password, externalUser);
   }
 
   String getUserNumber(bool externalUser) {
@@ -365,6 +373,7 @@ class AuthController extends GetxController implements GetxService {
   String getLoginCountryCode(bool externalUser) {
     return authServiceInterface.getLoginCountryCode(externalUser);
   }
+
   String getUserPassword(bool externalUser) {
     return authServiceInterface.getUserPassword(externalUser);
   }
@@ -377,38 +386,47 @@ class AuthController extends GetxController implements GetxService {
     return authServiceInterface.getUserToken();
   }
 
-  Future <void> setUserToken(String token) async{
-    authServiceInterface.saveUserToken(token);
+  Future<void> setUserToken(String token) async {
+    await authServiceInterface.saveUserToken(token);
+
+    if (Get.isRegistered<ApiClient>()) {
+      Get.find<ApiClient>().token = token;
+
+      final address = Get.isRegistered<LocationController>()
+          ? Get.find<LocationController>().getUserAddress()
+          : null;
+
+      Get.find<ApiClient>().updateHeader(token, address);
+    }
   }
 
   Future<void> permanentlyDelete() async {
     _isLoading = true;
     update();
     Response? response = await authServiceInterface.permanentlyDelete();
-    if(response!.statusCode == 200){
+    if (response!.statusCode == 200) {
       Get.back();
       LoginHelper.checkLoginMedium();
       showCustomSnackBar('successfully_delete_account'.tr, isError: false);
       clearSharedData();
       Get.find<SafetyAlertController>().cancelDriverNeedSafetyStream();
-    }else{
+    } else {
       ApiChecker.checkApi(response);
     }
     _isLoading = false;
     update();
   }
 
-
-  void saveFindingRideCreatedTime(){
+  void saveFindingRideCreatedTime() {
     authServiceInterface.saveRideCreatedTime(DateTime.now());
   }
 
-  void remainingFindingRideTime() async{
+  void remainingFindingRideTime() async {
     String time = await authServiceInterface.remainingTime();
-    if(time.isNotEmpty){
+    if (time.isNotEmpty) {
       DateTime oldTime = DateTime.parse(time);
       DateTime newTime = DateTime.now();
-      int diff =  newTime.difference(oldTime).inSeconds;
+      int diff = newTime.difference(oldTime).inSeconds;
       Get.find<RideController>().resumeCountingTimeState(diff);
     }
   }

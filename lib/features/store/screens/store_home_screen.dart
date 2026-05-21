@@ -5,11 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.dart';
+import 'package:ride_sharing_user_app/features/dashboard/controllers/bottom_menu_controller.dart';
+import 'package:ride_sharing_user_app/features/dashboard/screens/dashboard_screen.dart';
+import 'package:ride_sharing_user_app/features/parcel/screens/parcel_screen.dart';
+import 'package:ride_sharing_user_app/helper/login_helper.dart';
 import 'package:ride_sharing_user_app/features/store/screens/seller/store_seller_dashboard_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_seller_registration_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_product_details_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_cart_screen.dart';
-import 'package:ride_sharing_user_app/features/store/widgets/store_marketplace_header.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -1324,6 +1328,342 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     }
   }
 
+  bool get isCustomerLoggedIn {
+    return Get.isRegistered<AuthController>() &&
+        Get.find<AuthController>().isLoggedIn();
+  }
+
+  void showLoginRequiredDialog({
+    required String message,
+  }) {
+    if (Get.isDialogOpen ?? false) {
+      return;
+    }
+
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    Get.dialog(
+      Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                offset: const Offset(0, 14),
+                blurRadius: 34,
+                color: Colors.black.withValues(alpha: 0.18),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  Icons.lock_outline_rounded,
+                  color: primaryColor,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Cadastro necessário',
+                textAlign: TextAlign.center,
+                style: textBold.copyWith(
+                  color: Colors.black87,
+                  fontSize: 19,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade700,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: TextButton(
+                        onPressed: () => Get.back(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: primaryColor.withValues(alpha: 0.28),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          'Continuar navegando',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textBold.copyWith(
+                            color: primaryColor,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Get.back();
+                          LoginHelper.checkLoginMedium();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(
+                          'Entrar ou cadastrar',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textBold.copyWith(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: true,
+    );
+  }
+
+  void showRideOrDeliveryLoginRequiredDialog() {
+    showLoginRequiredDialog(
+      message:
+          'Para solicitar viagens ou entregas é necessário ser cadastrado.',
+    );
+  }
+
+  void handleTravelTap() {
+    if (!isCustomerLoggedIn) {
+      showRideOrDeliveryLoginRequiredDialog();
+      return;
+    }
+
+    if (Get.isRegistered<BottomMenuController>()) {
+      Get.find<BottomMenuController>().setTabIndex(0);
+    }
+
+    Get.offAll(() => const DashboardScreen());
+  }
+
+  void handleDeliveryTap() {
+    if (!isCustomerLoggedIn) {
+      showRideOrDeliveryLoginRequiredDialog();
+      return;
+    }
+
+    Get.to(() => const ParcelScreen());
+  }
+
+  void showProductSearchSheet() {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final TextEditingController searchController = TextEditingController();
+    String modalSearchQuery = '';
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final String query = modalSearchQuery.trim().toLowerCase();
+
+            final List<StoreProductData> filteredProducts = query.isEmpty
+                ? <StoreProductData>[]
+                : products.where((product) {
+                    return product.title.toLowerCase().contains(query) ||
+                        product.category.toLowerCase().contains(query) ||
+                        product.storeName.toLowerCase().contains(query);
+                  }).toList();
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: 14,
+                  right: 14,
+                  bottom: MediaQuery.of(modalContext).viewInsets.bottom + 14,
+                ),
+                child: Container(
+                  width: double.infinity,
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(modalContext).size.height * 0.82,
+                  ),
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(26),
+                    boxShadow: [
+                      BoxShadow(
+                        offset: const Offset(0, 10),
+                        blurRadius: 26,
+                        color: Colors.black.withValues(alpha: 0.15),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Buscar produtos',
+                              style: textBold.copyWith(
+                                color: Colors.black87,
+                                fontSize: 18,
+                              ),
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: () => Navigator.of(modalContext).pop(),
+                            child: Container(
+                              width: 34,
+                              height: 34,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.close_rounded,
+                                color: Colors.grey.shade700,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Container(
+                        height: 48,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.grey.shade200),
+                        ),
+                        child: TextField(
+                          controller: searchController,
+                          autofocus: true,
+                          onChanged: (value) {
+                            setModalState(() {
+                              modalSearchQuery = value;
+                            });
+                          },
+                          textInputAction: TextInputAction.search,
+                          style: textRegular.copyWith(
+                            color: Colors.black87,
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            border: InputBorder.none,
+                            icon: Icon(
+                              Icons.search_rounded,
+                              color: Colors.grey.shade600,
+                              size: 21,
+                            ),
+                            hintText: 'Digite o nome do produto',
+                            hintStyle: textRegular.copyWith(
+                              color: Colors.grey.shade500,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: query.isEmpty
+                            ? Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Digite para pesquisar produtos disponíveis no Marketplace.',
+                                  style: textRegular.copyWith(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            : filteredProducts.isEmpty
+                                ? Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Nenhum produto encontrado.',
+                                      style: textMedium.copyWith(
+                                        color: Colors.grey.shade700,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    shrinkWrap: true,
+                                    itemCount: filteredProducts.length,
+                                    separatorBuilder: (_, __) => Divider(
+                                      color: Colors.grey.shade200,
+                                      height: 1,
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final StoreProductData product =
+                                          filteredProducts[index];
+
+                                      return StoreSearchResultTile(
+                                        product: product,
+                                        primaryColor: primaryColor,
+                                        onTap: () {
+                                          Navigator.of(modalContext).pop();
+                                          handleProductTap(product);
+                                        },
+                                      );
+                                    },
+                                  ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(searchController.dispose);
+  }
+
   void handleProductTap(StoreProductData product) {
     Get.to(
       () => StoreProductDetailsScreen(
@@ -1765,30 +2105,11 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
           ),
           Column(
             children: [
-              StoreMarketplaceHeader(
+              StoreModeSelectorHeader(
                 primaryColor: primaryColor,
-                showSellButton: marketplaceAvailable && !isApprovedSeller,
-                sellButtonLabel: 'Vender',
-                isSellButtonLoading: isCheckingSellerStatus,
-                onSellTap: marketplaceAvailable
-                    ? handleSellButtonTap
-                    : () => showStoreMessage(
-                          'Marketplace temporariamente indisponível.',
-                        ),
-                onSearchChanged: (value) {
-                  if (!marketplaceAvailable) {
-                    return;
-                  }
-
-                  setState(() {
-                    searchQuery = value;
-                  });
-                },
-                onCartTap: marketplaceAvailable
-                    ? openCartScreen
-                    : () => showStoreMessage(
-                          'Marketplace temporariamente indisponível.',
-                        ),
+                onShoppingTap: handleSimpleTap,
+                onTravelTap: handleTravelTap,
+                onDeliveryTap: handleDeliveryTap,
               ),
               Expanded(
                 child: RefreshIndicator(
@@ -1989,6 +2310,351 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
             ],
           ),
         ],
+      ),
+      bottomNavigationBar: StoreBottomSearchCartBar(
+        primaryColor: primaryColor,
+        onSearchTap: marketplaceAvailable
+            ? showProductSearchSheet
+            : () => showStoreMessage(
+                  'Marketplace temporariamente indisponível.',
+                ),
+        onCartTap: marketplaceAvailable
+            ? openCartScreen
+            : () => showStoreMessage(
+                  'Marketplace temporariamente indisponível.',
+                ),
+      ),
+    );
+  }
+}
+
+class StoreModeSelectorHeader extends StatelessWidget {
+  final Color primaryColor;
+  final VoidCallback onShoppingTap;
+  final VoidCallback onTravelTap;
+  final VoidCallback onDeliveryTap;
+
+  const StoreModeSelectorHeader({
+    super.key,
+    required this.primaryColor,
+    required this.onShoppingTap,
+    required this.onTravelTap,
+    required this.onDeliveryTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: primaryColor,
+      padding: const EdgeInsets.fromLTRB(16, 46, 16, 12),
+      child: StoreModeSelectorPill(
+        primaryColor: primaryColor,
+        onShoppingTap: onShoppingTap,
+        onTravelTap: onTravelTap,
+        onDeliveryTap: onDeliveryTap,
+      ),
+    );
+  }
+}
+
+class StoreModeSelectorPill extends StatelessWidget {
+  final Color primaryColor;
+  final VoidCallback onShoppingTap;
+  final VoidCallback onTravelTap;
+  final VoidCallback onDeliveryTap;
+
+  const StoreModeSelectorPill({
+    super.key,
+    required this.primaryColor,
+    required this.onShoppingTap,
+    required this.onTravelTap,
+    required this.onDeliveryTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 64,
+      width: double.infinity,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            offset: const Offset(0, 8),
+            blurRadius: 18,
+            color: Colors.black.withValues(alpha: 0.08),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: StoreModeSelectorItem(
+              label: 'Shopping',
+              asset: 'assets/image/shopping.png',
+              selected: true,
+              primaryColor: primaryColor,
+              onTap: onShoppingTap,
+            ),
+          ),
+          Expanded(
+            child: StoreModeSelectorItem(
+              label: 'Viagens',
+              asset: 'assets/image/viagens.png',
+              selected: false,
+              primaryColor: primaryColor,
+              onTap: onTravelTap,
+            ),
+          ),
+          Expanded(
+            child: StoreModeSelectorItem(
+              label: 'Entregas',
+              asset: 'assets/image/entregas.png',
+              selected: false,
+              primaryColor: primaryColor,
+              onTap: onDeliveryTap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreModeSelectorItem extends StatelessWidget {
+  final String label;
+  final String asset;
+  final bool selected;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  const StoreModeSelectorItem({
+    super.key,
+    required this.label,
+    required this.asset,
+    required this.selected,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color backgroundColor =
+        selected ? primaryColor.withValues(alpha: 0.12) : Colors.transparent;
+    final Color textColor = Colors.black87;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(26),
+          border: selected
+              ? Border.all(color: primaryColor.withValues(alpha: 0.18))
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              asset,
+              width: 30,
+              height: 30,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.visible,
+                softWrap: false,
+                style: textBold.copyWith(
+                  color: textColor,
+                  fontSize: 13.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StoreBottomSearchCartBar extends StatelessWidget {
+  final Color primaryColor;
+  final VoidCallback onSearchTap;
+  final VoidCallback onCartTap;
+
+  const StoreBottomSearchCartBar({
+    super.key,
+    required this.primaryColor,
+    required this.onSearchTap,
+    required this.onCartTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+        padding: const EdgeInsets.all(8),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(26),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.32)),
+          boxShadow: [
+            BoxShadow(
+              offset: const Offset(0, 8),
+              blurRadius: 22,
+              color: Colors.black.withValues(alpha: 0.08),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: onSearchTap,
+                child: Container(
+                  height: 48,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.07),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.search_rounded,
+                        color: primaryColor,
+                        size: 23,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Buscar produtos',
+                        style: textMedium.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 13.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            ValueListenableBuilder<int>(
+              valueListenable: StoreCartSession.cartRevision,
+              builder: (context, revision, _) {
+                final int cartQuantity = StoreCartSession.totalQuantity;
+
+                return GestureDetector(
+                  onTap: onCartTap,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 50,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: primaryColor,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(
+                          Icons.shopping_cart_outlined,
+                          color: Colors.white,
+                          size: 25,
+                        ),
+                      ),
+                      if (cartQuantity > 0)
+                        Positioned(
+                          top: -6,
+                          right: -6,
+                          child: Container(
+                            constraints: const BoxConstraints(
+                              minWidth: 21,
+                              minHeight: 21,
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              borderRadius: BorderRadius.circular(999),
+                              border: Border.all(
+                                color: Colors.white,
+                                width: 2,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  offset: const Offset(0, 4),
+                                  blurRadius: 10,
+                                  color: Colors.black.withValues(alpha: 0.16),
+                                ),
+                              ],
+                            ),
+                            child: Center(
+                              child: Text(
+                                cartQuantity > 99 ? '99+' : '$cartQuantity',
+                                style: textBold.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 10.5,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StoreHeaderIconButton extends StatelessWidget {
+  final Color primaryColor;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const StoreHeaderIconButton({
+    super.key,
+    required this.primaryColor,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 46,
+        height: 46,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.20),
+          ),
+        ),
+        child: Icon(
+          icon,
+          color: Colors.white,
+          size: 24,
+        ),
       ),
     );
   }

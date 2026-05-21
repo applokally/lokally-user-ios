@@ -66,6 +66,16 @@ class AppConstants {
   static const String channelList = '/api/customer/chat/channel-list';
   static const String conversationList = '/api/customer/chat/conversation';
   static const String sendMessage = '/api/customer/chat/send-message';
+  static const String createChannelWithAdmin =
+      '/api/customer/chat/create-channel-with-admin';
+  static const String sendMessageToAdmin =
+      '/api/customer/chat/send-message-to-admin';
+  static const String supportChannelList =
+      '/api/customer/chat/support-channel-list';
+  static const String supportConversation =
+      '/api/customer/chat/support-conversation';
+  static const String deleteSupportChannel =
+      '/api/customer/chat/delete-support-channel';
   static const String arrivalPickupPoint = '/api/customer/ride/arrival-time';
   static const String parcelCategoryUri =
       '/api/customer/parcel/category?limit=100&offset=1';

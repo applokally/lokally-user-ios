@@ -2,11 +2,13 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.dart';
 import 'package:ride_sharing_user_app/features/address/controllers/address_controller.dart';
 import 'package:ride_sharing_user_app/features/address/domain/models/address_model.dart';
 import 'package:ride_sharing_user_app/features/address/screens/add_new_address.dart';
 import 'package:ride_sharing_user_app/features/profile/controllers/profile_controller.dart';
 import 'package:ride_sharing_user_app/features/wallet/screens/wallet_screen.dart';
+import 'package:ride_sharing_user_app/helper/login_helper.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -193,6 +195,11 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
         0;
   }
 
+  bool get isCustomerLoggedIn {
+    return Get.isRegistered<AuthController>() &&
+        Get.find<AuthController>().isLoggedIn();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -206,7 +213,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       );
     }
 
-    if (Get.isRegistered<ProfileController>()) {
+    if (isCustomerLoggedIn && Get.isRegistered<ProfileController>()) {
       Get.find<ProfileController>().getProfileInfo();
     }
   }
@@ -351,6 +358,11 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       return;
     }
 
+    if (!isCustomerLoggedIn) {
+      clearShippingPreview();
+      return;
+    }
+
     if (!Get.isRegistered<ApiClient>()) {
       setState(() {
         isShippingPreviewLoading = false;
@@ -461,7 +473,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   Future<void> loadCustomerAddresses() async {
-    if (!Get.isRegistered<AddressController>()) {
+    if (!isCustomerLoggedIn || !Get.isRegistered<AddressController>()) {
       return;
     }
 
@@ -478,6 +490,11 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   Future<void> openAddNewDeliveryAddress() async {
+    if (!isCustomerLoggedIn) {
+      showCheckoutLoginRequiredDialog();
+      return;
+    }
+
     await Get.to(() => const AddNewAddress());
 
     if (!mounted) {
@@ -504,12 +521,150 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   void openWalletRecharge() {
+    if (!isCustomerLoggedIn) {
+      showCheckoutLoginRequiredDialog();
+      return;
+    }
+
     Get.to(() => const WalletScreen());
+  }
+
+  void showCheckoutLoginRequiredDialog() {
+    if (Get.isDialogOpen ?? false) {
+      return;
+    }
+
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    Get.dialog(
+      Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                offset: const Offset(0, 14),
+                blurRadius: 34,
+                color: Colors.black.withValues(alpha: 0.18),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 58,
+                height: 58,
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Icon(
+                  Icons.shopping_cart_checkout_rounded,
+                  color: primaryColor,
+                  size: 30,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Cadastro necessário',
+                textAlign: TextAlign.center,
+                style: textBold.copyWith(
+                  color: Colors.black87,
+                  fontSize: 19,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Para prosseguir com a sua compra, é necessário ser cadastrado na Lokally.',
+                textAlign: TextAlign.center,
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade700,
+                  fontSize: 14,
+                  height: 1.35,
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: TextButton(
+                        onPressed: () => Get.back(),
+                        style: TextButton.styleFrom(
+                          foregroundColor: primaryColor,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: BorderSide(
+                              color: primaryColor.withValues(alpha: 0.28),
+                            ),
+                          ),
+                        ),
+                        child: Text(
+                          'Continuar navegando',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textBold.copyWith(
+                            color: primaryColor,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: SizedBox(
+                      height: 46,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          Get.back();
+                          LoginHelper.checkLoginMedium();
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: Text(
+                          'Entrar ou cadastrar',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: textBold.copyWith(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: true,
+    );
   }
 
   void closeOrder() {
     if (cartItems.isEmpty) {
       showCartMessage('Seu carrinho está vazio.');
+      return;
+    }
+
+    if (!isCustomerLoggedIn) {
+      showCheckoutLoginRequiredDialog();
       return;
     }
 

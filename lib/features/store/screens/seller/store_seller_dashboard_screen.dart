@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/message/controllers/message_controller.dart';
+import 'package:ride_sharing_user_app/features/message/screens/message_list.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -286,6 +288,11 @@ class _StoreSellerDashboardScreenState
       return;
     }
 
+    if (title == 'Falar com a Lokally') {
+      handleSellerSupport(context);
+      return;
+    }
+
     handleComingSoon(context, title);
   }
 
@@ -325,6 +332,11 @@ class _StoreSellerDashboardScreenState
       return;
     }
 
+    if (title == 'Falar com a Lokally') {
+      handleSellerSupport(context);
+      return;
+    }
+
     handleComingSoon(context, title);
   }
 
@@ -345,6 +357,16 @@ class _StoreSellerDashboardScreenState
       SnackBar(
         content: Text('$title será criado no próximo passo.'),
         duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void handleSellerSupport(BuildContext _) {
+    Get.to(
+      () => const MessageListScreen(
+        supportContext: 'seller',
+        title: 'Atendimento Lokally',
+        showRideChats: false,
       ),
     );
   }
@@ -1441,6 +1463,11 @@ class StoreSellerQuickMenu extends StatelessWidget {
         description: 'Frete, retirada e Frete Lokally',
         icon: Icons.delivery_dining_outlined,
       ),
+      StoreSellerMenuData(
+        title: 'Falar com a Lokally',
+        description: 'Atendimento para sua loja',
+        icon: Icons.support_agent_outlined,
+      ),
     ];
 
     return Container(
@@ -1942,6 +1969,11 @@ class StoreSellerDrawer extends StatelessWidget {
         title: 'Financeiro',
         description: 'Taxas, repasses e bloqueios',
         icon: Icons.account_balance_wallet_outlined,
+      ),
+      StoreSellerMenuData(
+        title: 'Falar com a Lokally',
+        description: 'Atendimento para sua loja',
+        icon: Icons.support_agent_outlined,
       ),
       StoreSellerMenuData(
         title: 'Voltar para a Loja',

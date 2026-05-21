@@ -474,7 +474,9 @@ class NotificationHelper {
       priority: Priority.high,
       onlyAlertOnce: true,
       showProgress: false,
-      color: const Color(0xFF00A08D),
+      icon: 'notification_icon',
+      largeIcon: const DrawableResourceAndroidBitmap('ic_launcher'),
+      color: const Color(0xFF19B09E),
     );
 
     var platformChannelSpecifics =
@@ -566,12 +568,15 @@ class NotificationHelper {
       priority: Priority.max,
       importance: Importance.max,
       playSound: true,
-      largeIcon:
-          largeIconPath != null ? FilePathAndroidBitmap(largeIconPath) : null,
+      icon: 'notification_icon',
+      largeIcon: largeIconPath != null
+          ? FilePathAndroidBitmap(largeIconPath)
+          : const DrawableResourceAndroidBitmap('ic_launcher'),
       styleInformation: largeIconPath != null
           ? bigPictureStyleInformation
           : bigTextStyleInformation,
       sound: const RawResourceAndroidNotificationSound('notification'),
+      color: const Color(0xFF19B09E),
     );
 
     final NotificationDetails platformChannelSpecifics = NotificationDetails(

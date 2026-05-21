@@ -23,6 +23,7 @@ import 'package:ride_sharing_user_app/features/profile/controllers/profile_contr
 import 'package:ride_sharing_user_app/features/profile/screens/edit_profile_screen.dart';
 import 'package:ride_sharing_user_app/features/splash/controllers/config_controller.dart';
 import 'package:ride_sharing_user_app/features/store/screens/seller/store_seller_dashboard_screen.dart';
+import 'package:ride_sharing_user_app/features/store/screens/store_seller_registration_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_customer_order_list_screen.dart';
 import 'package:ride_sharing_user_app/features/wallet/screens/wallet_screen.dart';
 import 'package:ride_sharing_user_app/common_widgets/app_bar_widget.dart';
@@ -215,18 +216,30 @@ class ProfileScreen extends StatelessWidget {
                 FutureBuilder<bool>(
                   future: _isApprovedMarketplaceSeller(),
                   builder: (context, snapshot) {
-                    if (snapshot.data != true) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
                       return const SizedBox();
                     }
 
+                    if (snapshot.data == true) {
+                      return ProfileMenuItem(
+                        title: 'Minha Loja',
+                        icon: Images.profileMyTrip,
+                        highlighted: true,
+                        highlightIcon: Icons.storefront_rounded,
+                        subtitle: 'Painel do vendedor Marketplace',
+                        onTap: () =>
+                            Get.to(() => const StoreSellerDashboardScreen()),
+                      );
+                    }
+
                     return ProfileMenuItem(
-                      title: 'Minha Loja',
+                      title: 'Vender',
                       icon: Images.profileMyTrip,
                       highlighted: true,
                       highlightIcon: Icons.storefront_rounded,
-                      subtitle: 'Painel do vendedor Marketplace',
+                      subtitle: 'Cadastre sua loja no Marketplace',
                       onTap: () =>
-                          Get.to(() => const StoreSellerDashboardScreen()),
+                          Get.to(() => const StoreSellerRegistrationScreen()),
                     );
                   },
                 ),
