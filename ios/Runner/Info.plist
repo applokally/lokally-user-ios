@@ -99,7 +99,7 @@
 <string>com.lokallyapp.passageiro</string>
 <key>CFBundleURLSchemes</key>
 <array>
-<string>drivemond</string>
+<string>lokally</string>
 </array>
 </dict>
 <dict>
@@ -135,4 +135,3 @@
 </dict>
 </dict>
 </plist>
-
