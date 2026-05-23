@@ -12,6 +12,7 @@ import 'package:ride_sharing_user_app/features/home/widgets/home_referral_view_w
 import 'package:ride_sharing_user_app/features/home/widgets/visit_to_mart_widget.dart';
 import 'package:ride_sharing_user_app/features/my_offer/controller/offer_controller.dart';
 import 'package:ride_sharing_user_app/features/parcel/controllers/parcel_controller.dart';
+import 'package:ride_sharing_user_app/features/points_club/screens/points_club_home_screen.dart';
 import 'package:ride_sharing_user_app/features/parcel/screens/parcel_list_view_screen.dart';
 import 'package:ride_sharing_user_app/features/parcel/widgets/driver_request_dialog.dart';
 import 'package:ride_sharing_user_app/features/ride/screens/ride_list_view_screen.dart';
@@ -39,11 +40,14 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen>
+    with SingleTickerProviderStateMixin {
   JustTheController rideShareToolTip = JustTheController();
   JustTheController parcelDeliveryToolTip = JustTheController();
   final ScrollController _scrollController = ScrollController();
   bool _isShowRideIcon = true;
+  late final AnimationController _clubLogoAnimationController;
+  late final Animation<double> _clubLogoScaleAnimation;
 
   String greetingMessage() {
     var timeNow = DateTime.now().hour;
@@ -61,6 +65,20 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+
+    _clubLogoAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1250),
+    )..repeat(reverse: true);
+
+    _clubLogoScaleAnimation = Tween<double>(
+      begin: 0.92,
+      end: 1.08,
+    ).animate(CurvedAnimation(
+      parent: _clubLogoAnimationController,
+      curve: Curves.easeInOut,
+    ));
+
     Get.find<AddressController>().updateLastLocation();
 
     _scrollController.addListener(() {
@@ -82,6 +100,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     rideShareToolTip.dispose();
     parcelDeliveryToolTip.dispose();
+    _clubLogoAnimationController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -142,12 +161,10 @@ class _HomeScreenState extends State<HomeScreen> {
         return GetBuilder<RideController>(builder: (rideController) {
           return GetBuilder<ParcelController>(builder: (parcelController) {
             return BodyWidget(
-              appBar: AppBarWidget(
-                title:
+              appBar: _HomeClubHeaderAppBar(
+                headerTitle:
                     '${greetingMessage()}, ${profileController.customerFirstName()}',
-                showBackButton: false,
-                isHome: true,
-                fontSize: Dimensions.fontSizeLarge,
+                logoScaleAnimation: _clubLogoScaleAnimation,
               ),
               body: RefreshIndicator(
                 onRefresh: () async {
@@ -454,5 +471,193 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       });
     });
+  }
+}
+
+class _HomeClubHeaderAppBar extends AppBarWidget {
+  final String headerTitle;
+  final Animation<double> logoScaleAnimation;
+
+  _HomeClubHeaderAppBar({
+    required this.headerTitle,
+    required this.logoScaleAnimation,
+  }) : super(
+          title: headerTitle,
+          showBackButton: false,
+          isHome: true,
+          fontSize: Dimensions.fontSizeLarge,
+        );
+
+  @override
+  Size get preferredSize => const Size.fromHeight(122);
+
+  @override
+  Widget build(BuildContext context) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color deepGreen = Color.lerp(primaryColor, Colors.black, 0.20)!;
+    final String address = _currentAddress();
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            deepGreen,
+            primaryColor,
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: primaryColor.withValues(alpha: 0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Dimensions.paddingSizeDefault,
+            Dimensions.paddingSizeSmall,
+            Dimensions.paddingSizeDefault,
+            Dimensions.paddingSizeDefault,
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.96),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.10),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(7),
+                  child: Image.asset(
+                    'assets/image/logo.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => Icon(
+                      Icons.location_on_rounded,
+                      color: primaryColor,
+                      size: 27,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: Dimensions.paddingSizeSmall),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      headerTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textMedium.copyWith(
+                        color: Colors.white,
+                        fontSize: Dimensions.fontSizeLarge,
+                        height: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.location_on_outlined,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            address.isNotEmpty ? address : 'Localização atual',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: textRegular.copyWith(
+                              color: Colors.white.withValues(alpha: 0.94),
+                              fontSize: Dimensions.fontSizeExtraSmall,
+                              height: 1.2,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: Dimensions.paddingSizeSmall),
+              GestureDetector(
+                onTap: () => Get.to(() => const PointsClubHomeScreen()),
+                child: ScaleTransition(
+                  scale: logoScaleAnimation,
+                  child: Container(
+                    width: 54,
+                    height: 54,
+                    padding: const EdgeInsets.all(5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.14),
+                          blurRadius: 15,
+                          offset: const Offset(0, 7),
+                        ),
+                      ],
+                    ),
+                    child: Image.asset(
+                      'assets/image/logo_clube.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => Icon(
+                        Icons.diamond_rounded,
+                        color: primaryColor,
+                        size: 31,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _currentAddress() {
+    try {
+      final LocationController locationController =
+          Get.find<LocationController>();
+
+      final String savedAddress =
+          locationController.getUserAddress()?.address?.trim() ?? '';
+
+      if (savedAddress.isNotEmpty) {
+        return savedAddress;
+      }
+
+      final String currentAddress = locationController.address.trim();
+
+      if (currentAddress.isNotEmpty) {
+        return currentAddress;
+      }
+
+      return locationController.pickAddress.trim();
+    } catch (_) {
+      return '';
+    }
   }
 }

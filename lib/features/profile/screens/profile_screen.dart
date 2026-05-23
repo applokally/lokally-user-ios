@@ -26,6 +26,7 @@ import 'package:ride_sharing_user_app/features/store/screens/seller/store_seller
 import 'package:ride_sharing_user_app/features/store/screens/store_seller_registration_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_customer_order_list_screen.dart';
 import 'package:ride_sharing_user_app/features/wallet/screens/wallet_screen.dart';
+import 'package:ride_sharing_user_app/features/points_club/screens/points_club_home_screen.dart';
 import 'package:ride_sharing_user_app/common_widgets/app_bar_widget.dart';
 import 'package:ride_sharing_user_app/common_widgets/body_widget.dart';
 import 'package:ride_sharing_user_app/common_widgets/image_widget.dart';
@@ -257,6 +258,11 @@ class ProfileScreen extends StatelessWidget {
                   title: 'my_wallet',
                   icon: Images.profileMyWallet,
                   onTap: () => Get.to(() => const WalletScreen()),
+                ),
+                ProfileMenuItem(
+                  title: 'Clube de Pontos Lokally',
+                  icon: Images.paymentAndVoucher,
+                  onTap: () => Get.to(() => const PointsClubHomeScreen()),
                 ),
                 ProfileMenuItem(
                   title: 'my_offer',
