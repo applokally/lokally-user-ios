@@ -163,6 +163,8 @@ class RideRepository implements RideRepositoryInterface {
     String? lokallyPaymentFlow,
     String? lokallyPaymentMethod,
     String? lokallyPaymentMethodLabel,
+    String? lokallyPointsVoucherId,
+    String? lokallyPointsVoucherCode,
   }) async {
     final Map<String, String?> lokallyPaymentDetails =
         _resolveLokallyPaymentDetails(
@@ -249,6 +251,8 @@ class RideRepository implements RideRepositoryInterface {
       "scheduled_at": scheduledAt,
       "ride_request_type": rideRequestType,
       "surge_multiplier": surgeMultiplier,
+      "lokally_points_voucher_id": lokallyPointsVoucherId,
+      "lokally_points_voucher_code": lokallyPointsVoucherCode,
     });
   }
 
@@ -306,9 +310,25 @@ class RideRepository implements RideRepositoryInterface {
   }
 
   @override
-  Future<Response> getFinalFare(String id) async {
-    return await apiClient
-        .getData('${AppConstants.finalFare}?trip_request_id=$id');
+  Future<Response> getFinalFare(
+    String id, {
+    String? lokallyPointsVoucherId,
+    String? lokallyPointsVoucherCode,
+  }) async {
+    String uri = '${AppConstants.finalFare}?trip_request_id=$id';
+
+    if (lokallyPointsVoucherId != null && lokallyPointsVoucherId.isNotEmpty) {
+      uri +=
+          '&lokally_points_voucher_id=${Uri.encodeComponent(lokallyPointsVoucherId)}';
+    }
+
+    if (lokallyPointsVoucherCode != null &&
+        lokallyPointsVoucherCode.isNotEmpty) {
+      uri +=
+          '&lokally_points_voucher_code=${Uri.encodeComponent(lokallyPointsVoucherCode)}';
+    }
+
+    return await apiClient.getData(uri);
   }
 
   @override

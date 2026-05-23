@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:get/get.dart';
@@ -863,6 +864,12 @@ class _PaymentScreenState extends State<PaymentScreen>
                                                           tripId: rideController
                                                               .finalFare!.id!,
                                                         ),
+                                                      _LokallyPointsVoucherSelector(
+                                                        tripId: rideController
+                                                            .finalFare!.id!,
+                                                        fromParcel:
+                                                            widget.fromParcel,
+                                                      ),
                                                     ],
                                                   ),
                                                 ),
@@ -1022,6 +1029,592 @@ class _PaymentScreenState extends State<PaymentScreen>
         ),
       ),
     );
+  }
+}
+
+class _LokallyPointsVoucherSelector extends StatefulWidget {
+  final String tripId;
+  final bool fromParcel;
+
+  const _LokallyPointsVoucherSelector({
+    required this.tripId,
+    required this.fromParcel,
+  });
+
+  @override
+  State<_LokallyPointsVoucherSelector> createState() =>
+      _LokallyPointsVoucherSelectorState();
+}
+
+class _LokallyPointsVoucherSelectorState
+    extends State<_LokallyPointsVoucherSelector> {
+  bool _isLoading = false;
+  bool _hasLoaded = false;
+  List<_LokallyPointsVoucher> _vouchers = [];
+
+  String get _expectedRewardType =>
+      widget.fromParcel ? 'parcel_coupon' : 'ride_coupon';
+
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(_loadVouchers);
+  }
+
+  Future<void> _loadVouchers() async {
+    if (_isLoading) {
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final response = await Get.find<ApiClient>().getData(
+        '/api/customer/points-club/vouchers',
+      );
+
+      final List<dynamic> rawItems = _extractVoucherList(response.body);
+      final List<_LokallyPointsVoucher> parsed = rawItems
+          .whereType<Map>()
+          .map((item) => _LokallyPointsVoucher.fromJson(
+                Map<String, dynamic>.from(item),
+              ))
+          .where(
+            (voucher) =>
+                voucher.status == 'available' &&
+                voucher.rewardType == _expectedRewardType &&
+                voucher.amount > 0,
+          )
+          .toList();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _vouchers = parsed;
+        _hasLoaded = true;
+      });
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _vouchers = [];
+        _hasLoaded = true;
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  List<dynamic> _extractVoucherList(dynamic body) {
+    if (body is List) {
+      return body;
+    }
+
+    if (body is! Map) {
+      return [];
+    }
+
+    final List<String> listKeys = [
+      'items',
+      'vouchers',
+      'data',
+      'content',
+      'results',
+    ];
+
+    for (final String key in listKeys) {
+      final dynamic value = body[key];
+
+      if (value is List) {
+        return value;
+      }
+
+      if (value is Map) {
+        final List<dynamic> nested = _extractVoucherList(value);
+
+        if (nested.isNotEmpty) {
+          return nested;
+        }
+      }
+    }
+
+    return [];
+  }
+
+  Future<void> _applyVoucher(_LokallyPointsVoucher voucher) async {
+    final RideController rideController = Get.find<RideController>();
+
+    rideController.setLokallyPointsVoucherForFinalFare(
+      voucherId: voucher.id,
+      voucherCode: voucher.code,
+      amount: voucher.amount,
+      rewardType: voucher.rewardType,
+    );
+
+    Navigator.of(context).pop();
+
+    final response = await rideController.getFinalFare(
+      widget.tripId,
+      lokallyPointsVoucherId: voucher.id,
+      lokallyPointsVoucherCode: voucher.code,
+    );
+
+    if (response.statusCode == 200) {
+      showCustomSnackBar(
+        'Resgate do Clube aplicado com sucesso.',
+        isError: false,
+      );
+    }
+  }
+
+  void _openVoucherModal() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withValues(alpha: 0.55),
+      builder: (modalContext) {
+        final double bottomPadding = MediaQuery.of(modalContext).padding.bottom;
+
+        return SafeArea(
+          top: false,
+          bottom: false,
+          child: Container(
+            width: double.infinity,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(modalContext).size.height * 0.82,
+            ),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(Dimensions.radiusLarge),
+                topRight: Radius.circular(Dimensions.radiusLarge),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 28,
+                  offset: const Offset(0, -8),
+                ),
+              ],
+            ),
+            child: SingleChildScrollView(
+              physics: const ClampingScrollPhysics(),
+              padding: EdgeInsets.fromLTRB(
+                Dimensions.paddingSizeDefault,
+                Dimensions.paddingSizeDefault,
+                Dimensions.paddingSizeDefault,
+                bottomPadding + Dimensions.paddingSizeExtraLarge,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color:
+                          Theme.of(context).hintColor.withValues(alpha: 0.18),
+                      borderRadius:
+                          BorderRadius.circular(Dimensions.radiusOverLarge),
+                    ),
+                  ),
+                  const SizedBox(height: Dimensions.paddingSizeDefault),
+                  Text(
+                    'Usar resgate do Clube',
+                    textAlign: TextAlign.center,
+                    style: textBold.copyWith(
+                      fontSize: Dimensions.fontSizeLarge,
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  const SizedBox(height: Dimensions.paddingSizeSmall),
+                  Text(
+                    widget.fromParcel
+                        ? 'Escolha um resgate disponível para aplicar nesta entrega.'
+                        : 'Escolha um resgate disponível para aplicar nesta corrida.',
+                    textAlign: TextAlign.center,
+                    style: textRegular.copyWith(
+                      fontSize: Dimensions.fontSizeSmall,
+                      color: Theme.of(context).hintColor,
+                    ),
+                  ),
+                  const SizedBox(height: Dimensions.paddingSizeLarge),
+                  ..._vouchers.map(
+                    (voucher) => _LokallyPointsVoucherTile(
+                      voucher: voucher,
+                      onTap: () => _applyVoucher(voucher),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GetBuilder<RideController>(
+      builder: (rideController) {
+        final double appliedAmount =
+            rideController.finalFare?.lokallyPointsVoucherAmount ?? 0;
+        final String? appliedCode =
+            rideController.finalFare?.lokallyPointsVoucherCode;
+
+        if (appliedAmount > 0) {
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(
+              left: Dimensions.paddingSizeDefault,
+              right: Dimensions.paddingSizeDefault,
+              bottom: Dimensions.paddingSizeDefault,
+            ),
+            padding: const EdgeInsets.all(Dimensions.paddingSizeDefault),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.20),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).primaryColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(Dimensions.radiusSmall),
+                  ),
+                  child: Icon(
+                    Icons.stars_rounded,
+                    color: Theme.of(context).primaryColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: Dimensions.paddingSizeSmall),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Resgate Clube de Pontos aplicado',
+                        style: textSemiBold.copyWith(
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                          fontSize: Dimensions.fontSizeDefault,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        [
+                          if ((appliedCode ?? '').isNotEmpty) appliedCode!,
+                          PriceConverter.convertPrice(appliedAmount),
+                        ].join(' • '),
+                        style: textRobotoRegular.copyWith(
+                          color: Theme.of(context).primaryColor,
+                          fontSize: Dimensions.fontSizeSmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.check_circle_rounded,
+                  color: Theme.of(context).primaryColor,
+                  size: 22,
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (_isLoading && !_hasLoaded) {
+          return Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(
+              left: Dimensions.paddingSizeDefault,
+              right: Dimensions.paddingSizeDefault,
+              bottom: Dimensions.paddingSizeDefault,
+            ),
+            padding: const EdgeInsets.all(Dimensions.paddingSizeDefault),
+            decoration: BoxDecoration(
+              color: Theme.of(context).hintColor.withValues(alpha: 0.045),
+              borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+            ),
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Theme.of(context).primaryColor,
+                  ),
+                ),
+                const SizedBox(width: Dimensions.paddingSizeSmall),
+                Expanded(
+                  child: Text(
+                    'Buscando resgates do Clube...',
+                    style: textRegular.copyWith(
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                      fontSize: Dimensions.fontSizeSmall,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }
+
+        if (_vouchers.isEmpty) {
+          return const SizedBox();
+        }
+
+        return InkWell(
+          onTap: _openVoucherModal,
+          borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+          child: Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(
+              left: Dimensions.paddingSizeDefault,
+              right: Dimensions.paddingSizeDefault,
+              bottom: Dimensions.paddingSizeDefault,
+            ),
+            padding: const EdgeInsets.all(Dimensions.paddingSizeDefault),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+              border: Border.all(
+                color: Theme.of(context).primaryColor.withValues(alpha: 0.18),
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.035),
+                  blurRadius: 14,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color:
+                        Theme.of(context).primaryColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(Dimensions.radiusSmall),
+                  ),
+                  child: Icon(
+                    Icons.stars_rounded,
+                    color: Theme.of(context).primaryColor,
+                    size: 21,
+                  ),
+                ),
+                const SizedBox(width: Dimensions.paddingSizeSmall),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Usar resgate do Clube',
+                        style: textSemiBold.copyWith(
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                          fontSize: Dimensions.fontSizeDefault,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${_vouchers.length} resgate${_vouchers.length == 1 ? '' : 's'} disponível${_vouchers.length == 1 ? '' : 'is'}',
+                        style: textRegular.copyWith(
+                          color: Theme.of(context).hintColor,
+                          fontSize: Dimensions.fontSizeSmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.keyboard_arrow_right_rounded,
+                  color: Theme.of(context).primaryColor,
+                  size: 24,
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LokallyPointsVoucherTile extends StatelessWidget {
+  final _LokallyPointsVoucher voucher;
+  final VoidCallback onTap;
+
+  const _LokallyPointsVoucherTile({
+    required this.voucher,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: Dimensions.paddingSizeSmall),
+      decoration: BoxDecoration(
+        color: Theme.of(context).hintColor.withValues(alpha: 0.045),
+        borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+        border: Border.all(
+          color: Theme.of(context).hintColor.withValues(alpha: 0.10),
+        ),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
+        child: Padding(
+          padding: const EdgeInsets.all(Dimensions.paddingSizeDefault),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(Dimensions.radiusSmall),
+                ),
+                child: Icon(
+                  Icons.confirmation_number_rounded,
+                  color: Theme.of(context).primaryColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: Dimensions.paddingSizeSmall),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      voucher.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textSemiBold.copyWith(
+                        color: Theme.of(context).textTheme.bodyMedium?.color,
+                        fontSize: Dimensions.fontSizeDefault,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      voucher.code,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textRobotoRegular.copyWith(
+                        color: Theme.of(context).hintColor,
+                        fontSize: Dimensions.fontSizeSmall,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: Dimensions.paddingSizeSmall),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    PriceConverter.convertPrice(voucher.amount),
+                    style: textRobotoBold.copyWith(
+                      color: Theme.of(context).primaryColor,
+                      fontSize: Dimensions.fontSizeDefault,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Aplicar',
+                    style: textSemiBold.copyWith(
+                      color: Theme.of(context).primaryColor,
+                      fontSize: Dimensions.fontSizeSmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LokallyPointsVoucher {
+  final String id;
+  final String code;
+  final String title;
+  final String rewardType;
+  final String status;
+  final double amount;
+
+  const _LokallyPointsVoucher({
+    required this.id,
+    required this.code,
+    required this.title,
+    required this.rewardType,
+    required this.status,
+    required this.amount,
+  });
+
+  factory _LokallyPointsVoucher.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> reward =
+        json['reward'] is Map ? Map<String, dynamic>.from(json['reward']) : {};
+
+    final String rewardType =
+        (json['reward_type'] ?? json['type'] ?? reward['reward_type'] ?? '')
+            .toString();
+
+    final String title = (json['reward_title'] ??
+            json['title'] ??
+            reward['title'] ??
+            'Resgate Clube de Pontos')
+        .toString();
+
+    return _LokallyPointsVoucher(
+      id: (json['id'] ?? '').toString(),
+      code: (json['voucher_code'] ?? json['code'] ?? '').toString(),
+      title: title,
+      rewardType: rewardType,
+      status: (json['status'] ?? '').toString().trim().toLowerCase(),
+      amount: _parseAmount(
+        json['reference_value'] ??
+            json['amount'] ??
+            json['value'] ??
+            reward['reference_value'],
+      ),
+    );
+  }
+
+  static double _parseAmount(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    if (value is String) {
+      return double.tryParse(value.replaceAll(',', '.')) ?? 0;
+    }
+
+    return 0;
   }
 }
 

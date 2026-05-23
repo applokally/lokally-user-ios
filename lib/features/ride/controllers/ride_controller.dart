@@ -77,6 +77,10 @@ class RideController extends GetxController implements GetxService {
   bool isCouponApplicable = false;
   double discountFare = 0;
   double discountAmount = 0;
+  String? selectedLokallyPointsVoucherId;
+  String? selectedLokallyPointsVoucherCode;
+  double selectedLokallyPointsVoucherAmount = 0;
+  String? selectedLokallyPointsVoucherRewardType;
 
   List<String>? _thumbnailPaths;
   List<String>? get thumbnailPaths => _thumbnailPaths;
@@ -115,6 +119,7 @@ class RideController extends GetxController implements GetxService {
     scheduleTripTime = null;
     _pickupNote = '';
     pickupNoteController.clear();
+    clearLokallyPointsVoucherForFinalFare(shouldUpdate: false);
     stopRideStatusSync();
   }
 
@@ -200,8 +205,33 @@ class RideController extends GetxController implements GetxService {
   void clearRideDetails() {
     tripDetails = null;
     rideDetails = null;
+    clearLokallyPointsVoucherForFinalFare(shouldUpdate: false);
     stopRideStatusSync();
     update();
+  }
+
+  void setLokallyPointsVoucherForFinalFare({
+    String? voucherId,
+    String? voucherCode,
+    double amount = 0,
+    String? rewardType,
+  }) {
+    selectedLokallyPointsVoucherId = voucherId;
+    selectedLokallyPointsVoucherCode = voucherCode;
+    selectedLokallyPointsVoucherAmount = amount;
+    selectedLokallyPointsVoucherRewardType = rewardType;
+    update();
+  }
+
+  void clearLokallyPointsVoucherForFinalFare({bool shouldUpdate = true}) {
+    selectedLokallyPointsVoucherId = null;
+    selectedLokallyPointsVoucherCode = null;
+    selectedLokallyPointsVoucherAmount = 0;
+    selectedLokallyPointsVoucherRewardType = null;
+
+    if (shouldUpdate) {
+      update();
+    }
   }
 
   @override
@@ -482,6 +512,8 @@ class RideController extends GetxController implements GetxService {
           ? parcelEstimatedFare?.data?.surgeMultiplier
           : selectedType?.surgeMultiplier,
       pickupNote: _pickupNote,
+      lokallyPointsVoucherId: selectedLokallyPointsVoucherId,
+      lokallyPointsVoucherCode: selectedLokallyPointsVoucherCode,
     );
 
     if (response.statusCode == 200 && response.body['data'] != null) {
@@ -529,7 +561,8 @@ class RideController extends GetxController implements GetxService {
     Get.find<LocationController>().extraRouteTwoAddress = null;
   }
 
-  Future<Response> getRideDetails(String tripId, {bool isUpdate = true, bool notifyMap = true}) async {
+  Future<Response> getRideDetails(String tripId,
+      {bool isUpdate = true, bool notifyMap = true}) async {
     if (isUpdate) {
       isLoading = true;
       tripDetails = null;
@@ -796,7 +829,8 @@ class RideController extends GetxController implements GetxService {
     _isRideStatusSyncing = true;
 
     try {
-      final Response response = await getRideDetails(tripId, isUpdate: false, notifyMap: false);
+      final Response response =
+          await getRideDetails(tripId, isUpdate: false, notifyMap: false);
 
       if (response.statusCode == 200 && tripDetails != null) {
         final String? currentStatus = tripDetails?.currentStatus;
@@ -1042,15 +1076,40 @@ class RideController extends GetxController implements GetxService {
     return response;
   }
 
-  Future<Response> getFinalFare(String tripId) async {
+  Future<Response> getFinalFare(
+    String tripId, {
+    String? lokallyPointsVoucherId,
+    String? lokallyPointsVoucherCode,
+  }) async {
     isLoading = true;
     update();
 
-    Response response = await rideServiceInterface.getFinalFare(tripId);
+    final String? voucherId =
+        lokallyPointsVoucherId ?? selectedLokallyPointsVoucherId;
+    final String? voucherCode =
+        lokallyPointsVoucherCode ?? selectedLokallyPointsVoucherCode;
+
+    Response response = await rideServiceInterface.getFinalFare(
+      tripId,
+      lokallyPointsVoucherId: voucherId,
+      lokallyPointsVoucherCode: voucherCode,
+    );
 
     if (response.statusCode == 200) {
       if (response.body['data'] != null) {
         finalFare = FinalFareModel.fromJson(response.body).data!;
+
+        if ((finalFare?.lokallyPointsVoucherId ?? '').isNotEmpty ||
+            (finalFare?.lokallyPointsVoucherCode ?? '').isNotEmpty) {
+          selectedLokallyPointsVoucherId = finalFare?.lokallyPointsVoucherId;
+          selectedLokallyPointsVoucherCode =
+              finalFare?.lokallyPointsVoucherCode;
+          selectedLokallyPointsVoucherAmount =
+              finalFare?.lokallyPointsVoucherAmount ?? 0;
+          selectedLokallyPointsVoucherRewardType = finalFare
+              ?.lokallyPointsVoucherMetadata?['reward_type']
+              ?.toString();
+        }
       }
     } else {
       ApiChecker.checkApi(response);
@@ -1274,4 +1333,3 @@ class ThumbnailPathModel {
 
   ThumbnailPathModel(this.path);
 }
-

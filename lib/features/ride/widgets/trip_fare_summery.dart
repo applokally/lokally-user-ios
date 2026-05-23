@@ -176,7 +176,8 @@ class TripFareSummery extends StatelessWidget {
                     width: 44,
                     height: 5,
                     decoration: BoxDecoration(
-                      color: Theme.of(context).hintColor.withValues(alpha: 0.18),
+                      color:
+                          Theme.of(context).hintColor.withValues(alpha: 0.18),
                       borderRadius:
                           BorderRadius.circular(Dimensions.radiusOverLarge),
                     ),
@@ -309,7 +310,8 @@ class TripFareSummery extends StatelessWidget {
               border: fromPayment
                   ? null
                   : Border.all(
-                      color: Theme.of(context).hintColor.withValues(alpha: 0.10),
+                      color:
+                          Theme.of(context).hintColor.withValues(alpha: 0.10),
                     ),
               boxShadow: fromPayment
                   ? null
@@ -336,7 +338,8 @@ class TripFareSummery extends StatelessWidget {
                         child: Text(
                           'fare_price'.tr,
                           style: textSemiBold.copyWith(
-                            color: Theme.of(context).textTheme.bodyMedium?.color,
+                            color:
+                                Theme.of(context).textTheme.bodyMedium?.color,
                             fontSize: Dimensions.fontSizeDefault,
                           ),
                         ),
@@ -379,7 +382,8 @@ class TripFareSummery extends StatelessWidget {
                           PriceConverter.convertPrice(_currentFareAmount()),
                           style: textRobotoBold.copyWith(
                             fontSize: Dimensions.fontSizeDefault,
-                            color: Theme.of(context).textTheme.bodyMedium?.color,
+                            color:
+                                Theme.of(context).textTheme.bodyMedium?.color,
                           ),
                         ),
                       ),
@@ -514,6 +518,18 @@ class TripFareSummery extends StatelessWidget {
                     icon: Images.profileMyWallet,
                     title: 'coupon_discount'.tr,
                     amount: rideController.finalFare?.couponAmount ?? 0,
+                    discount: true,
+                  ),
+                if (fromPayment &&
+                    (rideController.finalFare?.lokallyPointsVoucherAmount ??
+                            0) >
+                        0)
+                  PaymentItemInfoWidget(
+                    icon: Images.profileMyWallet,
+                    title: 'Resgate Clube de Pontos',
+                    amount:
+                        rideController.finalFare?.lokallyPointsVoucherAmount ??
+                            0,
                     discount: true,
                   ),
                 if (fromPayment &&
@@ -669,8 +685,7 @@ class TripFareSummery extends StatelessWidget {
                                                     maxLines: 1,
                                                     overflow:
                                                         TextOverflow.ellipsis,
-                                                    style:
-                                                        textMedium.copyWith(
+                                                    style: textMedium.copyWith(
                                                       fontSize: Dimensions
                                                           .fontSizeDefault,
                                                       color: Theme.of(context)
@@ -683,13 +698,13 @@ class TripFareSummery extends StatelessWidget {
                                               ),
                                             ),
                                             const SizedBox(
-                                              width:
-                                                  Dimensions.paddingSizeExtraSmall,
+                                              width: Dimensions
+                                                  .paddingSizeExtraSmall,
                                             ),
                                             Icon(
                                               Icons.keyboard_arrow_down_rounded,
-                                              color:
-                                                  Theme.of(context).primaryColor,
+                                              color: Theme.of(context)
+                                                  .primaryColor,
                                               size: 20,
                                             ),
                                           ],
