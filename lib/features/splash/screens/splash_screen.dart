@@ -20,6 +20,7 @@ class _SplashScreenState extends State<SplashScreen>
   StreamSubscription<List<ConnectivityResult>>? _onConnectivityChanged;
   late AnimationController _controller;
   late Animation _animation;
+  bool _startedRouting = false;
 
   @override
   void initState() {
@@ -29,7 +30,9 @@ class _SplashScreenState extends State<SplashScreen>
         AnimationController(vsync: this, duration: const Duration(seconds: 1));
     _animation = Tween(begin: 0.0, end: 1.0).animate(_controller)
       ..addListener(() {
-        setState(() {});
+        if (mounted) {
+          setState(() {});
+        }
       });
 
     _controller.repeat(max: 1);
@@ -37,37 +40,39 @@ class _SplashScreenState extends State<SplashScreen>
 
     Get.find<ConfigController>().initSharedData();
 
-    _checkConnectivity();
+    _startConnectivitySafeLaunch();
   }
 
-  void _checkConnectivity() {
-    bool isFirst = true;
+  void _startConnectivitySafeLaunch() {
     _onConnectivityChanged = Connectivity()
         .onConnectivityChanged
         .listen((List<ConnectivityResult> result) {
-      bool isConnected = result.contains(ConnectivityResult.wifi) ||
-          result.contains(ConnectivityResult.mobile);
-      if (!isFirst || !isConnected) {
-        ScaffoldMessenger.of(Get.context!).removeCurrentSnackBar();
-        ScaffoldMessenger.of(Get.context!).hideCurrentSnackBar();
-        ScaffoldMessenger.of(Get.context!).showSnackBar(SnackBar(
-          backgroundColor: isConnected ? Colors.green : Colors.red,
-          duration: Duration(seconds: isConnected ? 3 : 6000),
-          content: Text(
-            isConnected ? 'connected'.tr : 'no_connection'.tr,
-            textAlign: TextAlign.center,
-          ),
-        ));
-        if (isConnected) {
-          LoginHelper().handleIncomingLinks(widget.notificationData);
-        }
-      } else {
-        ScaffoldMessenger.of(Get.context!).removeCurrentSnackBar();
-        ScaffoldMessenger.of(Get.context!).hideCurrentSnackBar();
-        LoginHelper().handleIncomingLinks(widget.notificationData);
+      final bool isConnected = result.contains(ConnectivityResult.wifi) ||
+          result.contains(ConnectivityResult.mobile) ||
+          result.contains(ConnectivityResult.ethernet) ||
+          result.contains(ConnectivityResult.vpn);
+
+      if (isConnected) {
+        _routeOnce();
       }
-      isFirst = false;
     });
+
+    Future.delayed(const Duration(milliseconds: 900), () {
+      _routeOnce();
+    });
+  }
+
+  void _routeOnce() {
+    if (_startedRouting) {
+      return;
+    }
+
+    _startedRouting = true;
+
+    ScaffoldMessenger.maybeOf(context)?.removeCurrentSnackBar();
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+
+    LoginHelper().handleIncomingLinks(widget.notificationData);
   }
 
   @override

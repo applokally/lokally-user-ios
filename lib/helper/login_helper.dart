@@ -11,7 +11,6 @@ import 'package:ride_sharing_user_app/features/location/controllers/location_con
 import 'package:ride_sharing_user_app/features/location/view/access_location_screen.dart';
 import 'package:ride_sharing_user_app/features/maintainance_mode/maintainance_screen.dart';
 import 'package:ride_sharing_user_app/features/realtime_location_trac/screens/live_location_screen.dart';
-import 'package:ride_sharing_user_app/features/onboard/screens/onboarding_screen.dart';
 import 'package:ride_sharing_user_app/features/payment/controllers/payment_controller.dart';
 import 'package:ride_sharing_user_app/features/profile/controllers/profile_controller.dart';
 import 'package:ride_sharing_user_app/features/refund_request/controllers/refund_request_controller.dart';
@@ -105,25 +104,20 @@ class LoginHelper {
             1) {
       Get.offAll(() => const MaintenanceScreen());
     } else {
-      if (Get.find<ConfigController>().showIntro()) {
-        Get.offAll(() => OnBoardingScreen(notificationData: notificationData));
-      } else {
-        if (Get.find<LocalizationController>().haveLocalLanguageCode()) {
-          if (Get.find<LocationController>().getUserAddress() != null &&
-              Get.find<LocationController>().getUserAddress()!.address !=
-                  null &&
-              Get.find<LocationController>()
-                  .getUserAddress()!
-                  .address!
-                  .isNotEmpty) {
-            Get.offAll(() => const StoreHomeScreen());
-          } else {
-            Get.offAll(() => const AccessLocationScreen());
-          }
+      if (Get.find<LocalizationController>().haveLocalLanguageCode()) {
+        if (Get.find<LocationController>().getUserAddress() != null &&
+            Get.find<LocationController>().getUserAddress()!.address != null &&
+            Get.find<LocationController>()
+                .getUserAddress()!
+                .address!
+                .isNotEmpty) {
+          Get.offAll(() => const StoreHomeScreen());
         } else {
-          Get.offAll(() =>
-              LanguageSelectionScreen(notificationData: notificationData));
+          Get.offAll(() => const AccessLocationScreen());
         }
+      } else {
+        Get.offAll(
+            () => LanguageSelectionScreen(notificationData: notificationData));
       }
     }
   }

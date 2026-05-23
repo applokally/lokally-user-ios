@@ -1,5 +1,3 @@
-import 'package:get/get.dart';
-import 'package:ride_sharing_user_app/features/onboard/domain/models/on_boarding_model.dart';
 import 'package:ride_sharing_user_app/localization/language_model.dart';
 import 'package:ride_sharing_user_app/util/images.dart';
 
@@ -243,32 +241,5 @@ class AppConstants {
     'xlsx',
     'docx',
     'zip'
-  ];
-
-  static List<OnBoardingModel> onBoardPagerData = [
-    OnBoardingModel(
-        title1: 'onboard_one_part_one'.tr,
-        title2: 'onboard_one_part_two'.tr,
-        title3: '',
-        title4: '',
-        image: 'assets/svg/onboarding_one.svg'),
-    OnBoardingModel(
-        title1: '',
-        title2: 'onboard_two_part_one'.tr,
-        title3: 'onboard_two_part_two'.tr,
-        title4: 'onboard_two_part_three'.tr,
-        image: 'assets/svg/onboarding_two.svg'),
-    OnBoardingModel(
-        title1: '',
-        title2: 'onboard_three_part_one'.tr,
-        title3: 'onboard_three_part_two'.tr,
-        title4: 'onboard_three_part_three'.tr,
-        image: 'assets/svg/onboarding_three.svg'),
-    OnBoardingModel(
-        title1: 'onboard_four_part_one'.tr,
-        title2: 'onboard_four_part_two'.tr,
-        title3: 'onboard_four_part_three'.tr,
-        title4: 'onboard_four_part_four'.tr,
-        image: 'assets/svg/onboarding_four.svg'),
   ];
 }
