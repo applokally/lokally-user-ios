@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/dashboard/controllers/bottom_menu_controller.dart';
 import 'package:ride_sharing_user_app/features/message/controllers/message_controller.dart';
 import 'package:ride_sharing_user_app/features/message/screens/message_list.dart';
+import 'package:ride_sharing_user_app/features/store/screens/store_home_screen.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -12,7 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'store_seller_product_list_screen.dart';
 import 'store_seller_order_list_screen.dart';
-import 'store_seller_products_screen.dart';
+import 'store_seller_publish_type_screen.dart';
 
 class StoreSellerDashboardScreen extends StatefulWidget {
   const StoreSellerDashboardScreen({super.key});
@@ -227,7 +228,7 @@ class _StoreSellerDashboardScreenState
   }
 
   void openSellerSection(BuildContext context, String title) {
-    if (title == 'Produtos') {
+    if (title == 'Produtos' || title == 'Anunciar') {
       Get.to(() => const StoreSellerProductListScreen());
       return;
     }
@@ -262,11 +263,6 @@ class _StoreSellerDashboardScreenState
       return;
     }
 
-    if (title == 'Plano da loja') {
-      Get.to(() => const StoreSellerBillingScreen());
-      return;
-    }
-
     if (title == 'Financeiro' ||
         title == 'Repasse a receber' ||
         title == 'Repasses feitos' ||
@@ -297,8 +293,8 @@ class _StoreSellerDashboardScreenState
   }
 
   void openCreateProductScreen(BuildContext context, String title) {
-    if (title == 'Produtos') {
-      Get.to(() => const StoreSellerProductsScreen());
+    if (title == 'Produtos' || title == 'Anunciar') {
+      Get.to(() => const StoreSellerPublishTypeScreen());
       return;
     }
 
@@ -371,6 +367,16 @@ class _StoreSellerDashboardScreenState
     );
   }
 
+  void openMarketplaceStore() {
+    if (Get.isRegistered<BottomMenuController>()) {
+      Get.find<BottomMenuController>().setTabIndex(2);
+      Get.until((route) => route.isFirst);
+      return;
+    }
+
+    Get.off(() => const StoreHomeScreen());
+  }
+
   void showStoreMessage(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -398,7 +404,7 @@ class _StoreSellerDashboardScreenState
           }
 
           if (title == 'Voltar para a Loja') {
-            Get.back();
+            openMarketplaceStore();
             return;
           }
 
@@ -410,6 +416,7 @@ class _StoreSellerDashboardScreenState
           StoreSellerTopBar(
             primaryColor: primaryColor,
             onMenuTap: () => scaffoldKey.currentState?.openDrawer(),
+            onStoreTap: openMarketplaceStore,
           ),
           Expanded(
             child: SingleChildScrollView(
@@ -424,7 +431,7 @@ class _StoreSellerDashboardScreenState
                     isUploadingLogo: isUploadingLogo,
                     onCoverTap: () => pickAndUploadStoreMedia(isCover: true),
                     onLogoTap: () => pickAndUploadStoreMedia(isCover: false),
-                    onBackToStoreTap: () => Get.back(),
+                    onBackToStoreTap: openMarketplaceStore,
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(
@@ -469,8 +476,8 @@ class _StoreSellerDashboardScreenState
                         StoreSellerLatestSales(
                           primaryColor: primaryColor,
                           sales: latestSellerSales,
-                          onTapSale: (title) =>
-                              handleComingSoon(context, 'Venda: $title'),
+                          onTapSale: (_) =>
+                              openSellerSection(context, 'Pedidos'),
                           onViewAllTap: () =>
                               openSellerSection(context, 'Pedidos'),
                         ),
@@ -498,11 +505,13 @@ class _StoreSellerDashboardScreenState
 class StoreSellerTopBar extends StatelessWidget {
   final Color primaryColor;
   final VoidCallback onMenuTap;
+  final VoidCallback onStoreTap;
 
   const StoreSellerTopBar({
     super.key,
     required this.primaryColor,
     required this.onMenuTap,
+    required this.onStoreTap,
   });
 
   @override
@@ -536,7 +545,7 @@ class StoreSellerTopBar extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Painel do vendedor',
+              'Gerenciamento Marketplace',
               style: textBold.copyWith(
                 color: Colors.white,
                 fontSize: 19,
@@ -544,7 +553,7 @@ class StoreSellerTopBar extends StatelessWidget {
             ),
           ),
           GestureDetector(
-            onTap: () => Get.back(),
+            onTap: onStoreTap,
             child: Container(
               width: 42,
               height: 42,
@@ -1349,7 +1358,7 @@ class StoreSellerFinancialCard extends StatelessWidget {
               ),
               const SizedBox(height: 7),
               Text(
-                'Valor pendente de transferência pela Lokally, conforme pedidos liberados e regras de repasse.',
+                'Valor líquido disponível para transferência, já considerando taxa Lokally e regras de repasse.',
                 style: textRegular.copyWith(
                   color: Colors.white.withValues(alpha: 0.76),
                   fontSize: 12.5,
@@ -1438,8 +1447,8 @@ class StoreSellerQuickMenu extends StatelessWidget {
   Widget build(BuildContext context) {
     final List<StoreSellerMenuData> items = [
       StoreSellerMenuData(
-        title: 'Produtos',
-        description: 'Cadastrar e editar produtos',
+        title: 'Anunciar',
+        description: 'Venda produtos, serviços, veículos e imóveis',
         icon: Icons.add_box_outlined,
       ),
       StoreSellerMenuData(
@@ -1677,6 +1686,7 @@ class StoreSellerSaleTile extends StatelessWidget {
             ),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 width: 42,
@@ -1717,20 +1727,86 @@ class StoreSellerSaleTile extends StatelessWidget {
                         fontSize: 11.4,
                       ),
                     ),
+                    if (sale.hasPlatformFee) ...[
+                      const SizedBox(height: 5),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          StoreSellerSaleFinancialChip(
+                            label: 'Taxa Lokally',
+                            value: sale.platformFeeValue,
+                            color: Colors.orange.shade800,
+                          ),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
               const SizedBox(width: 8),
-              Text(
-                sale.value,
-                style: textBold.copyWith(
-                  color: sale.isCancelled ? Colors.redAccent : Colors.black87,
-                  fontSize: 12.6,
+              SizedBox(
+                width: 132,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      sale.grossValue,
+                      textAlign: TextAlign.right,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textBold.copyWith(
+                        color: sale.isCancelled
+                            ? Colors.redAccent
+                            : Colors.black87,
+                        fontSize: 12.8,
+                      ),
+                    ),
+                    if (sale.hasPayoutBreakdown) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        'Repasse após taxas ${sale.value}',
+                        textAlign: TextAlign.right,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: textMedium.copyWith(
+                          color: statusColor,
+                          fontSize: 10.6,
+                          height: 1.15,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class StoreSellerSaleFinancialChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const StoreSellerSaleFinancialChip({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '$label: $value',
+      style: textMedium.copyWith(
+        color: color,
+        fontSize: 10.8,
+        height: 1.15,
       ),
     );
   }
@@ -1930,8 +2006,8 @@ class StoreSellerDrawer extends StatelessWidget {
         icon: Icons.dashboard_outlined,
       ),
       StoreSellerMenuData(
-        title: 'Produtos',
-        description: 'Cadastrar e editar produtos',
+        title: 'Anunciar',
+        description: 'Venda produtos, serviços, veículos e imóveis',
         icon: Icons.inventory_2_outlined,
       ),
       StoreSellerMenuData(
@@ -1959,11 +2035,6 @@ class StoreSellerDrawer extends StatelessWidget {
         title: 'Dados da loja',
         description: 'Logo, capa e perfil comercial',
         icon: Icons.store_mall_directory_outlined,
-      ),
-      StoreSellerMenuData(
-        title: 'Plano da loja',
-        description: 'Mensalidade ou comissão',
-        icon: Icons.price_change_outlined,
       ),
       StoreSellerMenuData(
         title: 'Financeiro',
@@ -2024,7 +2095,7 @@ class StoreSellerDrawer extends StatelessWidget {
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          'Painel do vendedor',
+                          'Painel gerencial Marketplace',
                           style: textRegular.copyWith(
                             color: Colors.white.withValues(alpha: 0.80),
                             fontSize: 12.5,
@@ -2084,13 +2155,14 @@ class StoreSellerDrawer extends StatelessWidget {
                       ),
                       subtitle: Text(
                         item.description,
-                        maxLines: 1,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: textRegular.copyWith(
                           color: highlighted
                               ? primaryColor.withValues(alpha: 0.78)
                               : Colors.grey.shade600,
-                          fontSize: 11.2,
+                          fontSize: 11.0,
+                          height: 1.16,
                         ),
                       ),
                     ),
@@ -6969,1461 +7041,6 @@ class StoreSellerProfileData {
   }
 }
 
-class StoreSellerBillingScreen extends StatefulWidget {
-  const StoreSellerBillingScreen({super.key});
-
-  @override
-  State<StoreSellerBillingScreen> createState() =>
-      _StoreSellerBillingScreenState();
-}
-
-class _StoreSellerBillingScreenState extends State<StoreSellerBillingScreen> {
-  static const String billingOptionsUri =
-      '/api/customer/store/seller/billing-options';
-  static const String monthlyBillingUri =
-      '/api/customer/store/seller/monthly-billing';
-
-  bool isLoading = false;
-  bool isUploadingReceipt = false;
-  String currentBillingModel = '';
-  String storeZoneName = '';
-  List<StoreSellerBillingOptionData> billingOptions =
-      <StoreSellerBillingOptionData>[];
-  StoreSellerMonthlyBillingData? monthlyBilling;
-  StoreSellerMonthlyBillingData? lastPaidBilling;
-  String nextMonthlyDueLabel = '';
-  int generateInvoiceBeforeDays = 5;
-
-  StoreSellerBillingOptionData? get currentOption {
-    for (final StoreSellerBillingOptionData option in billingOptions) {
-      if (option.key == currentBillingModel) {
-        return option;
-      }
-    }
-
-    if (currentBillingModel.isNotEmpty) {
-      return StoreSellerBillingOptionData(
-        key: currentBillingModel,
-        title: StoreSellerBillingOptionData.defaultTitleForKey(
-          currentBillingModel,
-        ),
-        priceLabel: StoreSellerBillingOptionData.defaultPriceForKey(
-          currentBillingModel,
-        ),
-      );
-    }
-
-    return null;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    loadBillingOptions();
-  }
-
-  Future<void> loadBillingOptions() async {
-    if (isLoading) {
-      return;
-    }
-
-    setState(() {
-      isLoading = true;
-    });
-
-    try {
-      final Response response =
-          await Get.find<ApiClient>().getData(billingOptionsUri);
-
-      if (!mounted) {
-        return;
-      }
-
-      final dynamic body = response.body;
-
-      if (response.statusCode != 200 || body is! Map) {
-        setState(() {
-          billingOptions = <StoreSellerBillingOptionData>[];
-          currentBillingModel = '';
-          monthlyBilling = null;
-          lastPaidBilling = null;
-          nextMonthlyDueLabel = '';
-          generateInvoiceBeforeDays = 5;
-          isLoading = false;
-        });
-        return;
-      }
-
-      final dynamic dataValue = body['data'];
-      final Map<String, dynamic> data = dataValue is Map
-          ? Map<String, dynamic>.from(dataValue)
-          : <String, dynamic>{};
-
-      final dynamic sellerValue = data['seller'];
-      final Map<String, dynamic> seller = sellerValue is Map
-          ? Map<String, dynamic>.from(sellerValue)
-          : <String, dynamic>{};
-
-      final dynamic optionsValue = data['options'];
-      final List<dynamic> options =
-          optionsValue is List ? optionsValue : <dynamic>[];
-
-      final List<StoreSellerBillingOptionData> loadedOptions = options
-          .whereType<Map>()
-          .map((item) => StoreSellerBillingOptionData.fromMap(
-                Map<String, dynamic>.from(item),
-              ))
-          .where((option) => option.key.isNotEmpty)
-          .toList();
-
-      final String currentModel =
-          '${data['current_billing_model'] ?? ''}'.trim();
-
-      StoreSellerMonthlyBillingState loadedMonthlyState =
-          StoreSellerMonthlyBillingState.empty();
-
-      if (currentModel == 'monthly') {
-        loadedMonthlyState = await loadMonthlyBillingData();
-      }
-
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        billingOptions = loadedOptions;
-        currentBillingModel = currentModel;
-        storeZoneName = '${seller['zone_name'] ?? ''}'.trim();
-        monthlyBilling = loadedMonthlyState.openBilling;
-        lastPaidBilling = loadedMonthlyState.lastPaidBilling;
-        nextMonthlyDueLabel = loadedMonthlyState.nextDueLabel;
-        generateInvoiceBeforeDays =
-            loadedMonthlyState.generateInvoiceBeforeDays;
-        isLoading = false;
-      });
-    } catch (_) {
-      if (mounted) {
-        setState(() {
-          billingOptions = <StoreSellerBillingOptionData>[];
-          currentBillingModel = '';
-          monthlyBilling = null;
-          lastPaidBilling = null;
-          nextMonthlyDueLabel = '';
-          generateInvoiceBeforeDays = 5;
-          isLoading = false;
-        });
-      }
-    }
-  }
-
-  Future<StoreSellerMonthlyBillingState> loadMonthlyBillingData() async {
-    try {
-      final Response response =
-          await Get.find<ApiClient>().getData(monthlyBillingUri);
-
-      final dynamic body = response.body;
-
-      if (response.statusCode != 200 ||
-          body is! Map ||
-          body['status'] != true) {
-        return StoreSellerMonthlyBillingState.empty();
-      }
-
-      final dynamic dataValue = body['data'];
-      final Map<String, dynamic> data = dataValue is Map
-          ? Map<String, dynamic>.from(dataValue)
-          : <String, dynamic>{};
-
-      final dynamic openBillingValue = data['monthly_billing'];
-      final dynamic lastPaidBillingValue = data['last_paid_billing'];
-
-      final StoreSellerMonthlyBillingData? openBilling = openBillingValue is Map
-          ? StoreSellerMonthlyBillingData.fromMap(
-              Map<String, dynamic>.from(openBillingValue),
-            )
-          : null;
-
-      final StoreSellerMonthlyBillingData? paidBilling =
-          lastPaidBillingValue is Map
-              ? StoreSellerMonthlyBillingData.fromMap(
-                  Map<String, dynamic>.from(lastPaidBillingValue),
-                )
-              : null;
-
-      return StoreSellerMonthlyBillingState(
-        openBilling: openBilling,
-        lastPaidBilling: paidBilling,
-        nextDueLabel: '${data['next_due_label'] ?? ''}'.trim(),
-        generateInvoiceBeforeDays:
-            int.tryParse('${data['generate_invoice_before_days'] ?? '5'}') ?? 5,
-      );
-    } catch (_) {
-      return StoreSellerMonthlyBillingState.empty();
-    }
-  }
-
-  Future<void> copyPixCode(String pixCode) async {
-    if (pixCode.trim().isEmpty) {
-      showBillingMessage('PIX copia e cola não disponível.');
-      return;
-    }
-
-    await Clipboard.setData(ClipboardData(text: pixCode));
-    showBillingMessage('PIX copia e cola copiado.');
-  }
-
-  Future<void> pickAndUploadReceipt(
-      StoreSellerMonthlyBillingData billing) async {
-    if (isUploadingReceipt) {
-      return;
-    }
-
-    final XFile? pickedImage = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: AppConstants.imageQuality,
-    );
-
-    if (pickedImage == null) {
-      return;
-    }
-
-    setState(() {
-      isUploadingReceipt = true;
-    });
-
-    try {
-      final Response response = await Get.find<ApiClient>().postMultipartData(
-        '$monthlyBillingUri/${billing.id}/receipt',
-        <String, String>{},
-        MultipartBody('receipt_file', pickedImage),
-        <MultipartBody>[],
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      final dynamic body = response.body;
-      String message = response.statusCode == 200
-          ? 'Comprovante enviado com sucesso.'
-          : 'Não foi possível enviar o comprovante.';
-
-      if (body is Map && body['message'] != null) {
-        message = body['message'].toString();
-      }
-
-      showBillingMessage(message);
-
-      if (response.statusCode == 200 && body is Map && body['status'] == true) {
-        await loadBillingOptions();
-      }
-    } catch (_) {
-      if (mounted) {
-        showBillingMessage('Não foi possível enviar o comprovante.');
-      }
-    } finally {
-      if (mounted) {
-        setState(() {
-          isUploadingReceipt = false;
-        });
-      }
-    }
-  }
-
-  void showBillingMessage(String message) {
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void openPaidBillingDetails(StoreSellerMonthlyBillingData billing) {
-    final Color primaryColor = Theme.of(context).primaryColor;
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Icon(
-                        Icons.check_circle_outline_rounded,
-                        color: Colors.green.shade700,
-                        size: 23,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Mensalidade Marketplace paga',
-                            style: textBold.copyWith(
-                              color: Colors.black87,
-                              fontSize: 17,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            billing.statusLabel.isNotEmpty
-                                ? billing.statusLabel
-                                : 'Pagamento confirmado',
-                            style: textRegular.copyWith(
-                              color: Colors.green.shade700,
-                              fontSize: 12.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 18),
-                StoreSellerBillingDetailLine(
-                  label: 'Valor',
-                  value: billing.amountLabel,
-                ),
-                StoreSellerBillingDetailLine(
-                  label: 'Pago em',
-                  value: billing.paidLabel.isNotEmpty
-                      ? billing.paidLabel
-                      : 'Pagamento confirmado',
-                ),
-                StoreSellerBillingDetailLine(
-                  label: 'Vencimento original',
-                  value: billing.dueLabel.replaceFirst('Vencimento: ', ''),
-                ),
-                if (nextMonthlyDueLabel.isNotEmpty)
-                  StoreSellerBillingDetailLine(
-                    label: 'Próximo vencimento',
-                    value: nextMonthlyDueLabel,
-                  ),
-                if (billing.hasReceipt)
-                  StoreSellerBillingDetailLine(
-                    label: 'Comprovante',
-                    value: billing.receiptUploadedAt.isNotEmpty
-                        ? 'Enviado em ${StoreSellerMonthlyBillingData.formatDateTime(billing.receiptUploadedAt)}'
-                        : 'Comprovante enviado',
-                  ),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  height: 48,
-                  child: ElevatedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryColor,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: Text(
-                      'Entendi',
-                      style: textBold.copyWith(
-                        color: Colors.white,
-                        fontSize: 13.5,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final Color primaryColor = Theme.of(context).primaryColor;
-    final StoreSellerBillingOptionData? activeOption = currentOption;
-    final StoreSellerMonthlyBillingData? activeMonthlyBilling = monthlyBilling;
-    final StoreSellerMonthlyBillingData? activeLastPaidBilling =
-        lastPaidBilling;
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: primaryColor,
-        foregroundColor: Colors.white,
-        title: Text(
-          'Plano da loja',
-          style: textBold.copyWith(
-            color: Colors.white,
-            fontSize: 18,
-          ),
-        ),
-      ),
-      body: RefreshIndicator(
-        color: primaryColor,
-        onRefresh: loadBillingOptions,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(
-            Dimensions.paddingSizeDefault,
-            16,
-            Dimensions.paddingSizeDefault,
-            28,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Plano da loja',
-                style: textBold.copyWith(
-                  color: Colors.black87,
-                  fontSize: 20,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                storeZoneName.isNotEmpty
-                    ? 'Confira o plano ativo para $storeZoneName.'
-                    : 'Confira o plano ativo da sua loja.',
-                style: textRegular.copyWith(
-                  color: Colors.grey.shade600,
-                  fontSize: 12.8,
-                  height: 1.32,
-                ),
-              ),
-              const SizedBox(height: 18),
-              if (isLoading) ...[
-                StoreSellerBillingLoading(primaryColor: primaryColor),
-              ] else if (activeOption == null) ...[
-                StoreSellerBillingEmpty(primaryColor: primaryColor),
-              ] else ...[
-                StoreSellerBillingOptionCard(
-                  option: activeOption,
-                  primaryColor: primaryColor,
-                ),
-                if (activeOption.key == 'monthly') ...[
-                  const SizedBox(height: 16),
-                  if (activeMonthlyBilling != null)
-                    StoreSellerMonthlyBillingCard(
-                      billing: activeMonthlyBilling,
-                      primaryColor: primaryColor,
-                      isUploadingReceipt: isUploadingReceipt,
-                      onCopyPix: () => copyPixCode(
-                        activeMonthlyBilling.pixCopyPaste,
-                      ),
-                      onUploadReceipt: () =>
-                          pickAndUploadReceipt(activeMonthlyBilling),
-                    )
-                  else ...[
-                    if (activeLastPaidBilling != null)
-                      StoreSellerMonthlyPaidBillingCard(
-                        billing: activeLastPaidBilling,
-                        primaryColor: primaryColor,
-                        onTap: () => openPaidBillingDetails(
-                          activeLastPaidBilling,
-                        ),
-                      )
-                    else
-                      StoreSellerMonthlyBillingEmpty(
-                        primaryColor: primaryColor,
-                        generateInvoiceBeforeDays: generateInvoiceBeforeDays,
-                      ),
-                    if (nextMonthlyDueLabel.isNotEmpty) ...[
-                      const SizedBox(height: 12),
-                      StoreSellerMonthlyNextDueCard(
-                        primaryColor: primaryColor,
-                        nextDueLabel: nextMonthlyDueLabel,
-                        generateInvoiceBeforeDays: generateInvoiceBeforeDays,
-                      ),
-                    ],
-                  ],
-                ],
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class StoreSellerBillingOptionCard extends StatelessWidget {
-  final StoreSellerBillingOptionData option;
-  final Color primaryColor;
-
-  const StoreSellerBillingOptionCard({
-    super.key,
-    required this.option,
-    required this.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: primaryColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: primaryColor.withValues(alpha: 0.28),
-          width: 1.2,
-        ),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            margin: const EdgeInsets.only(top: 2),
-            decoration: BoxDecoration(
-              color: primaryColor,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(
-              Icons.check_rounded,
-              color: Colors.white,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 13),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  option.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textBold.copyWith(
-                    color: Colors.black87,
-                    fontSize: 16.5,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  option.priceLabel,
-                  style: textBold.copyWith(
-                    color: primaryColor,
-                    fontSize: 18.5,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  option.shortDescription,
-                  style: textRegular.copyWith(
-                    color: Colors.grey.shade600,
-                    fontSize: 12.4,
-                    height: 1.28,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreSellerMonthlyBillingCard extends StatelessWidget {
-  final StoreSellerMonthlyBillingData billing;
-  final Color primaryColor;
-  final bool isUploadingReceipt;
-  final VoidCallback onCopyPix;
-  final VoidCallback onUploadReceipt;
-
-  const StoreSellerMonthlyBillingCard({
-    super.key,
-    required this.billing,
-    required this.primaryColor,
-    required this.isUploadingReceipt,
-    required this.onCopyPix,
-    required this.onUploadReceipt,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final Color statusColor = billing.isPaid
-        ? Colors.green.shade700
-        : billing.isWaitingReview
-            ? Colors.blue.shade700
-            : billing.isOverdue
-                ? Colors.redAccent
-                : Colors.orange.shade700;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            offset: const Offset(0, 8),
-            blurRadius: 20,
-            color: Colors.black.withValues(alpha: 0.04),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: statusColor.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  billing.isWaitingReview
-                      ? Icons.receipt_long_outlined
-                      : Icons.qr_code_2_rounded,
-                  color: statusColor,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mensalidade Marketplace',
-                      style: textBold.copyWith(
-                        color: Colors.black87,
-                        fontSize: 16.5,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      billing.statusLabel,
-                      style: textBold.copyWith(
-                        color: statusColor,
-                        fontSize: 12.4,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: primaryColor.withValues(alpha: 0.06),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  billing.amountLabel,
-                  style: textBold.copyWith(
-                    color: primaryColor,
-                    fontSize: 25,
-                  ),
-                ),
-                const SizedBox(height: 7),
-                Text(
-                  billing.dueLabel,
-                  style: textRegular.copyWith(
-                    color: Colors.grey.shade700,
-                    fontSize: 12.4,
-                  ),
-                ),
-                if (billing.graceLabel.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    billing.graceLabel,
-                    style: textRegular.copyWith(
-                      color: Colors.grey.shade600,
-                      fontSize: 11.8,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          const SizedBox(height: 14),
-          StoreSellerBillingInfoRow(
-            icon: Icons.account_balance_outlined,
-            title: 'Recebedor',
-            value: billing.receiverLabel,
-            primaryColor: primaryColor,
-          ),
-          const SizedBox(height: 10),
-          StoreSellerBillingInfoRow(
-            icon: Icons.copy_rounded,
-            title: 'PIX copia e cola',
-            value: billing.shortPixCode,
-            primaryColor: primaryColor,
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton.icon(
-              onPressed: billing.pixCopyPaste.isEmpty ? null : onCopyPix,
-              icon: const Icon(Icons.copy_rounded, size: 18),
-              label: Text(
-                'Copiar PIX copia e cola',
-                style: textBold.copyWith(
-                  color: Colors.white,
-                  fontSize: 13.5,
-                ),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: primaryColor,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: OutlinedButton.icon(
-              onPressed:
-                  billing.isPaid || isUploadingReceipt ? null : onUploadReceipt,
-              icon: isUploadingReceipt
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        color: primaryColor,
-                        strokeWidth: 2.2,
-                      ),
-                    )
-                  : const Icon(Icons.upload_file_rounded, size: 19),
-              label: Text(
-                isUploadingReceipt
-                    ? 'Enviando comprovante...'
-                    : billing.hasReceipt
-                        ? 'Enviar novo comprovante'
-                        : 'Enviar comprovante',
-                style: textBold.copyWith(
-                  color: billing.isPaid ? Colors.grey : primaryColor,
-                  fontSize: 13.5,
-                ),
-              ),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: primaryColor,
-                side: BorderSide(
-                  color: billing.isPaid
-                      ? Colors.grey.shade300
-                      : primaryColor.withValues(alpha: 0.55),
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16),
-                ),
-              ),
-            ),
-          ),
-          if (billing.hasReceipt) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.07),
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(color: Colors.blue.withValues(alpha: 0.16)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.check_circle_outline_rounded,
-                    color: Colors.blue.shade700,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 9),
-                  Expanded(
-                    child: Text(
-                      billing.receiptUploadedAt.isNotEmpty
-                          ? 'Comprovante enviado em ${billing.receiptUploadedAt}. Aguarde análise da Lokally.'
-                          : 'Comprovante enviado. Aguarde análise da Lokally.',
-                      style: textRegular.copyWith(
-                        color: Colors.blue.shade800,
-                        fontSize: 12.1,
-                        height: 1.28,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-          const SizedBox(height: 12),
-          Text(
-            'Após enviar o comprovante, o pagamento ficará aguardando análise. A loja só será liberada quando a Lokally confirmar o recebimento no ADM.',
-            style: textRegular.copyWith(
-              color: Colors.grey.shade600,
-              fontSize: 12.2,
-              height: 1.32,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreSellerMonthlyPaidBillingCard extends StatelessWidget {
-  final StoreSellerMonthlyBillingData billing;
-  final Color primaryColor;
-  final VoidCallback onTap;
-
-  const StoreSellerMonthlyPaidBillingCard({
-    super.key,
-    required this.billing,
-    required this.primaryColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(22),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(22),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.green.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.green.withValues(alpha: 0.18)),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: Colors.green.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                child: Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: Colors.green.shade700,
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Mensalidade Marketplace paga',
-                      style: textBold.copyWith(
-                        color: Colors.black87,
-                        fontSize: 15.8,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      '${billing.amountLabel} • ${billing.paidLabel.isNotEmpty ? billing.paidLabel : 'pagamento confirmado'}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: textRegular.copyWith(
-                        color: Colors.grey.shade700,
-                        fontSize: 12.2,
-                        height: 1.25,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      'Toque para ver detalhes',
-                      style: textBold.copyWith(
-                        color: primaryColor,
-                        fontSize: 12.2,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.keyboard_arrow_right_rounded,
-                color: primaryColor,
-                size: 24,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class StoreSellerMonthlyNextDueCard extends StatelessWidget {
-  final Color primaryColor;
-  final String nextDueLabel;
-  final int generateInvoiceBeforeDays;
-
-  const StoreSellerMonthlyNextDueCard({
-    super.key,
-    required this.primaryColor,
-    required this.nextDueLabel,
-    required this.generateInvoiceBeforeDays,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(15),
-      decoration: BoxDecoration(
-        color: primaryColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: primaryColor.withValues(alpha: 0.14)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.event_available_outlined,
-            color: primaryColor,
-            size: 22,
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Próximo vencimento: $nextDueLabel',
-                  style: textBold.copyWith(
-                    color: Colors.black87,
-                    fontSize: 14.4,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'A nova fatura será liberada $generateInvoiceBeforeDays dias antes do vencimento.',
-                  style: textRegular.copyWith(
-                    color: Colors.grey.shade600,
-                    fontSize: 12.1,
-                    height: 1.28,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreSellerBillingDetailLine extends StatelessWidget {
-  final String label;
-  final String value;
-
-  const StoreSellerBillingDetailLine({
-    super.key,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 128,
-            child: Text(
-              label,
-              style: textRegular.copyWith(
-                color: Colors.grey.shade600,
-                fontSize: 12.2,
-              ),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value.isNotEmpty ? value : '-',
-              style: textBold.copyWith(
-                color: Colors.black87,
-                fontSize: 12.8,
-                height: 1.25,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreSellerBillingInfoRow extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String value;
-  final Color primaryColor;
-
-  const StoreSellerBillingInfoRow({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.value,
-    required this.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          width: 34,
-          height: 34,
-          decoration: BoxDecoration(
-            color: primaryColor.withValues(alpha: 0.08),
-            borderRadius: BorderRadius.circular(13),
-          ),
-          child: Icon(icon, color: primaryColor, size: 18),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: textBold.copyWith(
-                  color: Colors.black87,
-                  fontSize: 12.5,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                value.isNotEmpty ? value : '-',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: textRegular.copyWith(
-                  color: Colors.grey.shade600,
-                  fontSize: 11.8,
-                  height: 1.25,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class StoreSellerMonthlyBillingEmpty extends StatelessWidget {
-  final Color primaryColor;
-  final int generateInvoiceBeforeDays;
-
-  const StoreSellerMonthlyBillingEmpty({
-    super.key,
-    required this.primaryColor,
-    this.generateInvoiceBeforeDays = 5,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.16)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.hourglass_empty_rounded,
-            color: Colors.orange.shade700,
-            size: 26,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Nenhuma fatura aberta no momento',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            'Quando chegar o período de pagamento, a fatura será liberada $generateInvoiceBeforeDays dias antes do vencimento.',
-            style: textRegular.copyWith(
-              color: Colors.grey.shade600,
-              fontSize: 12.5,
-              height: 1.3,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreSellerBillingLoading extends StatelessWidget {
-  final Color primaryColor;
-
-  const StoreSellerBillingLoading({
-    super.key,
-    required this.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 160,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: primaryColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Center(
-        child: CircularProgressIndicator(
-          color: primaryColor,
-          strokeWidth: 2.4,
-        ),
-      ),
-    );
-  }
-}
-
-class StoreSellerBillingEmpty extends StatelessWidget {
-  final Color primaryColor;
-
-  const StoreSellerBillingEmpty({
-    super.key,
-    required this.primaryColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: primaryColor.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: primaryColor.withValues(alpha: 0.16)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            Icons.info_outline_rounded,
-            color: primaryColor,
-            size: 26,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'Plano indisponível no momento',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 16,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            'Tente novamente mais tarde.',
-            style: textRegular.copyWith(
-              color: Colors.grey.shade600,
-              fontSize: 12.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreSellerMonthlyBillingState {
-  final StoreSellerMonthlyBillingData? openBilling;
-  final StoreSellerMonthlyBillingData? lastPaidBilling;
-  final String nextDueLabel;
-  final int generateInvoiceBeforeDays;
-
-  StoreSellerMonthlyBillingState({
-    required this.openBilling,
-    required this.lastPaidBilling,
-    required this.nextDueLabel,
-    required this.generateInvoiceBeforeDays,
-  });
-
-  factory StoreSellerMonthlyBillingState.empty() {
-    return StoreSellerMonthlyBillingState(
-      openBilling: null,
-      lastPaidBilling: null,
-      nextDueLabel: '',
-      generateInvoiceBeforeDays: 5,
-    );
-  }
-}
-
-class StoreSellerBillingOptionData {
-  final String key;
-  final String title;
-  final String priceLabel;
-
-  StoreSellerBillingOptionData({
-    required this.key,
-    required this.title,
-    required this.priceLabel,
-  });
-
-  factory StoreSellerBillingOptionData.fromMap(Map<String, dynamic> map) {
-    final String key = '${map['key'] ?? ''}'.trim();
-    final String title = '${map['title'] ?? ''}'.trim();
-    final String priceLabel = '${map['price_label'] ?? ''}'.trim();
-
-    return StoreSellerBillingOptionData(
-      key: key,
-      title: title.isNotEmpty ? title : defaultTitleForKey(key),
-      priceLabel: priceLabel.isNotEmpty ? priceLabel : defaultPriceForKey(key),
-    );
-  }
-
-  String get shortDescription {
-    if (key == 'monthly') {
-      return 'Mensalidade fixa para vender com mais previsibilidade. Nesta modalidade você assume taxas de cartão, boleto, débito, crédito e parcelamento em até 3 vezes sem juros no Mercado Pago.';
-    }
-
-    if (key == 'commission') {
-      return 'Sem mensalidade, com taxa aplicada por venda aprovada. Nesta modalidade a Lokally assume taxas de cartão, boleto, débito, crédito e parcelamento em até 3 vezes sem juros no Mercado Pago.';
-    }
-
-    return 'Plano disponível para sua loja.';
-  }
-
-  static String defaultTitleForKey(String key) {
-    if (key == 'monthly') {
-      return 'Venda Livremente';
-    }
-
-    if (key == 'commission') {
-      return 'Comissão por venda';
-    }
-
-    return 'Plano da loja';
-  }
-
-  static String defaultPriceForKey(String key) {
-    if (key == 'monthly') {
-      return 'Mensalidade';
-    }
-
-    if (key == 'commission') {
-      return 'Por venda';
-    }
-
-    return '';
-  }
-}
-
-class StoreSellerMonthlyBillingData {
-  final String id;
-  final double amount;
-  final String amountLabel;
-  final String status;
-  final String statusLabel;
-  final bool isOverdue;
-  final String dueAt;
-  final String graceUntil;
-  final String paidAt;
-  final String pixReceiverName;
-  final String pixReceiverDocument;
-  final String pixBank;
-  final String pixCopyPaste;
-  final String receiptFile;
-  final String receiptUrl;
-  final String receiptUploadedAt;
-  final String receiptNote;
-
-  StoreSellerMonthlyBillingData({
-    required this.id,
-    required this.amount,
-    required this.amountLabel,
-    required this.status,
-    required this.statusLabel,
-    required this.isOverdue,
-    required this.dueAt,
-    required this.graceUntil,
-    required this.paidAt,
-    required this.pixReceiverName,
-    required this.pixReceiverDocument,
-    required this.pixBank,
-    required this.pixCopyPaste,
-    required this.receiptFile,
-    required this.receiptUrl,
-    required this.receiptUploadedAt,
-    required this.receiptNote,
-  });
-
-  factory StoreSellerMonthlyBillingData.fromMap(Map<String, dynamic> map) {
-    final dynamic pixValue = map['pix'];
-    final Map<String, dynamic> pix = pixValue is Map
-        ? Map<String, dynamic>.from(pixValue)
-        : <String, dynamic>{};
-
-    final dynamic receiptValue = map['receipt'];
-    final Map<String, dynamic> receipt = receiptValue is Map
-        ? Map<String, dynamic>.from(receiptValue)
-        : <String, dynamic>{};
-
-    final String amountLabel = '${map['amount_label'] ?? ''}'.trim();
-    final double amount = double.tryParse('${map['amount'] ?? '0'}') ?? 0;
-
-    return StoreSellerMonthlyBillingData(
-      id: '${map['id'] ?? ''}'.trim(),
-      amount: amount,
-      amountLabel: amountLabel.isNotEmpty
-          ? amountLabel
-          : 'R\$ ${amount.toStringAsFixed(2).replaceAll('.', ',')}',
-      status: '${map['status'] ?? ''}'.trim(),
-      statusLabel: '${map['status_label'] ?? ''}'.trim(),
-      isOverdue: map['is_overdue'] == true,
-      dueAt: '${map['due_at'] ?? ''}'.trim(),
-      graceUntil: '${map['grace_until'] ?? ''}'.trim(),
-      paidAt: '${map['paid_at'] ?? ''}'.trim(),
-      pixReceiverName: '${pix['receiver_name'] ?? ''}'.trim(),
-      pixReceiverDocument: '${pix['receiver_document'] ?? ''}'.trim(),
-      pixBank: '${pix['bank'] ?? ''}'.trim(),
-      pixCopyPaste: '${pix['copy_paste'] ?? ''}'.trim(),
-      receiptFile: '${receipt['file'] ?? ''}'.trim(),
-      receiptUrl: '${receipt['url'] ?? ''}'.trim(),
-      receiptUploadedAt: '${receipt['uploaded_at'] ?? ''}'.trim(),
-      receiptNote: '${receipt['note'] ?? ''}'.trim(),
-    );
-  }
-
-  bool get isPaid => status == 'paid';
-
-  bool get isWaitingReview => status == 'waiting_review';
-
-  bool get hasReceipt =>
-      receiptFile.isNotEmpty ||
-      receiptUrl.isNotEmpty ||
-      receiptUploadedAt.isNotEmpty;
-
-  String get paidLabel {
-    if (paidAt.isEmpty) {
-      return '';
-    }
-
-    return 'Pago em ${formatDateTime(paidAt)}';
-  }
-
-  String get dueLabel {
-    if (dueAt.isEmpty) {
-      return 'Vencimento não informado.';
-    }
-
-    return 'Vencimento: ${formatDateTime(dueAt)}';
-  }
-
-  String get graceLabel {
-    if (graceUntil.isEmpty) {
-      return '';
-    }
-
-    return 'Prazo de tolerância: ${formatDateTime(graceUntil)}';
-  }
-
-  String get receiverLabel {
-    final List<String> parts = <String>[];
-
-    if (pixReceiverName.isNotEmpty) {
-      parts.add(pixReceiverName);
-    }
-
-    if (pixReceiverDocument.isNotEmpty) {
-      parts.add(pixReceiverDocument);
-    }
-
-    if (pixBank.isNotEmpty) {
-      parts.add(pixBank);
-    }
-
-    return parts.join(' • ');
-  }
-
-  String get shortPixCode {
-    if (pixCopyPaste.isEmpty) {
-      return '';
-    }
-
-    if (pixCopyPaste.length <= 64) {
-      return pixCopyPaste;
-    }
-
-    return '${pixCopyPaste.substring(0, 42)}...${pixCopyPaste.substring(pixCopyPaste.length - 12)}';
-  }
-
-  static String formatDateTime(String value) {
-    if (value.isEmpty) {
-      return '';
-    }
-
-    final DateTime? parsed = DateTime.tryParse(value);
-
-    if (parsed == null) {
-      return value;
-    }
-
-    final String day = parsed.day.toString().padLeft(2, '0');
-    final String month = parsed.month.toString().padLeft(2, '0');
-    final String year = parsed.year.toString();
-    final String hour = parsed.hour.toString().padLeft(2, '0');
-    final String minute = parsed.minute.toString().padLeft(2, '0');
-
-    return '$day/$month/$year às $hour:$minute';
-  }
-}
-
 class StoreSellerFinanceScreen extends StatefulWidget {
   const StoreSellerFinanceScreen({super.key});
 
@@ -8829,7 +7446,7 @@ class StoreSellerFinanceHeader extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Valores aguardando transferência manual pela Lokally.',
+          'Valor líquido aguardando transferência manual pela Lokally, já com taxas aplicadas.',
           style: textRegular.copyWith(
             color: Colors.grey.shade600,
             fontSize: 12.5,
@@ -10401,7 +9018,8 @@ class StoreSellerDashboardKpis {
       completedOrders: int.tryParse('${map['completed_orders'] ?? 0}') ?? 0,
       formattedGrossPaidAmount: grossPaid,
       formattedPayoutPendingTotal:
-          '${map['payout_pending_total'] ?? grossPaid}'.trim(),
+          '${map['repasse_a_receber_total'] ?? map['pending_payout_total'] ?? map['payout_pending_total'] ?? map['formatted_payout_pending_total'] ?? grossPaid}'
+              .trim(),
       formattedPayoutPaidTotal:
           '${map['payout_paid_total'] ?? 'R\$0,00'}'.trim(),
       formattedPayoutBlockedTotal:
@@ -10556,6 +9174,9 @@ class StoreSellerSaleData {
   final String product;
   final String status;
   final String value;
+  final String grossValue;
+  final String platformFeeValue;
+  final bool hasPayoutBreakdown;
   final String time;
   final bool isCancelled;
 
@@ -10563,9 +9184,24 @@ class StoreSellerSaleData {
     required this.product,
     required this.status,
     required this.value,
+    required this.grossValue,
+    required this.platformFeeValue,
+    required this.hasPayoutBreakdown,
     required this.time,
     this.isCancelled = false,
   });
+
+  bool get hasPlatformFee {
+    final String normalized = platformFeeValue
+        .replaceAll('R\$', '')
+        .replaceAll(' ', '')
+        .replaceAll('.', '')
+        .replaceAll(',', '.')
+        .trim();
+
+    final double fee = double.tryParse(normalized) ?? 0;
+    return fee > 0;
+  }
 
   factory StoreSellerSaleData.fromDashboardOrder(Map<String, dynamic> map) {
     final String orderNumber = '${map['order_number'] ?? ''}'.trim();
@@ -10575,18 +9211,64 @@ class StoreSellerSaleData {
     final String deliveryTypeLabel =
         '${map['delivery_type_label'] ?? ''}'.trim();
 
+    final Map<String, dynamic> financial = map['financial'] is Map
+        ? Map<String, dynamic>.from(map['financial'] as Map)
+        : <String, dynamic>{};
+
+    final String totalFormatted = StoreSellerSaleData.readMoneyString(
+      financial['total_collected_formatted'] ??
+          map['total_collected_formatted'] ??
+          map['formatted_total'] ??
+          map['total_formatted'],
+      'R\$0,00',
+    );
+
+    final String platformFeeFormatted = StoreSellerSaleData.readMoneyString(
+      financial['platform_fee_amount_formatted'] ??
+          map['platform_fee_amount_formatted'],
+      'R\$0,00',
+    );
+
+    final dynamic payoutSource = financial['payout_amount_formatted'] ??
+        map['payout_amount_formatted'] ??
+        map['payout_formatted'] ??
+        map['pending_amount_formatted'] ??
+        map['formatted_payout_amount'];
+
+    final String payoutFormatted = StoreSellerSaleData.readMoneyString(
+      payoutSource,
+      'R\$0,00',
+    );
+
+    final bool hasPayoutBreakdown = payoutSource != null &&
+        payoutFormatted.trim().isNotEmpty &&
+        payoutFormatted.trim() != 'R\$0,00';
+
     return StoreSellerSaleData(
       product:
           orderNumber.isEmpty ? 'Pedido marketplace' : 'Pedido $orderNumber',
       status: deliveryTypeLabel.isEmpty
           ? paymentStatusLabel
           : '$paymentStatusLabel • $deliveryTypeLabel',
-      value: '${map['formatted_total'] ?? 'R\$0,00'}'.trim(),
+      value: payoutFormatted,
+      grossValue: totalFormatted,
+      platformFeeValue: platformFeeFormatted,
+      hasPayoutBreakdown: hasPayoutBreakdown,
       time: StoreSellerSaleData.compactDateLabel('${map['created_at'] ?? ''}'),
       isCancelled: paymentStatus == 'failed' ||
           paymentStatus == 'cancelled' ||
           paymentStatus == 'rejected',
     );
+  }
+
+  static String readMoneyString(dynamic value, String fallback) {
+    final String text = '${value ?? ''}'.trim();
+
+    if (text.isEmpty || text == 'null') {
+      return fallback;
+    }
+
+    return text;
   }
 
   static String compactDateLabel(String rawDate) {

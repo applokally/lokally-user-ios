@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
@@ -6,16 +8,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:ride_sharing_user_app/common_widgets/app_bar_widget.dart';
 import 'package:ride_sharing_user_app/common_widgets/body_widget.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/store/screens/lokally_meeting_screen.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 
 class StoreCustomerOrderListScreen extends StatefulWidget {
   final String? initialOrderId;
 
-  const StoreCustomerOrderListScreen({
-    super.key,
-    this.initialOrderId,
-  });
+  const StoreCustomerOrderListScreen({super.key, this.initialOrderId});
 
   @override
   State<StoreCustomerOrderListScreen> createState() =>
@@ -33,10 +33,14 @@ class _StoreCustomerOrderListScreenState
   StoreCustomerOrderCounts counts = StoreCustomerOrderCounts.empty();
 
   final List<StoreCustomerOrderFilter> filters = <StoreCustomerOrderFilter>[
-    StoreCustomerOrderFilter(keyName: 'all', label: 'Todos', apiFilter: 'all'),
+    StoreCustomerOrderFilter(
+      keyName: 'all',
+      label: 'store_all',
+      apiFilter: 'all',
+    ),
     StoreCustomerOrderFilter(
       keyName: 'pickup',
-      label: 'Retirada',
+      label: 'store_pickup',
       apiFilter: 'pickup',
     ),
     StoreCustomerOrderFilter(
@@ -93,7 +97,7 @@ class _StoreCustomerOrderListScreenState
     final dynamic body = response.body;
 
     if (response.statusCode != 200 || body is! Map || body['status'] != true) {
-      showStoreMessage('Não foi possível carregar seus pedidos da loja.');
+      showStoreMessage('store_customer_orders_load_error'.tr);
       return;
     }
 
@@ -116,9 +120,8 @@ class _StoreCustomerOrderListScreenState
       orders = orderList
           .whereType<Map>()
           .map(
-            (item) => StoreCustomerOrderItem.fromMap(
-              Map<String, dynamic>.from(item),
-            ),
+            (item) =>
+                StoreCustomerOrderItem.fromMap(Map<String, dynamic>.from(item)),
           )
           .toList();
     });
@@ -139,7 +142,7 @@ class _StoreCustomerOrderListScreenState
     final dynamic body = response.body;
 
     if (response.statusCode != 200 || body is! Map || body['status'] != true) {
-      showStoreMessage('Não foi possível abrir os detalhes do pedido.');
+      showStoreMessage('store_order_details_open_error'.tr);
       return;
     }
 
@@ -151,7 +154,7 @@ class _StoreCustomerOrderListScreenState
     final dynamic orderValue = data['order'];
 
     if (orderValue is! Map) {
-      showStoreMessage('Pedido não encontrado.');
+      showStoreMessage('store_order_not_found'.tr);
       return;
     }
 
@@ -176,18 +179,13 @@ class _StoreCustomerOrderListScreenState
       SnackBar(
         content: Text(
           message,
-          style: textMedium.copyWith(
-            color: Colors.white,
-            fontSize: 12.8,
-          ),
+          style: textMedium.copyWith(color: Colors.white, fontSize: 12.8),
         ),
         backgroundColor: primaryColor,
         behavior: SnackBarBehavior.floating,
         elevation: 8,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -211,9 +209,9 @@ class _StoreCustomerOrderListScreenState
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F6F6),
+        backgroundColor: Colors.white,
         body: BodyWidget(
-          appBar: AppBarWidget(title: 'Meus pedidos'.tr),
+          appBar: AppBarWidget(title: 'store_my_orders'.tr),
           body: RefreshIndicator(
             color: primaryColor,
             onRefresh: () => loadOrders(),
@@ -282,15 +280,12 @@ class StoreCustomerOrderListIntro extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Meus pedidos Lokally Marketplace',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 17,
-            ),
+            'store_my_lokally_marketplace_orders'.tr,
+            style: textBold.copyWith(color: Colors.black87, fontSize: 17),
           ),
           const SizedBox(height: 6),
           Text(
-            'Acompanhe suas compras, retiradas na loja e entregas com Lokally Envios.',
+            'store_my_lokally_marketplace_orders_description'.tr,
             style: textRegular.copyWith(
               color: Colors.grey.shade600,
               fontSize: 12.5,
@@ -304,7 +299,7 @@ class StoreCustomerOrderListIntro extends StatelessWidget {
                 child: StoreCustomerOrderMiniCount(
                   primaryColor: primaryColor,
                   value: counts.pickup.toString(),
-                  label: 'Retirada',
+                  label: 'store_pickup'.tr,
                   icon: Icons.storefront_rounded,
                 ),
               ),
@@ -313,7 +308,7 @@ class StoreCustomerOrderListIntro extends StatelessWidget {
                 child: StoreCustomerOrderMiniCount(
                   primaryColor: primaryColor,
                   value: counts.lokallyShipping.toString(),
-                  label: 'Envios',
+                  label: 'store_shipments'.tr,
                   icon: Icons.local_shipping_outlined,
                 ),
               ),
@@ -322,7 +317,7 @@ class StoreCustomerOrderListIntro extends StatelessWidget {
                 child: StoreCustomerOrderMiniCount(
                   primaryColor: Colors.orangeAccent,
                   value: counts.readyForPickup.toString(),
-                  label: 'Prontos',
+                  label: 'store_ready_plural'.tr,
                   icon: Icons.inventory_2_outlined,
                 ),
               ),
@@ -360,22 +355,15 @@ class StoreCustomerOrderMiniCount extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            color: primaryColor,
-            size: 19,
-          ),
+          Icon(icon, color: primaryColor, size: 19),
           const SizedBox(height: 6),
           Text(
             value,
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 15,
-            ),
+            style: textBold.copyWith(color: Colors.black87, fontSize: 15),
           ),
           const SizedBox(height: 2),
           Text(
-            label,
+            label.tr,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: textRegular.copyWith(
@@ -434,7 +422,10 @@ class StoreCustomerOrderFilters extends StatelessWidget {
                 ),
                 child: Center(
                   child: Text(
-                    '${filter.label} (${countForFilter(filter.keyName)})',
+                    'store_filter_with_count'.trParams({
+                      'label': filter.label.tr,
+                      'count': '${countForFilter(filter.keyName)}',
+                    }),
                     style: textBold.copyWith(
                       color: isSelected ? Colors.white : Colors.black87,
                       fontSize: 12,
@@ -470,6 +461,7 @@ class StoreCustomerOrderCard extends StatelessWidget {
       case 'shipped':
       case 'payout_authorized':
       case 'auto_payout_authorized':
+      case 'service_completed':
         return primaryColor;
       case 'cancelled':
       case 'dispute_opened':
@@ -478,6 +470,8 @@ class StoreCustomerOrderCard extends StatelessWidget {
       case 'payment_approved':
       case 'preparing':
       case 'awaiting_customer_release':
+      case 'service_requested':
+      case 'service_chat_open':
         return Colors.orangeAccent;
       default:
         return Colors.grey;
@@ -485,7 +479,7 @@ class StoreCustomerOrderCard extends StatelessWidget {
   }
 
   IconData get deliveryIcon {
-    if (order.isServiceOrder) {
+    if (order.isServiceRequestOrder) {
       return Icons.support_agent_outlined;
     }
 
@@ -497,17 +491,15 @@ class StoreCustomerOrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(24),
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(24),
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(13),
+          padding: const EdgeInsets.fromLTRB(4, 14, 4, 16),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.grey.shade200),
+            color: Colors.transparent,
+            border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -525,7 +517,9 @@ class StoreCustomerOrderCard extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          order.sellerName.isEmpty ? 'Loja' : order.sellerName,
+                          order.sellerName.isEmpty
+                              ? 'store_store'.tr
+                              : order.sellerName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textBold.copyWith(
@@ -548,10 +542,7 @@ class StoreCustomerOrderCard extends StatelessWidget {
                   ),
                   Text(
                     StoreCustomerOrderCurrency.format(order.total),
-                    style: textBold.copyWith(
-                      color: primaryColor,
-                      fontSize: 14,
-                    ),
+                    style: textBold.copyWith(color: primaryColor, fontSize: 14),
                   ),
                 ],
               ),
@@ -586,7 +577,9 @@ class StoreCustomerOrderCard extends StatelessWidget {
                   ),
               if (order.items.length > 2)
                 Text(
-                  '+ ${order.items.length - 2} item(ns)',
+                  'store_more_items_count'.trParams({
+                    'count': '${order.items.length - 2}',
+                  }),
                   style: textRegular.copyWith(
                     color: Colors.grey.shade600,
                     fontSize: 11.6,
@@ -603,7 +596,7 @@ class StoreCustomerOrderCard extends StatelessWidget {
                   ),
                   alignment: Alignment.center,
                   child: Text(
-                    'Ver detalhes',
+                    'store_view_details'.tr,
                     style: textBold.copyWith(
                       color: primaryColor,
                       fontSize: 12.6,
@@ -622,10 +615,7 @@ class StoreCustomerOrderCard extends StatelessWidget {
 class StoreCustomerOrderDetailsScreen extends StatefulWidget {
   final StoreCustomerOrderItem order;
 
-  const StoreCustomerOrderDetailsScreen({
-    super.key,
-    required this.order,
-  });
+  const StoreCustomerOrderDetailsScreen({super.key, required this.order});
 
   @override
   State<StoreCustomerOrderDetailsScreen> createState() =>
@@ -635,11 +625,77 @@ class StoreCustomerOrderDetailsScreen extends StatefulWidget {
 class _StoreCustomerOrderDetailsScreenState
     extends State<StoreCustomerOrderDetailsScreen> {
   late StoreCustomerOrderItem order;
+  bool isCreatingMercadoPagoPayment = false;
+  bool isLoadingServiceProgress = false;
+  StoreCustomerServiceProgressData serviceProgress =
+      StoreCustomerServiceProgressData.empty();
 
   @override
   void initState() {
     super.initState();
     order = widget.order;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadServiceProgress();
+    });
+  }
+
+  Future<void> loadServiceProgress() async {
+    if (!order.isServiceOrder || isLoadingServiceProgress) {
+      return;
+    }
+
+    setState(() {
+      isLoadingServiceProgress = true;
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().getData(
+        '/api/customer/store/service-chat/order/${order.id}',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if (response.statusCode == 200 && body is Map && body['status'] == true) {
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+        final dynamic threadValue = data['thread'];
+
+        if (threadValue is Map) {
+          final Map<String, dynamic> threadMap = Map<String, dynamic>.from(
+            threadValue,
+          );
+          setState(() {
+            serviceProgress = StoreCustomerServiceProgressData.fromMap(
+              threadMap['service_progress'] is Map
+                  ? Map<String, dynamic>.from(threadMap['service_progress'])
+                  : <String, dynamic>{},
+            );
+          });
+        }
+      }
+    } catch (_) {
+      // Mantém progresso 0% caso o chat ainda não esteja disponível.
+    } finally {
+      if (mounted) {
+        setState(() {
+          isLoadingServiceProgress = false;
+        });
+      }
+    }
+  }
+
+  void showServiceEvaluationMessage() {
+    showDetailsMessage(
+      context,
+      'Avaliação do serviço será liberada na próxima etapa do fluxo.',
+    );
   }
 
   Color paymentStatusColor(Color primaryColor) {
@@ -668,6 +724,8 @@ class _StoreCustomerOrderDetailsScreenState
       case 'lokally_shipping_pending':
       case 'payment_approved':
       case 'preparing':
+      case 'service_requested':
+      case 'service_chat_open':
         return Colors.orangeAccent;
       default:
         return Colors.grey;
@@ -675,7 +733,7 @@ class _StoreCustomerOrderDetailsScreenState
   }
 
   IconData orderIcon() {
-    if (order.isServiceOrder) {
+    if (order.isServiceRequestOrder) {
       return Icons.support_agent_outlined;
     }
 
@@ -684,8 +742,12 @@ class _StoreCustomerOrderDetailsScreenState
         : Icons.local_shipping_outlined;
   }
 
-  void openServiceChat() {
-    Get.to(() => StoreCustomerServiceChatScreen(order: order));
+  Future<void> openServiceChat() async {
+    await Get.to(() => StoreCustomerServiceChatScreen(order: order));
+
+    if (mounted) {
+      await loadServiceProgress();
+    }
   }
 
   void openDisputeTicket() {
@@ -700,20 +762,148 @@ class _StoreCustomerOrderDetailsScreenState
       SnackBar(
         content: Text(
           message,
-          style: textMedium.copyWith(
-            color: Colors.white,
-            fontSize: 12.8,
-          ),
+          style: textMedium.copyWith(color: Colors.white, fontSize: 12.8),
         ),
         backgroundColor: primaryColor,
         behavior: SnackBarBehavior.floating,
         elevation: 8,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         duration: const Duration(seconds: 2),
       ),
+    );
+  }
+
+  bool get canPayWithMercadoPago {
+    final String method = order.paymentMethod.toLowerCase().trim();
+    final String status = order.paymentStatus.toLowerCase().trim();
+    final String orderStatus = order.orderStatus.toLowerCase().trim();
+
+    return status != 'approved' &&
+        (method == 'mercadopago' || method == 'stripe_card') &&
+        (orderStatus.isEmpty || orderStatus == 'pending_payment');
+  }
+
+  String paymentUrlFromResponse(Map<String, dynamic> data) {
+    final dynamic directPaymentUrl = data['payment_url'];
+
+    if (directPaymentUrl != null && '$directPaymentUrl'.trim().isNotEmpty) {
+      return '$directPaymentUrl'.trim();
+    }
+
+    final dynamic paymentValue = data['payment'];
+
+    if (paymentValue is Map) {
+      final Map<String, dynamic> payment = Map<String, dynamic>.from(
+        paymentValue,
+      );
+      final dynamic nestedPaymentUrl = payment['payment_url'];
+
+      if (nestedPaymentUrl != null && '$nestedPaymentUrl'.trim().isNotEmpty) {
+        return '$nestedPaymentUrl'.trim();
+      }
+    }
+
+    return '';
+  }
+
+  Future<void> reloadOrderDetails() async {
+    final Response response = await Get.find<ApiClient>().getData(
+      '/api/customer/store/orders/${order.id}',
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    final dynamic body = response.body;
+
+    if (response.statusCode != 200 || body is! Map || body['status'] != true) {
+      return;
+    }
+
+    final dynamic dataValue = body['data'];
+    final Map<String, dynamic> data = dataValue is Map
+        ? Map<String, dynamic>.from(dataValue)
+        : <String, dynamic>{};
+    final dynamic orderValue = data['order'];
+
+    if (orderValue is Map) {
+      setState(() {
+        order = StoreCustomerOrderItem.fromMap(
+          Map<String, dynamic>.from(orderValue),
+        );
+      });
+    }
+  }
+
+  Future<void> payPendingMercadoPago(BuildContext context) async {
+    if (!canPayWithMercadoPago || isCreatingMercadoPagoPayment) {
+      return;
+    }
+
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    setState(() {
+      isCreatingMercadoPagoPayment = true;
+    });
+
+    final Response response = await Get.find<ApiClient>().postData(
+      '/api/customer/store/orders/${order.id}/payment',
+      <String, dynamic>{},
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      isCreatingMercadoPagoPayment = false;
+    });
+
+    final dynamic body = response.body;
+
+    if ((response.statusCode != 200 && response.statusCode != 201) ||
+        body is! Map ||
+        body['status'] != true) {
+      showDetailsMessage(
+        context,
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'store_mercado_pago_payment_create_error'.tr,
+      );
+      return;
+    }
+
+    final dynamic dataValue = body['data'];
+    final Map<String, dynamic> data = dataValue is Map
+        ? Map<String, dynamic>.from(dataValue)
+        : <String, dynamic>{};
+    final String paymentUrl = paymentUrlFromResponse(data);
+
+    if (paymentUrl.isEmpty) {
+      showDetailsMessage(context, 'store_mercado_pago_payment_link_missing'.tr);
+      return;
+    }
+
+    final dynamic result = await Get.to(
+      () => StoreCustomerMercadoPagoWebViewScreen(
+        paymentUrl: paymentUrl,
+        primaryColor: primaryColor,
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    await reloadOrderDetails();
+
+    showDetailsMessage(
+      context,
+      result == true
+          ? 'store_payment_finished_order_details_updated'.tr
+          : 'store_wait_mercado_pago_confirmation'.tr,
     );
   }
 
@@ -743,15 +933,12 @@ class _StoreCustomerOrderDetailsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
-                  style: textBold.copyWith(
-                    color: Colors.black87,
-                    fontSize: 17,
-                  ),
+                  title.tr,
+                  style: textBold.copyWith(color: Colors.black87, fontSize: 17),
                 ),
                 const SizedBox(height: 9),
                 Text(
-                  message,
+                  message.tr,
                   style: textRegular.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 12.8,
@@ -770,7 +957,7 @@ class _StoreCustomerOrderDetailsScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        confirmLabel,
+                        confirmLabel.tr,
                         style: textBold.copyWith(
                           color: Colors.white,
                           fontSize: 13.2,
@@ -791,7 +978,7 @@ class _StoreCustomerOrderDetailsScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        'Cancelar',
+                        'store_cancel'.tr,
                         style: textBold.copyWith(
                           color: Colors.grey.shade700,
                           fontSize: 13,
@@ -812,17 +999,18 @@ class _StoreCustomerOrderDetailsScreenState
 
   Future<void> authorizePayout(BuildContext context) async {
     if (!order.canAuthorizePayout) {
-      showDetailsMessage(context,
-          'Este pedido ainda não está aguardando autorização de repasse.');
+      showDetailsMessage(
+        context,
+        'store_order_not_waiting_payout_authorization',
+      );
       return;
     }
 
     final bool confirmed = await confirmSimpleAction(
       context: context,
-      title: 'Autorizar repasse',
-      message:
-          'Confirme somente se você recebeu o produto ou serviço corretamente. Após autorizar, o repasse será liberado para o vendedor.',
-      confirmLabel: 'AUTORIZAR REPASSE',
+      title: 'store_authorize_payout',
+      message: 'store_authorize_payout_confirmation',
+      confirmLabel: 'store_authorize_payout_upper',
     );
 
     if (!confirmed) {
@@ -858,7 +1046,7 @@ class _StoreCustomerOrderDetailsScreenState
         }
       }
 
-      showDetailsMessage(context, 'Repasse autorizado com sucesso.');
+      showDetailsMessage(context, 'store_payout_authorized_success');
       return;
     }
 
@@ -866,14 +1054,13 @@ class _StoreCustomerOrderDetailsScreenState
       context,
       body is Map && body['message'] != null
           ? body['message'].toString()
-          : 'Não foi possível autorizar o repasse.',
+          : 'store_payout_authorize_error',
     );
   }
 
   Future<void> openDispute(BuildContext context) async {
     if (!order.canOpenDispute) {
-      showDetailsMessage(
-          context, 'Este pedido ainda não permite abertura de disputa.');
+      showDetailsMessage(context, 'store_order_dispute_not_allowed');
       return;
     }
 
@@ -902,7 +1089,7 @@ class _StoreCustomerOrderDetailsScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Abrir disputa',
+                    'store_open_dispute'.tr,
                     style: textBold.copyWith(
                       color: Colors.black87,
                       fontSize: 17,
@@ -910,7 +1097,7 @@ class _StoreCustomerOrderDetailsScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Explique o que não foi entregue corretamente. A equipe Lokally irá analisar o pedido.',
+                    'store_open_dispute_description'.tr,
                     style: textRegular.copyWith(
                       color: Colors.grey.shade700,
                       fontSize: 12.6,
@@ -923,7 +1110,7 @@ class _StoreCustomerOrderDetailsScreenState
                     minLines: 3,
                     maxLines: 5,
                     decoration: InputDecoration(
-                      hintText: 'Descreva o problema encontrado...',
+                      hintText: 'store_describe_problem_found'.tr,
                       filled: true,
                       fillColor: Colors.grey.shade50,
                       border: OutlineInputBorder(
@@ -952,7 +1139,7 @@ class _StoreCustomerOrderDetailsScreenState
                         width: double.infinity,
                         alignment: Alignment.center,
                         child: Text(
-                          'ABRIR DISPUTA',
+                          'store_open_dispute_upper'.tr,
                           style: textBold.copyWith(
                             color: Colors.white,
                             fontSize: 13.2,
@@ -973,7 +1160,7 @@ class _StoreCustomerOrderDetailsScreenState
                         width: double.infinity,
                         alignment: Alignment.center,
                         child: Text(
-                          'Cancelar',
+                          'store_cancel'.tr,
                           style: textBold.copyWith(
                             color: Colors.grey.shade700,
                             fontSize: 13,
@@ -1000,9 +1187,7 @@ class _StoreCustomerOrderDetailsScreenState
 
     final Response response = await Get.find<ApiClient>().postData(
       '/api/customer/store/orders/${order.id}/dispute',
-      <String, dynamic>{
-        'dispute_reason': reason,
-      },
+      <String, dynamic>{'dispute_reason': reason},
     );
 
     final dynamic body = response.body;
@@ -1029,7 +1214,7 @@ class _StoreCustomerOrderDetailsScreenState
         }
       }
 
-      showDetailsMessage(context, 'Disputa aberta com sucesso.');
+      showDetailsMessage(context, 'store_dispute_opened_success');
       return;
     }
 
@@ -1037,7 +1222,7 @@ class _StoreCustomerOrderDetailsScreenState
       context,
       body is Map && body['message'] != null
           ? body['message'].toString()
-          : 'Não foi possível abrir a disputa.',
+          : 'store_open_dispute_error',
     );
   }
 
@@ -1051,9 +1236,9 @@ class _StoreCustomerOrderDetailsScreenState
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F6F6),
+        backgroundColor: Colors.white,
         body: BodyWidget(
-          appBar: AppBarWidget(title: 'Detalhes do pedido'.tr),
+          appBar: AppBarWidget(title: 'store_order_details'.tr),
           body: ListView(
             padding: const EdgeInsets.fromLTRB(
               Dimensions.paddingSizeDefault,
@@ -1079,10 +1264,10 @@ class _StoreCustomerOrderDetailsScreenState
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                order.isServiceOrder
-                                    ? 'Pedido de serviço'
+                                order.isServiceRequestOrder
+                                    ? 'Solicitação de serviço'
                                     : order.sellerName.isEmpty
-                                        ? 'Loja'
+                                        ? 'store_store'.tr
                                         : order.sellerName,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -1106,35 +1291,47 @@ class _StoreCustomerOrderDetailsScreenState
                     ),
                     const SizedBox(height: 13),
                     StoreCustomerOrderStatusBadge(
-                      label: order.paymentStatusLabel,
-                      color: paymentStatusColor(primaryColor),
+                      label: order.serviceHeaderStatusLabel,
+                      color: order.isServiceRequestOrder
+                          ? orderStatusColor(primaryColor)
+                          : paymentStatusColor(primaryColor),
                     ),
                     const SizedBox(height: 14),
                     StoreCustomerSimpleLine(
-                      label: order.isServiceOrder ? 'Formato' : 'Entrega',
-                      value: order.isServiceOrder
+                      label: order.isServiceRequestOrder
+                          ? 'Formato'
+                          : 'store_delivery',
+                      value: order.isServiceRequestOrder
                           ? order.serviceDeliveryLabel
                           : order.deliveryTypeLabel,
                     ),
                     const SizedBox(height: 6),
                     StoreCustomerSimpleLine(
-                      label: 'Pagamento',
+                      label: 'store_payment',
                       value: order.paymentMethodLabel,
                     ),
                     if (showOrderStatusLine) ...[
                       const SizedBox(height: 6),
                       StoreCustomerSimpleLine(
-                        label: 'Situação do pedido',
+                        label: 'store_order_status',
                         value: order.orderStatusLabel,
                       ),
                     ],
                     const SizedBox(height: 6),
                     StoreCustomerSimpleLine(
-                      label: 'Total',
+                      label: 'store_total',
                       value: StoreCustomerOrderCurrency.format(order.total),
                       highlight: true,
                       primaryColor: primaryColor,
                     ),
+                    if (canPayWithMercadoPago) ...[
+                      const SizedBox(height: 14),
+                      StoreCustomerPendingMercadoPagoPaymentBlock(
+                        primaryColor: primaryColor,
+                        isLoading: isCreatingMercadoPagoPayment,
+                        onTap: () => payPendingMercadoPago(context),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1143,7 +1340,9 @@ class _StoreCustomerOrderDetailsScreenState
                 StoreCustomerServiceOrderDetails(
                   order: order,
                   primaryColor: primaryColor,
+                  progress: serviceProgress,
                   onOpenChatTap: openServiceChat,
+                  onEvaluateTap: showServiceEvaluationMessage,
                 )
               else if (!order.isServiceOrder && isPickup)
                 StoreCustomerPickupDetails(
@@ -1178,7 +1377,9 @@ class _StoreCustomerOrderDetailsScreenState
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      order.isServiceOrder ? 'Serviços' : 'Produtos',
+                      order.isServiceRequestOrder
+                          ? 'Serviço solicitado'
+                          : 'store_products'.tr,
                       style: textBold.copyWith(
                         color: Colors.black87,
                         fontSize: 16,
@@ -1205,25 +1406,346 @@ class _StoreCustomerOrderDetailsScreenState
   }
 }
 
+class StoreCustomerPendingMercadoPagoPaymentBlock extends StatelessWidget {
+  final Color primaryColor;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const StoreCustomerPendingMercadoPagoPaymentBlock({
+    super.key,
+    required this.primaryColor,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(
+        color: primaryColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: primaryColor.withValues(alpha: 0.20)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.payment_rounded, color: primaryColor, size: 21),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'store_payment_pending'.tr,
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 13.4,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'store_pending_mp_payment_description'.tr,
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 11.9,
+                        height: 1.30,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Material(
+            color: primaryColor,
+            borderRadius: BorderRadius.circular(17),
+            child: InkWell(
+              onTap: isLoading ? null : onTap,
+              borderRadius: BorderRadius.circular(17),
+              child: Container(
+                height: 46,
+                width: double.infinity,
+                alignment: Alignment.center,
+                child: isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        'store_pay_with_mercado_pago'.tr,
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13.2,
+                        ),
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreCustomerServiceProgressStepData {
+  final String key;
+  final String label;
+  final String actionGroup;
+  final bool completed;
+
+  const StoreCustomerServiceProgressStepData({
+    required this.key,
+    required this.label,
+    required this.actionGroup,
+    required this.completed,
+  });
+
+  factory StoreCustomerServiceProgressStepData.fromMap(
+    Map<String, dynamic> map,
+  ) {
+    return StoreCustomerServiceProgressStepData(
+      key: '${map['key'] ?? ''}',
+      label: '${map['label'] ?? ''}',
+      actionGroup: '${map['action_group'] ?? ''}',
+      completed: StoreCustomerOrderCurrency.parseBool(map['completed']),
+    );
+  }
+}
+
+class StoreCustomerServiceProgressData {
+  final List<String> steps;
+  final List<StoreCustomerServiceProgressStepData> definitions;
+  final int completedActions;
+  final int totalActions;
+  final int percent;
+  final bool completed;
+  final String statusLabel;
+
+  const StoreCustomerServiceProgressData({
+    required this.steps,
+    required this.definitions,
+    required this.completedActions,
+    required this.totalActions,
+    required this.percent,
+    required this.completed,
+    required this.statusLabel,
+  });
+
+  static int parseInt(dynamic value) {
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse('$value') ?? 0;
+  }
+
+  static const List<StoreCustomerServiceProgressStepData> defaultDefinitions = [
+    StoreCustomerServiceProgressStepData(
+      key: 'atendimento_iniciado',
+      label: 'Atendimento iniciado',
+      actionGroup: 'atendimento_iniciado',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'cliente_efetuou_pagamento',
+      label: 'Cliente efetuou pagamento',
+      actionGroup: 'cliente_efetuou_pagamento',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'informacoes_coletadas',
+      label: 'Informações coletadas',
+      actionGroup: 'informacoes_coletadas',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'enviado_para_aprovacao',
+      label: 'Enviado para aprovação',
+      actionGroup: 'enviado_para_aprovacao',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'reajuste_1',
+      label: 'Reajuste 1',
+      actionGroup: 'reajustes',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'reajuste_2',
+      label: 'Reajuste 2',
+      actionGroup: 'reajustes',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'reajuste_3',
+      label: 'Reajuste 3',
+      actionGroup: 'reajustes',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'cliente_aprovou',
+      label: 'Cliente aprovou',
+      actionGroup: 'cliente_aprovou',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'entrega_dos_arquivos',
+      label: 'Entrega dos arquivos',
+      actionGroup: 'entrega_dos_arquivos',
+      completed: false,
+    ),
+    StoreCustomerServiceProgressStepData(
+      key: 'servico_concluido',
+      label: 'Serviço concluído',
+      actionGroup: 'servico_concluido',
+      completed: false,
+    ),
+  ];
+
+  factory StoreCustomerServiceProgressData.empty() {
+    return const StoreCustomerServiceProgressData(
+      steps: <String>[],
+      definitions: defaultDefinitions,
+      completedActions: 0,
+      totalActions: 8,
+      percent: 0,
+      completed: false,
+      statusLabel: 'Aguardando início',
+    );
+  }
+
+  factory StoreCustomerServiceProgressData.fromMap(Map<String, dynamic> map) {
+    final dynamic stepsValue = map['steps'];
+    final List<String> parsedSteps = stepsValue is List
+        ? stepsValue
+            .map((item) => '$item')
+            .where((item) => item.isNotEmpty)
+            .toList()
+        : <String>[];
+
+    final dynamic definitionsValue = map['definitions'];
+    final List<StoreCustomerServiceProgressStepData> parsedDefinitions =
+        definitionsValue is List
+            ? definitionsValue
+                .whereType<Map>()
+                .map(
+                  (item) => StoreCustomerServiceProgressStepData.fromMap(
+                    Map<String, dynamic>.from(item),
+                  ),
+                )
+                .toList()
+            : defaultDefinitions;
+
+    return StoreCustomerServiceProgressData(
+      steps: parsedSteps,
+      definitions: parsedDefinitions,
+      completedActions: parseInt(map['completed_actions']),
+      totalActions: parseInt(map['total_actions']) == 0
+          ? 8
+          : parseInt(map['total_actions']),
+      percent: parseInt(map['percent']),
+      completed: StoreCustomerOrderCurrency.parseBool(map['completed']),
+      statusLabel: '${map['status_label'] ?? 'Aguardando início'}',
+    );
+  }
+}
+
+class StoreCustomerServiceProgressMiniBar extends StatelessWidget {
+  final StoreCustomerServiceProgressData progress;
+  final Color primaryColor;
+
+  const StoreCustomerServiceProgressMiniBar({
+    super.key,
+    required this.progress,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final double factor = progress.percent.clamp(0, 100) / 100;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                progress.completed ? 'Serviço concluído' : progress.statusLabel,
+                style: textBold.copyWith(
+                  color: progress.completed ? primaryColor : Colors.black87,
+                  fontSize: 11.8,
+                ),
+              ),
+            ),
+            Text(
+              '${progress.percent.clamp(0, 100)}%',
+              style: textBold.copyWith(color: primaryColor, fontSize: 11.8),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: LinearProgressIndicator(
+            value: factor,
+            minHeight: 7,
+            backgroundColor: Colors.grey.shade200,
+            valueColor: AlwaysStoppedAnimation<Color>(primaryColor),
+          ),
+        ),
+        if (progress.completed) ...[
+          const SizedBox(height: 7),
+          Row(
+            children: [
+              Icon(Icons.check_circle_rounded, color: primaryColor, size: 16),
+              const SizedBox(width: 5),
+              Text(
+                'Serviço concluído',
+                style: textBold.copyWith(color: primaryColor, fontSize: 11.6),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
 class StoreCustomerServiceOrderDetails extends StatelessWidget {
   final StoreCustomerOrderItem order;
   final Color primaryColor;
+  final StoreCustomerServiceProgressData progress;
   final VoidCallback onOpenChatTap;
+  final VoidCallback onEvaluateTap;
 
   const StoreCustomerServiceOrderDetails({
     super.key,
     required this.order,
     required this.primaryColor,
+    required this.progress,
     required this.onOpenChatTap,
+    required this.onEvaluateTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final bool paymentApproved = order.paymentStatus == 'approved';
-    final bool chatAvailable = paymentApproved &&
-        order.serviceChatAvailable &&
-        !order.isReleaseClosed &&
-        !order.isDisputeFinalized;
+    final bool chatAvailable = order.canOpenServiceChat;
     final bool finalFlow = order.isReleaseClosed || order.isDisputeFinalized;
 
     return StoreCustomerSurface(
@@ -1231,16 +1753,19 @@ class StoreCustomerServiceOrderDetails extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Serviço ${order.serviceDeliveryLabel}',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 16,
-            ),
+            order.orderStatus == 'service_requested'
+                ? 'Solicitação enviada'
+                : order.orderStatus == 'service_chat_open'
+                    ? 'Serviço em andamento'
+                    : order.orderStatus == 'service_completed'
+                        ? 'Serviço concluído'
+                        : 'Serviço ${order.serviceDeliveryLabel}',
+            style: textBold.copyWith(color: Colors.black87, fontSize: 16),
           ),
           const SizedBox(height: 7),
           Text(
             order.serviceDeliveryDescription.isEmpty
-                ? 'Acompanhe as informações do serviço contratado.'
+                ? 'Acompanhe sua solicitação, alinhe os detalhes com o prestador e mantenha todo o histórico pelo chat seguro da Lokally.'
                 : order.serviceDeliveryDescription,
             style: textRegular.copyWith(
               color: Colors.grey.shade700,
@@ -1252,58 +1777,14 @@ class StoreCustomerServiceOrderDetails extends StatelessWidget {
           if (!chatAvailable && !finalFlow)
             StoreCustomerInfoBlock(
               icon: Icons.lock_clock_outlined,
-              title: 'Chat Lokally',
+              title: 'store_lokally_chat',
               value: paymentApproved
-                  ? 'O Chat Lokally ainda não está disponível para este pedido.'
-                  : 'O chat do serviço será liberado assim que o pagamento for aprovado.',
+                  ? 'store_chat_not_available_for_order'
+                  : order.isServiceRequestOrder
+                      ? 'Solicitação enviada. Aguarde o prestador iniciar a tratativa pelo chat.'
+                      : 'store_service_chat_released_after_payment',
             )
           else if (chatAvailable) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: primaryColor.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(17),
-                border: Border.all(color: primaryColor.withValues(alpha: 0.18)),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(
-                    Icons.verified_user_outlined,
-                    color: primaryColor,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Garantia Lokally',
-                          style: textBold.copyWith(
-                            color: Colors.black87,
-                            fontSize: 12.5,
-                          ),
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          order.lokallyGuaranteeMessage.isEmpty
-                              ? 'Mantenha a conversa pelo Chat Lokally e não confirme recebimento antes de receber o serviço.'
-                              : order.lokallyGuaranteeMessage,
-                          style: textRegular.copyWith(
-                            color: Colors.grey.shade700,
-                            fontSize: 11.6,
-                            height: 1.28,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
             Material(
               color: primaryColor,
               borderRadius: BorderRadius.circular(17),
@@ -1324,10 +1805,49 @@ class StoreCustomerServiceOrderDetails extends StatelessWidget {
                       ),
                       const SizedBox(width: 7),
                       Text(
-                        'Abrir Chat Lokally',
+                        'store_open_lokally_chat'.tr,
                         style: textBold.copyWith(
                           color: Colors.white,
                           fontSize: 13.1,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+          const SizedBox(height: 14),
+          StoreCustomerServiceProgressMiniBar(
+            progress: progress,
+            primaryColor: primaryColor,
+          ),
+          if (progress.completed) ...[
+            const SizedBox(height: 12),
+            Material(
+              color: primaryColor,
+              borderRadius: BorderRadius.circular(17),
+              child: InkWell(
+                onTap: onEvaluateTap,
+                borderRadius: BorderRadius.circular(17),
+                child: Container(
+                  height: 44,
+                  width: double.infinity,
+                  alignment: Alignment.center,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.star_outline_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        'Avaliar serviço',
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 13,
                         ),
                       ),
                     ],
@@ -1345,10 +1865,7 @@ class StoreCustomerServiceOrderDetails extends StatelessWidget {
 class StoreCustomerServiceChatScreen extends StatefulWidget {
   final StoreCustomerOrderItem order;
 
-  const StoreCustomerServiceChatScreen({
-    super.key,
-    required this.order,
-  });
+  const StoreCustomerServiceChatScreen({super.key, required this.order});
 
   @override
   State<StoreCustomerServiceChatScreen> createState() =>
@@ -1380,6 +1897,8 @@ class _StoreCustomerServiceChatScreenState
     'ai',
     'eps',
     'cdr',
+    'mp3',
+    'mp4',
   ];
 
   final TextEditingController messageController = TextEditingController();
@@ -1387,7 +1906,9 @@ class _StoreCustomerServiceChatScreenState
 
   bool isLoading = false;
   bool isSending = false;
+  bool isMeetingResponding = false;
   bool noticeModalShown = false;
+  late String customerEmail;
 
   StoreCustomerServiceChatThread? thread;
   StoreCustomerServiceChatSafetyNotice? safetyNotice;
@@ -1400,6 +1921,7 @@ class _StoreCustomerServiceChatScreenState
   @override
   void initState() {
     super.initState();
+    customerEmail = widget.order.customerEmail.trim();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadChat();
@@ -1438,7 +1960,7 @@ class _StoreCustomerServiceChatScreenState
       showChatMessage(
         body is Map && body['message'] != null
             ? body['message'].toString()
-            : 'Não foi possível abrir o Chat Lokally.',
+            : 'store_chat_open_error'.tr,
       );
       return;
     }
@@ -1477,13 +1999,6 @@ class _StoreCustomerServiceChatScreenState
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       scrollToEnd();
-      final StoreCustomerServiceChatThread? currentThread = thread;
-      if (currentThread != null &&
-          !currentThread.safetyNoticeAccepted &&
-          !noticeModalShown) {
-        noticeModalShown = true;
-        showSafetyNoticeModal();
-      }
     });
   }
 
@@ -1569,7 +2084,7 @@ class _StoreCustomerServiceChatScreenState
                     const SizedBox(width: 11),
                     Expanded(
                       child: Text(
-                        'Anexar arquivo ao serviço',
+                        'store_attach_file_to_service'.tr,
                         style: textBold.copyWith(
                           color: Colors.black87,
                           fontSize: 17,
@@ -1580,7 +2095,7 @@ class _StoreCustomerServiceChatScreenState
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Você pode enviar arquivos para o vendedor executar o serviço, como marca, briefing, imagens, documentos e arquivos de criação.',
+                  'store_attach_file_to_service_description'.tr,
                   style: textRegular.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 12.6,
@@ -1596,7 +2111,9 @@ class _StoreCustomerServiceChatScreenState
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    'Formatos permitidos: $allowedFileExtensionsText. Limite por arquivo: até 50 MB.',
+                    'store_allowed_formats_limit'.trParams({
+                      'value': allowedFileExtensionsText,
+                    }),
                     style: textMedium.copyWith(
                       color: primaryColor,
                       fontSize: 11.6,
@@ -1616,7 +2133,7 @@ class _StoreCustomerServiceChatScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        'Selecionar arquivo',
+                        'store_select_file'.tr,
                         style: textBold.copyWith(
                           color: Colors.white,
                           fontSize: 13.2,
@@ -1637,7 +2154,7 @@ class _StoreCustomerServiceChatScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        'Cancelar',
+                        'store_cancel'.tr,
                         style: textBold.copyWith(
                           color: Colors.grey.shade700,
                           fontSize: 13,
@@ -1682,7 +2199,7 @@ class _StoreCustomerServiceChatScreenState
     final String? path = selectedFile.path;
 
     if (path == null || path.trim().isEmpty) {
-      showChatMessage('Não foi possível acessar o arquivo selecionado.');
+      showChatMessage('store_selected_file_access_error');
       return;
     }
 
@@ -1695,10 +2212,7 @@ class _StoreCustomerServiceChatScreenState
     );
   }
 
-  Future<void> sendMessage({
-    required String message,
-    XFile? file,
-  }) async {
+  Future<void> sendMessage({required String message, XFile? file}) async {
     if ((message.trim().isEmpty && file == null) || isSending) {
       return;
     }
@@ -1724,9 +2238,7 @@ class _StoreCustomerServiceChatScreenState
       } else {
         response = await Get.find<ApiClient>().postData(
           '$chatUri/message',
-          <String, dynamic>{
-            'message': message,
-          },
+          <String, dynamic>{'message': message},
         );
       }
 
@@ -1762,11 +2274,11 @@ class _StoreCustomerServiceChatScreenState
       showChatMessage(
         body is Map && body['message'] != null
             ? body['message'].toString()
-            : 'Não foi possível enviar a mensagem.',
+            : 'store_send_message_error'.tr,
       );
     } catch (_) {
       if (mounted) {
-        showChatMessage('Não foi possível enviar a mensagem.');
+        showChatMessage('store_send_message_error');
       }
     } finally {
       if (mounted) {
@@ -1775,6 +2287,772 @@ class _StoreCustomerServiceChatScreenState
         });
       }
     }
+  }
+
+  bool isValidLokallyMeetingEmail(String value) {
+    final String email = value.trim();
+
+    if (email.isEmpty) {
+      return false;
+    }
+
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email);
+  }
+
+  Future<String?> ensureLokallyMeetingCustomerEmail() async {
+    final String currentEmail = customerEmail.trim();
+
+    if (currentEmail.isNotEmpty) {
+      return currentEmail;
+    }
+
+    return showLokallyMeetingCustomerEmailSheet();
+  }
+
+  Future<String?> showLokallyMeetingCustomerEmailSheet() async {
+    final TextEditingController emailController = TextEditingController(
+      text: customerEmail.trim(),
+    );
+    final Color primaryColor = Theme.of(context).primaryColor;
+    String errorText = '';
+
+    final String? result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Container(
+                  margin: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: primaryColor.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: Icon(
+                              Icons.alternate_email_rounded,
+                              color: primaryColor,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 11),
+                          Expanded(
+                            child: Text(
+                              'Confirme seu e-mail',
+                              style: textBold.copyWith(
+                                color: Colors.black87,
+                                fontSize: 17,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Informe um e-mail para receber confirmações, lembretes e avisos importantes do Lokally Meeting.',
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 12.7,
+                          height: 1.34,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        textInputAction: TextInputAction.done,
+                        autofillHints: const [AutofillHints.email],
+                        decoration: InputDecoration(
+                          hintText: 'seuemail@exemplo.com',
+                          errorText: errorText.isEmpty ? null : errorText,
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: primaryColor),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Material(
+                        color: primaryColor,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          onTap: () {
+                            final String email = emailController.text.trim();
+
+                            if (!isValidLokallyMeetingEmail(email)) {
+                              setModalState(() {
+                                errorText =
+                                    'Informe um e-mail válido para continuar.';
+                              });
+                              return;
+                            }
+
+                            Navigator.of(context).pop(email);
+                          },
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            height: 46,
+                            width: double.infinity,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Continuar',
+                              style: textBold.copyWith(
+                                color: Colors.white,
+                                fontSize: 13.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      Material(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          onTap: () => Navigator.of(context).pop(null),
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            height: 44,
+                            width: double.infinity,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Cancelar',
+                              style: textBold.copyWith(
+                                color: Colors.grey.shade700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    emailController.dispose();
+
+    return result?.trim();
+  }
+
+  Future<void> acceptLokallyMeeting(
+    StoreCustomerServiceChatMessage message,
+  ) async {
+    if (isMeetingResponding || message.meetingId.isEmpty) {
+      return;
+    }
+
+    final String? email = await ensureLokallyMeetingCustomerEmail();
+
+    if (email == null || email.trim().isEmpty) {
+      return;
+    }
+
+    setState(() {
+      isMeetingResponding = true;
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatUri/meeting/${message.meetingId}/accept',
+        <String, dynamic>{
+          'customer_email': email.trim(),
+        },
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        customerEmail = email.trim();
+        showChatMessage('Lokally Meeting aceito com sucesso.');
+        await loadChat();
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível aceitar o Lokally Meeting.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível aceitar o Lokally Meeting.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isMeetingResponding = false;
+        });
+      }
+    }
+  }
+
+  Future<void> showDeclineLokallyMeetingSheet(
+    StoreCustomerServiceChatMessage message,
+  ) async {
+    if (isMeetingResponding || message.meetingId.isEmpty) {
+      return;
+    }
+
+    final TextEditingController reasonController = TextEditingController();
+    final TextEditingController emailController = TextEditingController(
+      text: customerEmail.trim(),
+    );
+    final Color primaryColor = Theme.of(context).primaryColor;
+    String reasonErrorText = '';
+    String emailErrorText = '';
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final bool needsEmail = customerEmail.trim().isEmpty;
+
+            return SafeArea(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: Container(
+                  margin: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(26),
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent.withValues(alpha: 0.10),
+                              borderRadius: BorderRadius.circular(15),
+                            ),
+                            child: const Icon(
+                              Icons.videocam_off_outlined,
+                              color: Colors.redAccent,
+                              size: 23,
+                            ),
+                          ),
+                          const SizedBox(width: 11),
+                          Expanded(
+                            child: Text(
+                              'Recusar Lokally Meeting',
+                              style: textBold.copyWith(
+                                color: Colors.black87,
+                                fontSize: 17,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        'Informe ao prestador o motivo da recusa para que ele possa remarcar, se necessário.',
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 12.7,
+                          height: 1.34,
+                        ),
+                      ),
+                      if (needsEmail) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: emailController,
+                          keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
+                          autofillHints: const [AutofillHints.email],
+                          decoration: InputDecoration(
+                            hintText: 'seuemail@exemplo.com',
+                            labelText: 'E-mail para avisos do Meeting',
+                            errorText:
+                                emailErrorText.isEmpty ? null : emailErrorText,
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade200),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide:
+                                  BorderSide(color: Colors.grey.shade200),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide(color: primaryColor),
+                            ),
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: reasonController,
+                        minLines: 3,
+                        maxLines: 5,
+                        decoration: InputDecoration(
+                          hintText:
+                              'Ex.: Não consigo participar neste horário.',
+                          errorText:
+                              reasonErrorText.isEmpty ? null : reasonErrorText,
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: BorderSide(color: primaryColor),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      Material(
+                        color: Colors.redAccent,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          onTap: () {
+                            final String email = emailController.text.trim();
+                            final String reason = reasonController.text.trim();
+
+                            if (needsEmail &&
+                                !isValidLokallyMeetingEmail(email)) {
+                              setModalState(() {
+                                emailErrorText =
+                                    'Informe um e-mail válido para continuar.';
+                                reasonErrorText = '';
+                              });
+                              return;
+                            }
+
+                            if (reason.isEmpty) {
+                              setModalState(() {
+                                emailErrorText = '';
+                                reasonErrorText = 'Informe o motivo da recusa.';
+                              });
+                              return;
+                            }
+
+                            Navigator.of(context).pop(true);
+                          },
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            height: 46,
+                            width: double.infinity,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Enviar recusa',
+                              style: textBold.copyWith(
+                                color: Colors.white,
+                                fontSize: 13.2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 9),
+                      Material(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          onTap: () => Navigator.of(context).pop(false),
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            height: 44,
+                            width: double.infinity,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Cancelar',
+                              style: textBold.copyWith(
+                                color: Colors.grey.shade700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final String reason = reasonController.text.trim();
+    final String email = emailController.text.trim();
+    reasonController.dispose();
+    emailController.dispose();
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await declineLokallyMeeting(message, reason, email);
+  }
+
+  Future<void> declineLokallyMeeting(
+    StoreCustomerServiceChatMessage message,
+    String reason,
+    String email,
+  ) async {
+    if (isMeetingResponding || message.meetingId.isEmpty) {
+      return;
+    }
+
+    setState(() {
+      isMeetingResponding = true;
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatUri/meeting/${message.meetingId}/decline',
+        <String, dynamic>{
+          'decline_reason': reason,
+          'customer_email': email.trim(),
+        },
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        if (email.trim().isNotEmpty) {
+          customerEmail = email.trim();
+        }
+
+        showChatMessage('Lokally Meeting recusado com sucesso.');
+        await loadChat();
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível recusar o Lokally Meeting.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível recusar o Lokally Meeting.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isMeetingResponding = false;
+        });
+      }
+    }
+  }
+
+  Future<void> openLokallyMeetingInApp(
+    StoreCustomerServiceChatMessage message,
+  ) async {
+    if (message.meetingId.isEmpty || isMeetingResponding) {
+      return;
+    }
+
+    await Get.to(
+      () => LokallyMeetingScreen(
+        orderId: widget.order.id,
+        meetingId: message.meetingId,
+        isHost: false,
+        title: message.meeting?.title.isNotEmpty == true
+            ? message.meeting!.title
+            : 'Lokally Meeting',
+      ),
+    );
+
+    if (mounted) {
+      await loadChat();
+    }
+  }
+
+  Future<void> generateLokallyMeetingDesktopLink(
+    StoreCustomerServiceChatMessage message,
+  ) async {
+    if (message.meetingId.isEmpty || isMeetingResponding) {
+      return;
+    }
+
+    setState(() {
+      isMeetingResponding = true;
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatUri/meeting/${message.meetingId}/link',
+        <String, dynamic>{'device_type': 'web'},
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+
+        final String accessUrl = '${data['access_url'] ?? ''}'.trim();
+        final String expiresAt = '${data['expires_at'] ?? ''}'.trim();
+
+        if (accessUrl.isEmpty) {
+          showChatMessage('Não foi possível gerar o link do Lokally Meeting.');
+          return;
+        }
+
+        await Clipboard.setData(ClipboardData(text: accessUrl));
+
+        if (mounted) {
+          await showLokallyMeetingDesktopLinkSheet(
+            accessUrl: accessUrl,
+            expiresAt: expiresAt,
+          );
+        }
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível gerar o link do Lokally Meeting.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível gerar o link do Lokally Meeting.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isMeetingResponding = false;
+        });
+      }
+    }
+  }
+
+  Future<void> showLokallyMeetingDesktopLinkSheet({
+    required String accessUrl,
+    required String expiresAt,
+  }) async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(15),
+                      ),
+                      child: Icon(
+                        Icons.computer_rounded,
+                        color: primaryColor,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 11),
+                    Expanded(
+                      child: Text(
+                        'Link para computador',
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'O link do Lokally Meeting foi copiado. Abra no navegador do computador ou notebook para participar da reunião.',
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.7,
+                    height: 1.34,
+                  ),
+                ),
+                if (expiresAt.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Válido até: $expiresAt',
+                    style: textMedium.copyWith(
+                      color: Colors.grey.shade600,
+                      fontSize: 11.8,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(11),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: SelectableText(
+                    accessUrl,
+                    style: textRegular.copyWith(
+                      color: Colors.black87,
+                      fontSize: 11.8,
+                      height: 1.30,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Material(
+                        color: primaryColor,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          onTap: () async {
+                            await Clipboard.setData(
+                              ClipboardData(text: accessUrl),
+                            );
+                            if (context.mounted) {
+                              Navigator.of(context).pop();
+                            }
+                            showChatMessage('Link copiado.');
+                          },
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            height: 46,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Copiar link',
+                              style: textBold.copyWith(
+                                color: Colors.white,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Material(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(17),
+                        child: InkWell(
+                          onTap: () async {
+                            final Uri uri = Uri.parse(accessUrl);
+                            await launchUrl(
+                              uri,
+                              mode: LaunchMode.externalApplication,
+                            );
+                          },
+                          borderRadius: BorderRadius.circular(17),
+                          child: Container(
+                            height: 46,
+                            alignment: Alignment.center,
+                            child: Text(
+                              'Abrir',
+                              style: textBold.copyWith(
+                                color: primaryColor,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void scrollToEnd() {
@@ -1796,19 +3074,14 @@ class _StoreCustomerServiceChatScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          message,
-          style: textMedium.copyWith(
-            color: Colors.white,
-            fontSize: 12.8,
-          ),
+          message.tr,
+          style: textMedium.copyWith(color: Colors.white, fontSize: 12.8),
         ),
         backgroundColor: primaryColor,
         behavior: SnackBarBehavior.floating,
         elevation: 8,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -1855,7 +3128,7 @@ class _StoreCustomerServiceChatScreenState
                     const SizedBox(width: 11),
                     Expanded(
                       child: Text(
-                        notice.title,
+                        notice.title.tr,
                         style: textBold.copyWith(
                           color: Colors.black87,
                           fontSize: 17,
@@ -1866,7 +3139,7 @@ class _StoreCustomerServiceChatScreenState
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  notice.message,
+                  notice.message.tr,
                   style: textRegular.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 12.8,
@@ -1888,7 +3161,7 @@ class _StoreCustomerServiceChatScreenState
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            detail,
+                            detail.tr,
                             style: textRegular.copyWith(
                               color: Colors.grey.shade700,
                               fontSize: 11.8,
@@ -1917,7 +3190,7 @@ class _StoreCustomerServiceChatScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        'Entendi e quero continuar',
+                        'store_understand_continue'.tr,
                         style: textBold.copyWith(
                           color: Colors.white,
                           fontSize: 13.4,
@@ -1941,9 +3214,9 @@ class _StoreCustomerServiceChatScreenState
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F6F6),
+        backgroundColor: Colors.white,
         body: BodyWidget(
-          appBar: AppBarWidget(title: 'Chat Lokally'.tr),
+          appBar: AppBarWidget(title: 'store_lokally_chat'.tr),
           body: Column(
             children: [
               Expanded(
@@ -1963,7 +3236,7 @@ class _StoreCustomerServiceChatScreenState
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Atendimento do serviço',
+                                  'store_service_support'.tr,
                                   style: textBold.copyWith(
                                     color: Colors.black87,
                                     fontSize: 16,
@@ -1981,10 +3254,18 @@ class _StoreCustomerServiceChatScreenState
                             ),
                           ),
                           const SizedBox(height: 12),
+                          StoreCustomerSurface(
+                            child: StoreCustomerServiceProgressMiniBar(
+                              progress: thread?.serviceProgress ??
+                                  StoreCustomerServiceProgressData.empty(),
+                              primaryColor: primaryColor,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
                           if (messages.isEmpty)
                             StoreCustomerSurface(
                               child: Text(
-                                'Envie uma mensagem para combinar os detalhes do serviço com segurança pelo Chat Lokally.',
+                                'store_service_chat_empty_description'.tr,
                                 style: textRegular.copyWith(
                                   color: Colors.grey.shade700,
                                   fontSize: 12.5,
@@ -1997,6 +3278,15 @@ class _StoreCustomerServiceChatScreenState
                               (message) => StoreCustomerServiceChatBubble(
                                 message: message,
                                 primaryColor: primaryColor,
+                                isMeetingResponding: isMeetingResponding,
+                                onAcceptMeeting: () =>
+                                    acceptLokallyMeeting(message),
+                                onDeclineMeeting: () =>
+                                    showDeclineLokallyMeetingSheet(message),
+                                onOpenMeetingApp: () =>
+                                    openLokallyMeetingInApp(message),
+                                onGenerateMeetingLink: () =>
+                                    generateLokallyMeetingDesktopLink(message),
                               ),
                             ),
                         ],
@@ -2038,7 +3328,7 @@ class _StoreCustomerServiceChatScreenState
                         minLines: 1,
                         maxLines: 4,
                         decoration: InputDecoration(
-                          hintText: 'Escreva sua mensagem...',
+                          hintText: 'store_write_your_message'.tr,
                           filled: true,
                           fillColor: const Color(0xFFF4F6F6),
                           contentPadding: const EdgeInsets.symmetric(
@@ -2094,16 +3384,39 @@ class _StoreCustomerServiceChatScreenState
 class StoreCustomerServiceChatBubble extends StatelessWidget {
   final StoreCustomerServiceChatMessage message;
   final Color primaryColor;
+  final bool isMeetingResponding;
+  final VoidCallback? onAcceptMeeting;
+  final VoidCallback? onDeclineMeeting;
+  final VoidCallback? onOpenMeetingApp;
+  final VoidCallback? onGenerateMeetingLink;
 
   const StoreCustomerServiceChatBubble({
     super.key,
     required this.message,
     required this.primaryColor,
+    this.isMeetingResponding = false,
+    this.onAcceptMeeting,
+    this.onDeclineMeeting,
+    this.onOpenMeetingApp,
+    this.onGenerateMeetingLink,
   });
 
   @override
   Widget build(BuildContext context) {
     final bool isMine = message.senderType == 'customer';
+
+    if (message.isLokallyMeeting) {
+      return StoreCustomerLokallyMeetingChatCard(
+        message: message,
+        primaryColor: primaryColor,
+        isMine: isMine,
+        isLoading: isMeetingResponding,
+        onAcceptMeeting: onAcceptMeeting,
+        onDeclineMeeting: onDeclineMeeting,
+        onOpenMeetingApp: onOpenMeetingApp,
+        onGenerateMeetingLink: onGenerateMeetingLink,
+      );
+    }
 
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
@@ -2151,6 +3464,410 @@ class StoreCustomerServiceChatBubble extends StatelessWidget {
   }
 }
 
+class StoreCustomerLokallyMeetingChatCard extends StatelessWidget {
+  final StoreCustomerServiceChatMessage message;
+  final Color primaryColor;
+  final bool isMine;
+  final bool isLoading;
+  final VoidCallback? onAcceptMeeting;
+  final VoidCallback? onDeclineMeeting;
+  final VoidCallback? onOpenMeetingApp;
+  final VoidCallback? onGenerateMeetingLink;
+
+  const StoreCustomerLokallyMeetingChatCard({
+    super.key,
+    required this.message,
+    required this.primaryColor,
+    required this.isMine,
+    required this.isLoading,
+    this.onAcceptMeeting,
+    this.onDeclineMeeting,
+    this.onOpenMeetingApp,
+    this.onGenerateMeetingLink,
+  });
+
+  Color get statusColor {
+    switch (message.meeting?.status ?? '') {
+      case 'accepted':
+      case 'started':
+        return primaryColor;
+      case 'ended':
+        return Colors.grey;
+      case 'declined':
+        return Colors.redAccent;
+      case 'pending':
+      default:
+        return Colors.orange.shade800;
+    }
+  }
+
+  IconData get statusIcon {
+    switch (message.meeting?.status ?? '') {
+      case 'accepted':
+        return Icons.event_available_outlined;
+      case 'started':
+        return Icons.video_call_rounded;
+      case 'ended':
+        return Icons.call_end_rounded;
+      case 'declined':
+        return Icons.event_busy_outlined;
+      case 'pending':
+      default:
+        return Icons.schedule_outlined;
+    }
+  }
+
+  String get statusLabel {
+    switch (message.meeting?.status ?? '') {
+      case 'accepted':
+        return 'Agendado';
+      case 'started':
+        return 'Em andamento';
+      case 'ended':
+        return 'Encerrado';
+      case 'declined':
+        return 'Recusado';
+      case 'pending':
+      default:
+        return 'Aguardando resposta';
+    }
+  }
+
+  bool get canRespond {
+    return !isMine &&
+        message.messageType == 'lokally_meeting_invite' &&
+        (message.meeting?.status ?? '') == 'pending';
+  }
+
+  bool get canEnterMeeting {
+    final String status = message.meeting?.status ?? '';
+
+    return !isMine &&
+        message.messageType == 'lokally_meeting_invite' &&
+        (status == 'accepted' || status == 'started');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final StoreCustomerServiceMeetingData? meeting = message.meeting;
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.86,
+        ),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(22),
+            topRight: const Radius.circular(22),
+            bottomLeft: Radius.circular(isMine ? 22 : 6),
+            bottomRight: Radius.circular(isMine ? 6 : 22),
+          ),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.035),
+              blurRadius: 16,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(
+                    Icons.videocam_rounded,
+                    color: primaryColor,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        meeting?.title.isNotEmpty == true
+                            ? meeting!.title
+                            : 'Lokally Meeting',
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 14.3,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        'Videochamada agendada no Chat Lokally',
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade600,
+                          fontSize: 11.4,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 11),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Column(
+                children: [
+                  StoreCustomerLokallyMeetingInfoRow(
+                    icon: Icons.calendar_month_outlined,
+                    label: 'Data e horário',
+                    value: meeting?.scheduledAtLabel.isNotEmpty == true
+                        ? meeting!.scheduledAtLabel
+                        : 'Horário não informado',
+                    valueColor: Colors.black87,
+                  ),
+                  const SizedBox(height: 7),
+                  StoreCustomerLokallyMeetingInfoRow(
+                    icon: statusIcon,
+                    label: 'Status',
+                    value: statusLabel,
+                    valueColor: statusColor,
+                  ),
+                ],
+              ),
+            ),
+            if (meeting?.note.isNotEmpty == true) ...[
+              const SizedBox(height: 9),
+              Text(
+                meeting!.note,
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade700,
+                  fontSize: 11.8,
+                  height: 1.30,
+                ),
+              ),
+            ],
+            if ((meeting?.declineReason ?? '').isNotEmpty) ...[
+              const SizedBox(height: 9),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  'Motivo da recusa: ${meeting!.declineReason}',
+                  style: textMedium.copyWith(
+                    color: Colors.redAccent,
+                    fontSize: 11.6,
+                    height: 1.28,
+                  ),
+                ),
+              ),
+            ],
+            if (canRespond) ...[
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: Material(
+                      color: primaryColor,
+                      borderRadius: BorderRadius.circular(15),
+                      child: InkWell(
+                        onTap: isLoading ? null : onAcceptMeeting,
+                        borderRadius: BorderRadius.circular(15),
+                        child: Container(
+                          height: 42,
+                          alignment: Alignment.center,
+                          child: isLoading
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2.1,
+                                  ),
+                                )
+                              : Text(
+                                  'Aceitar',
+                                  style: textBold.copyWith(
+                                    color: Colors.white,
+                                    fontSize: 12.4,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Material(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(15),
+                      child: InkWell(
+                        onTap: isLoading ? null : onDeclineMeeting,
+                        borderRadius: BorderRadius.circular(15),
+                        child: Container(
+                          height: 42,
+                          alignment: Alignment.center,
+                          child: Text(
+                            'Recusar',
+                            style: textBold.copyWith(
+                              color: Colors.redAccent,
+                              fontSize: 12.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (canEnterMeeting) ...[
+              const SizedBox(height: 12),
+              Material(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: isLoading ? null : onOpenMeetingApp,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    height: 44,
+                    width: double.infinity,
+                    alignment: Alignment.center,
+                    child: isLoading
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2.1,
+                            ),
+                          )
+                        : Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              const Icon(
+                                Icons.video_call_rounded,
+                                color: Colors.white,
+                                size: 19,
+                              ),
+                              const SizedBox(width: 7),
+                              Text(
+                                message.meeting?.status == 'started'
+                                    ? 'Entrar no Meeting'
+                                    : 'Entrar pelo app',
+                                style: textBold.copyWith(
+                                  color: Colors.white,
+                                  fontSize: 12.8,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Material(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(16),
+                child: InkWell(
+                  onTap: isLoading ? null : onGenerateMeetingLink,
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    height: 43,
+                    width: double.infinity,
+                    alignment: Alignment.center,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(
+                          Icons.computer_rounded,
+                          color: primaryColor,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          'Gerar link para computador',
+                          style: textBold.copyWith(
+                            color: primaryColor,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StoreCustomerLokallyMeetingInfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  const StoreCustomerLokallyMeetingInfoRow({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, color: valueColor, size: 16),
+        const SizedBox(width: 7),
+        Text(
+          '$label: ',
+          style: textRegular.copyWith(
+            color: Colors.grey.shade600,
+            fontSize: 11.3,
+          ),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textBold.copyWith(
+              color: valueColor,
+              fontSize: 11.5,
+              height: 1.22,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class StoreCustomerPickupDetails extends StatelessWidget {
   final StoreCustomerOrderItem order;
   final Color primaryColor;
@@ -2170,7 +3887,8 @@ class StoreCustomerPickupDetails extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isReady ? 'Pedido disponível para retirada' : 'Retirada na loja',
+            (isReady ? 'store_order_ready_for_pickup' : 'store_pickup_at_store')
+                .tr,
             style: textBold.copyWith(
               color: isReady ? primaryColor : Colors.black87,
               fontSize: 16,
@@ -2179,8 +3897,8 @@ class StoreCustomerPickupDetails extends StatelessWidget {
           const SizedBox(height: 7),
           Text(
             isReady
-                ? 'Oba! Você já pode retirar o seu pedido na loja. Apresente o número do pedido ao vendedor.'
-                : 'Assim que o vendedor liberar a retirada, você será notificado pelo app.',
+                ? 'store_order_ready_for_pickup_description'.tr
+                : 'store_wait_seller_release_pickup'.tr,
             style: textRegular.copyWith(
               color: Colors.grey.shade700,
               fontSize: 12.5,
@@ -2191,7 +3909,7 @@ class StoreCustomerPickupDetails extends StatelessWidget {
             const SizedBox(height: 12),
             StoreCustomerInfoBlock(
               icon: Icons.store_mall_directory_outlined,
-              title: 'Endereço de retirada',
+              title: 'store_pickup_address',
               value: order.pickupAddress,
             ),
           ],
@@ -2199,7 +3917,7 @@ class StoreCustomerPickupDetails extends StatelessWidget {
             const SizedBox(height: 10),
             StoreCustomerInfoBlock(
               icon: Icons.phone_outlined,
-              title: 'Contato da loja',
+              title: 'store_store_contact',
               value: order.sellerPhone,
             ),
           ],
@@ -2227,16 +3945,13 @@ class StoreCustomerShippingDetails extends StatelessWidget {
         children: [
           Text(
             'Lokally Envios',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 16,
-            ),
+            style: textBold.copyWith(color: Colors.black87, fontSize: 16),
           ),
           const SizedBox(height: 7),
           Text(
             order.orderStatus == 'lokally_shipping_pending'
-                ? 'O vendedor tem até 24h para solicitar um parceiro Lokally para enviar o seu pedido.'
-                : 'Acompanhe aqui as atualizações do envio do seu pedido.',
+                ? 'store_seller_has_24h_request_lokally_shipping'.tr
+                : 'store_follow_shipping_updates'.tr,
             style: textRegular.copyWith(
               color: Colors.grey.shade700,
               fontSize: 12.5,
@@ -2247,7 +3962,7 @@ class StoreCustomerShippingDetails extends StatelessWidget {
             const SizedBox(height: 12),
             StoreCustomerInfoBlock(
               icon: Icons.location_on_outlined,
-              title: 'Endereço de entrega',
+              title: 'store_delivery_address',
               value: order.deliveryAddress,
             ),
           ],
@@ -2282,25 +3997,25 @@ class StoreCustomerReleaseActionBlock extends StatelessWidget {
             order.releaseStatus == 'auto_authorized');
 
     final String title = disputeFinalized
-        ? 'Disputa encerrada pela Lokally'
+        ? 'store_dispute_closed_by_lokally'
         : authorized
-            ? 'Pedido finalizado'
+            ? 'store_order_finished'
             : disputed
-                ? 'Disputa aberta'
+                ? 'store_dispute_opened'
                 : order.releaseStatusLabel.isEmpty
-                    ? 'Liberação de repasse'
+                    ? 'store_payout_release'
                     : order.releaseStatusLabel;
 
     final String disputeFinalMessage = order.disputeResolutionMessage.trim();
     final String message = disputeFinalized
         ? (disputeFinalMessage.isNotEmpty
             ? disputeFinalMessage
-            : 'A disputa foi encerrada pela Lokally.')
+            : 'store_dispute_closed_by_lokally_message')
         : waitingAuthorization
-            ? 'O vendedor informou que o pedido foi entregue. Autorize o repasse somente se recebeu tudo corretamente. Se houver problema, abra uma disputa.'
+            ? 'store_authorize_payout_after_delivery_message'
             : disputed
-                ? 'A disputa foi aberta e será analisada pela equipe Lokally.'
-                : 'O repasse foi autorizado com sucesso. Este pedido foi finalizado.';
+                ? 'store_dispute_opened_analysis_message'
+                : 'store_payout_authorized_order_finished_message';
 
     final Color blockColor = disputeFinalized
         ? Colors.orangeAccent
@@ -2334,7 +4049,7 @@ class StoreCustomerReleaseActionBlock extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      title.tr,
                       style: textBold.copyWith(
                         color: Colors.black87,
                         fontSize: 15.2,
@@ -2354,7 +4069,7 @@ class StoreCustomerReleaseActionBlock extends StatelessWidget {
                       const SizedBox(height: 4),
                     ],
                     Text(
-                      message,
+                      message.tr,
                       style: textRegular.copyWith(
                         color: Colors.grey.shade700,
                         fontSize: 12.2,
@@ -2371,9 +4086,8 @@ class StoreCustomerReleaseActionBlock extends StatelessWidget {
             const SizedBox(height: 10),
             StoreCustomerInfoBlock(
               icon: Icons.schedule_outlined,
-              title: 'Prazo de resposta',
-              value:
-                  'Você tem até 24h para autorizar o repasse ou abrir disputa. Após esse prazo, o sistema poderá liberar automaticamente.',
+              title: 'store_response_deadline',
+              value: 'store_payout_response_deadline_message',
             ),
           ],
           if (waitingAuthorization) ...[
@@ -2389,7 +4103,7 @@ class StoreCustomerReleaseActionBlock extends StatelessWidget {
                   width: double.infinity,
                   alignment: Alignment.center,
                   child: Text(
-                    'AUTORIZAR REPASSE',
+                    'store_authorize_payout_upper'.tr,
                     style: textBold.copyWith(
                       color: Colors.white,
                       fontSize: 13.1,
@@ -2410,7 +4124,7 @@ class StoreCustomerReleaseActionBlock extends StatelessWidget {
                   width: double.infinity,
                   alignment: Alignment.center,
                   child: Text(
-                    'ABRIR DISPUTA',
+                    'store_open_dispute_upper'.tr,
                     style: textBold.copyWith(
                       color: Colors.redAccent,
                       fontSize: 13,
@@ -2458,7 +4172,7 @@ class StoreCustomerDisputeShortcutBlock extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Disputa Lokally',
+                      'store_lokally_dispute'.tr,
                       style: textBold.copyWith(
                         color: Colors.black87,
                         fontSize: 15.2,
@@ -2466,7 +4180,7 @@ class StoreCustomerDisputeShortcutBlock extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'A disputa será tratada entre você e a equipe Lokally. O vendedor responde para a Lokally em uma linha separada da tratativa.',
+                      'store_dispute_lokally_description'.tr,
                       style: textRegular.copyWith(
                         color: Colors.grey.shade700,
                         fontSize: 12.2,
@@ -2481,9 +4195,8 @@ class StoreCustomerDisputeShortcutBlock extends StatelessWidget {
           const SizedBox(height: 10),
           StoreCustomerInfoBlock(
             icon: Icons.schedule_outlined,
-            title: 'Prazo da análise',
-            value:
-                'A análise da disputa pode levar até 7 dias. Acompanhe as solicitações e respostas pela timeline da disputa.',
+            title: 'store_analysis_deadline',
+            value: 'store_dispute_analysis_deadline_description',
           ),
           const SizedBox(height: 12),
           Material(
@@ -2506,7 +4219,7 @@ class StoreCustomerDisputeShortcutBlock extends StatelessWidget {
                     ),
                     const SizedBox(width: 7),
                     Text(
-                      'Acompanhar disputa',
+                      'store_track_dispute'.tr,
                       style: textBold.copyWith(
                         color: Colors.white,
                         fontSize: 13.1,
@@ -2526,10 +4239,7 @@ class StoreCustomerDisputeShortcutBlock extends StatelessWidget {
 class StoreCustomerDisputeTicketScreen extends StatefulWidget {
   final StoreCustomerOrderItem order;
 
-  const StoreCustomerDisputeTicketScreen({
-    super.key,
-    required this.order,
-  });
+  const StoreCustomerDisputeTicketScreen({super.key, required this.order});
 
   @override
   State<StoreCustomerDisputeTicketScreen> createState() =>
@@ -2623,7 +4333,7 @@ class _StoreCustomerDisputeTicketScreenState
       showDisputeMessage(
         body is Map && body['message'] != null
             ? body['message'].toString()
-            : 'Não foi possível carregar a disputa.',
+            : 'store_dispute_load_error'.tr,
       );
       return;
     }
@@ -2708,7 +4418,7 @@ class _StoreCustomerDisputeTicketScreenState
                     const SizedBox(width: 11),
                     Expanded(
                       child: Text(
-                        'Anexar arquivo à disputa',
+                        'store_attach_file_to_dispute'.tr,
                         style: textBold.copyWith(
                           color: Colors.black87,
                           fontSize: 17,
@@ -2719,7 +4429,7 @@ class _StoreCustomerDisputeTicketScreenState
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'Envie comprovantes, imagens, briefing, documentos ou arquivos que ajudem a equipe Lokally a analisar a disputa.',
+                  'store_attach_file_to_dispute_description'.tr,
                   style: textRegular.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 12.6,
@@ -2735,7 +4445,9 @@ class _StoreCustomerDisputeTicketScreenState
                     borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
-                    'Formatos permitidos: $allowedFileExtensionsText. Limite por arquivo: até 50 MB.',
+                    'store_allowed_formats_limit'.trParams({
+                      'value': allowedFileExtensionsText,
+                    }),
                     style: textMedium.copyWith(
                       color: primaryColor,
                       fontSize: 11.6,
@@ -2755,7 +4467,7 @@ class _StoreCustomerDisputeTicketScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        'Selecionar arquivo',
+                        'store_select_file'.tr,
                         style: textBold.copyWith(
                           color: Colors.white,
                           fontSize: 13.2,
@@ -2776,7 +4488,7 @@ class _StoreCustomerDisputeTicketScreenState
                       width: double.infinity,
                       alignment: Alignment.center,
                       child: Text(
-                        'Cancelar',
+                        'store_cancel'.tr,
                         style: textBold.copyWith(
                           color: Colors.grey.shade700,
                           fontSize: 13,
@@ -2821,7 +4533,7 @@ class _StoreCustomerDisputeTicketScreenState
     final String? path = selectedFile.path;
 
     if (path == null || path.trim().isEmpty) {
-      showDisputeMessage('Não foi possível acessar o arquivo selecionado.');
+      showDisputeMessage('store_selected_file_access_error');
       return;
     }
 
@@ -2834,10 +4546,7 @@ class _StoreCustomerDisputeTicketScreenState
     );
   }
 
-  Future<void> sendMessage({
-    required String message,
-    XFile? file,
-  }) async {
+  Future<void> sendMessage({required String message, XFile? file}) async {
     if ((message.trim().isEmpty && file == null) || isSending) {
       return;
     }
@@ -2863,9 +4572,7 @@ class _StoreCustomerDisputeTicketScreenState
       } else {
         response = await Get.find<ApiClient>().postData(
           '$disputeUri/message',
-          <String, dynamic>{
-            'message': message,
-          },
+          <String, dynamic>{'message': message},
         );
       }
 
@@ -2901,11 +4608,11 @@ class _StoreCustomerDisputeTicketScreenState
       showDisputeMessage(
         body is Map && body['message'] != null
             ? body['message'].toString()
-            : 'Não foi possível enviar a mensagem.',
+            : 'store_send_message_error'.tr,
       );
     } catch (_) {
       if (mounted) {
-        showDisputeMessage('Não foi possível enviar a mensagem.');
+        showDisputeMessage('store_send_message_error');
       }
     } finally {
       if (mounted) {
@@ -2935,19 +4642,14 @@ class _StoreCustomerDisputeTicketScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          message,
-          style: textMedium.copyWith(
-            color: Colors.white,
-            fontSize: 12.8,
-          ),
+          message.tr,
+          style: textMedium.copyWith(color: Colors.white, fontSize: 12.8),
         ),
         backgroundColor: primaryColor,
         behavior: SnackBarBehavior.floating,
         elevation: 8,
         margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -2961,9 +4663,9 @@ class _StoreCustomerDisputeTicketScreenState
     return SafeArea(
       top: false,
       child: Scaffold(
-        backgroundColor: const Color(0xFFF4F6F6),
+        backgroundColor: Colors.white,
         body: BodyWidget(
-          appBar: AppBarWidget(title: 'Disputa Lokally'.tr),
+          appBar: AppBarWidget(title: 'store_lokally_dispute'.tr),
           body: Column(
             children: [
               Expanded(
@@ -2988,8 +4690,9 @@ class _StoreCustomerDisputeTicketScreenState
                                       width: 42,
                                       height: 42,
                                       decoration: BoxDecoration(
-                                        color: Colors.redAccent
-                                            .withValues(alpha: 0.10),
+                                        color: Colors.redAccent.withValues(
+                                          alpha: 0.10,
+                                        ),
                                         borderRadius: BorderRadius.circular(15),
                                       ),
                                       child: const Icon(
@@ -3005,7 +4708,7 @@ class _StoreCustomerDisputeTicketScreenState
                                             CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            'Ticket de disputa',
+                                            'store_dispute_ticket'.tr,
                                             style: textBold.copyWith(
                                               color: Colors.black87,
                                               fontSize: 16,
@@ -3028,16 +4731,21 @@ class _StoreCustomerDisputeTicketScreenState
                                 StoreCustomerInfoBlock(
                                   icon: Icons.support_agent_outlined,
                                   title: currentDispute?.statusLabel ??
-                                      'Disputa aberta',
-                                  value:
-                                      'A tratativa acontece entre você e a equipe Lokally. O lojista responde para a Lokally em uma timeline separada.',
+                                      'store_dispute_opened',
+                                  value: 'store_dispute_treatment_description',
                                 ),
                                 const SizedBox(height: 10),
                                 StoreCustomerInfoBlock(
                                   icon: Icons.schedule_outlined,
-                                  title: 'Prazo de análise',
-                                  value:
-                                      'A análise pode levar até 7 dias. ${currentDispute?.deadlineAt.isNotEmpty == true ? 'Prazo estimado: ${currentDispute!.deadlineAt}.' : ''}',
+                                  title: 'store_analysis_deadline',
+                                  value: currentDispute
+                                              ?.deadlineAt.isNotEmpty ==
+                                          true
+                                      ? 'store_analysis_deadline_with_date'
+                                          .trParams({
+                                          'value': currentDispute!.deadlineAt,
+                                        })
+                                      : 'store_analysis_deadline_without_date',
                                 ),
                               ],
                             ),
@@ -3046,7 +4754,7 @@ class _StoreCustomerDisputeTicketScreenState
                           if (messages.isEmpty)
                             StoreCustomerSurface(
                               child: Text(
-                                'A equipe Lokally irá responder por aqui. Envie detalhes e comprovantes que ajudem na análise da disputa.',
+                                'store_dispute_empty_timeline_description'.tr,
                                 style: textRegular.copyWith(
                                   color: Colors.grey.shade700,
                                   fontSize: 12.5,
@@ -3100,7 +4808,7 @@ class _StoreCustomerDisputeTicketScreenState
                         minLines: 1,
                         maxLines: 4,
                         decoration: InputDecoration(
-                          hintText: 'Responder à Lokally...',
+                          hintText: 'store_reply_to_lokally'.tr,
                           filled: true,
                           fillColor: const Color(0xFFF4F6F6),
                           contentPadding: const EdgeInsets.symmetric(
@@ -3178,10 +4886,10 @@ class StoreCustomerDisputeTimelineItem extends StatelessWidget {
     final Color helperColor =
         isMine ? Colors.white.withValues(alpha: 0.76) : Colors.grey.shade600;
     final String senderLabel = isMine
-        ? 'Você'
+        ? 'store_you'
         : isLokally
             ? 'Lokally'
-            : 'Atualização';
+            : 'store_update';
 
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
@@ -3205,7 +4913,7 @@ class StoreCustomerDisputeTimelineItem extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              senderLabel,
+              senderLabel.tr,
               style: textBold.copyWith(
                 color: isMine ? Colors.white : primaryColor,
                 fontSize: 11.2,
@@ -3235,10 +4943,7 @@ class StoreCustomerDisputeTimelineItem extends StatelessWidget {
               const SizedBox(height: 5),
               Text(
                 message.createdAt,
-                style: textRegular.copyWith(
-                  color: helperColor,
-                  fontSize: 9.8,
-                ),
+                style: textRegular.copyWith(color: helperColor, fontSize: 9.8),
               ),
             ],
           ],
@@ -3264,11 +4969,10 @@ class StoreCustomerInfoBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(11),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: Colors.grey.shade200),
+        color: Colors.transparent,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3280,7 +4984,7 @@ class StoreCustomerInfoBlock extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  title.tr,
                   style: textBold.copyWith(
                     color: Colors.black87,
                     fontSize: 11.8,
@@ -3288,7 +4992,7 @@ class StoreCustomerInfoBlock extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  value,
+                  value.tr,
                   style: textRegular.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 11.5,
@@ -3324,7 +5028,7 @@ class StoreCustomerSimpleLine extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            label,
+            label.tr,
             style: textMedium.copyWith(
               color: Colors.grey.shade700,
               fontSize: 13,
@@ -3334,7 +5038,7 @@ class StoreCustomerSimpleLine extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            value.isEmpty ? '-' : value,
+            (value.isEmpty ? '-' : value).tr,
             textAlign: TextAlign.right,
             style: (highlight ? textBold : textMedium).copyWith(
               color: highlight ? primaryColor : Colors.black87,
@@ -3409,7 +5113,9 @@ class StoreCustomerOrderItemLine extends StatelessWidget {
               if (showUnitPrice) ...[
                 const SizedBox(height: 2),
                 Text(
-                  'Unitário: ${StoreCustomerOrderCurrency.format(item.unitPrice)}',
+                  'store_unit_price_with_value'.trParams({
+                    'value': StoreCustomerOrderCurrency.format(item.unitPrice),
+                  }),
                   style: textRegular.copyWith(
                     color: Colors.grey.shade600,
                     fontSize: 11.2,
@@ -3422,10 +5128,7 @@ class StoreCustomerOrderItemLine extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           StoreCustomerOrderCurrency.format(item.total),
-          style: textBold.copyWith(
-            color: Colors.black87,
-            fontSize: 12.2,
-          ),
+          style: textBold.copyWith(color: Colors.black87, fontSize: 12.2),
         ),
       ],
     );
@@ -3456,13 +5159,7 @@ class StoreCustomerOrderStatusBadge extends StatelessWidget {
         children: [
           Icon(Icons.circle, color: color, size: 7),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: textBold.copyWith(
-              color: color,
-              fontSize: 11,
-            ),
-          ),
+          Text(label.tr, style: textBold.copyWith(color: color, fontSize: 11)),
         ],
       ),
     );
@@ -3509,10 +5206,7 @@ class StoreCustomerOrderSellerLogo extends StatelessWidget {
 class StoreCustomerOrdersLoading extends StatelessWidget {
   final Color primaryColor;
 
-  const StoreCustomerOrdersLoading({
-    super.key,
-    required this.primaryColor,
-  });
+  const StoreCustomerOrdersLoading({super.key, required this.primaryColor});
 
   @override
   Widget build(BuildContext context) {
@@ -3543,30 +5237,23 @@ class StoreCustomerOrdersEmpty extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String message = selectedFilter == 'pickup'
-        ? 'Quando você tiver pedidos para retirada, eles aparecerão aqui.'
+        ? 'store_empty_pickup_orders_description'
         : selectedFilter == 'lokally_shipping'
-            ? 'Quando você tiver pedidos com Lokally Envios, eles aparecerão aqui.'
-            : 'Quando você comprar produtos no Marketplace, seus pedidos aparecerão aqui.';
+            ? 'store_empty_lokally_shipping_orders_description'
+            : 'store_empty_marketplace_orders_description';
 
     return StoreCustomerSurface(
       child: Column(
         children: [
-          Icon(
-            Icons.shopping_bag_outlined,
-            color: primaryColor,
-            size: 42,
-          ),
+          Icon(Icons.shopping_bag_outlined, color: primaryColor, size: 42),
           const SizedBox(height: 10),
           Text(
-            'Nenhum pedido encontrado',
-            style: textBold.copyWith(
-              color: Colors.black87,
-              fontSize: 15.5,
-            ),
+            'store_no_order_found'.tr,
+            style: textBold.copyWith(color: Colors.black87, fontSize: 15.5),
           ),
           const SizedBox(height: 5),
           Text(
-            message,
+            message.tr,
             textAlign: TextAlign.center,
             style: textRegular.copyWith(
               color: Colors.grey.shade600,
@@ -3583,22 +5270,157 @@ class StoreCustomerOrdersEmpty extends StatelessWidget {
 class StoreCustomerSurface extends StatelessWidget {
   final Widget child;
 
-  const StoreCustomerSurface({
-    super.key,
-    required this.child,
-  });
+  const StoreCustomerSurface({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.fromLTRB(4, 16, 4, 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.grey.shade200),
+        color: Colors.transparent,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
       ),
       child: child,
+    );
+  }
+}
+
+class StoreCustomerMercadoPagoWebViewScreen extends StatefulWidget {
+  final String paymentUrl;
+  final Color primaryColor;
+
+  const StoreCustomerMercadoPagoWebViewScreen({
+    super.key,
+    required this.paymentUrl,
+    required this.primaryColor,
+  });
+
+  @override
+  State<StoreCustomerMercadoPagoWebViewScreen> createState() =>
+      _StoreCustomerMercadoPagoWebViewScreenState();
+}
+
+class _StoreCustomerMercadoPagoWebViewScreenState
+    extends State<StoreCustomerMercadoPagoWebViewScreen> {
+  bool isLoading = true;
+
+  bool isFinalMercadoPagoUrl(Uri? uri) {
+    if (uri == null) {
+      return false;
+    }
+
+    final String value = uri.toString().toLowerCase();
+
+    return value.contains('collection_status=approved') ||
+        value.contains('status=approved') ||
+        value.contains('/success') ||
+        value.contains('payment_status=approved') ||
+        value.contains('approved');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: widget.primaryColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              color: widget.primaryColor,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Get.back(result: false),
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Mercado Pago',
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 19,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Get.back(result: true),
+                    child: Text(
+                      'store_finish'.tr,
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  InAppWebView(
+                    initialUrlRequest: URLRequest(
+                      url: WebUri(widget.paymentUrl),
+                    ),
+                    onLoadStart: (controller, uri) {
+                      if (!mounted) {
+                        return;
+                      }
+
+                      setState(() {
+                        isLoading = true;
+                      });
+
+                      if (isFinalMercadoPagoUrl(uri)) {
+                        Get.back(result: true);
+                      }
+                    },
+                    onLoadStop: (controller, uri) {
+                      if (!mounted) {
+                        return;
+                      }
+
+                      setState(() {
+                        isLoading = false;
+                      });
+
+                      if (isFinalMercadoPagoUrl(uri)) {
+                        Get.back(result: true);
+                      }
+                    },
+                  ),
+                  if (isLoading)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LinearProgressIndicator(
+                        color: widget.primaryColor,
+                        backgroundColor: Colors.white,
+                        minHeight: 3,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3623,6 +5445,7 @@ class StoreCustomerOrderItem {
   final String sellerPhone;
   final String sellerName;
   final String sellerLogoUrl;
+  final String customerEmail;
   final String createdAt;
   final bool containsServiceItems;
   final bool containsPhysicalItems;
@@ -3674,6 +5497,7 @@ class StoreCustomerOrderItem {
     required this.sellerPhone,
     required this.sellerName,
     required this.sellerLogoUrl,
+    required this.customerEmail,
     required this.createdAt,
     required this.containsServiceItems,
     required this.containsPhysicalItems,
@@ -3706,7 +5530,53 @@ class StoreCustomerOrderItem {
     required this.items,
   });
 
-  bool get isPaymentApproved => paymentStatus == 'approved';
+  bool get isPaymentApproved =>
+      paymentStatus == 'approved' || paymentStatus == 'paid';
+
+  bool get isServiceRequestOrder {
+    return deliveryType == 'service' ||
+        paymentMethod == 'chat' ||
+        orderStatus == 'service_requested' ||
+        orderStatus == 'service_chat_open' ||
+        orderStatus == 'service_completed' ||
+        containsServiceItems ||
+        isServiceOrder;
+  }
+
+  bool get canOpenServiceChat {
+    if (!isServiceRequestOrder || isReleaseClosed || isDisputeFinalized) {
+      return false;
+    }
+
+    if (orderStatus == 'service_requested' ||
+        orderStatus == 'service_chat_open') {
+      return true;
+    }
+
+    return serviceChatAvailable && isPaymentApproved;
+  }
+
+  String get serviceHeaderStatusLabel {
+    if (!isServiceRequestOrder) {
+      return paymentStatusLabel;
+    }
+
+    if (orderStatus == 'service_completed') {
+      return 'Serviço concluído';
+    }
+
+    if (orderStatus == 'service_chat_open') {
+      return 'Serviço em andamento';
+    }
+
+    if (orderStatus == 'service_requested') {
+      return 'Solicitação enviada';
+    }
+
+    return orderStatusLabel.isNotEmpty ? orderStatusLabel : paymentStatusLabel;
+  }
+
+  bool get normalizedIsServiceOrder => isServiceRequestOrder;
 
   bool get isPayoutAuthorized {
     return releaseStatus == 'authorized' ||
@@ -3738,7 +5608,7 @@ class StoreCustomerOrderItem {
   }
 
   bool get shouldShowServiceChatBlock {
-    return isServiceOrder && !isReleaseClosed;
+    return isServiceRequestOrder && !isReleaseClosed;
   }
 
   bool get shouldShowReleaseBlock {
@@ -3758,47 +5628,107 @@ class StoreCustomerOrderItem {
         ? Map<String, dynamic>.from(map['seller'])
         : <String, dynamic>{};
 
+    final Map<String, dynamic> customer = map['customer'] is Map
+        ? Map<String, dynamic>.from(map['customer'])
+        : <String, dynamic>{};
+
     final dynamic itemsValue = map['items'];
     final List<dynamic> rawItems =
         itemsValue is List ? itemsValue : <dynamic>[];
 
+    final List<StoreCustomerOrderProductItem> parsedItems = rawItems
+        .whereType<Map>()
+        .map(
+          (item) => StoreCustomerOrderProductItem.fromMap(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList();
+
+    final String parsedDeliveryType = '${map['delivery_type'] ?? ''}';
+    final String parsedPaymentMethod = '${map['payment_method'] ?? ''}';
+    final String parsedPaymentStatus = '${map['payment_status'] ?? ''}';
+    final String parsedOrderStatus = '${map['order_status'] ?? ''}';
+    final bool parsedContainsServiceItems =
+        StoreCustomerOrderCurrency.parseBool(map['contains_service_items']) ||
+            parsedItems.any((item) => item.isService);
+    final bool parsedContainsPhysicalItems =
+        StoreCustomerOrderCurrency.parseBool(map['contains_physical_items']) ||
+            parsedItems.any((item) => !item.isService);
+    final bool parsedIsServiceOrder =
+        StoreCustomerOrderCurrency.parseBool(map['is_service_order']) ||
+            parsedDeliveryType == 'service' ||
+            parsedPaymentMethod == 'chat' ||
+            parsedOrderStatus == 'service_requested' ||
+            parsedOrderStatus == 'service_chat_open' ||
+            parsedOrderStatus == 'service_completed' ||
+            (parsedItems.isNotEmpty &&
+                parsedItems.every((item) => item.isService));
+    final String parsedServiceDeliveryLabel =
+        '${map['service_delivery_label'] ?? ''}'.trim().isEmpty
+            ? 'Serviço'
+            : '${map['service_delivery_label'] ?? ''}';
+    final String parsedDeliveryTypeLabel = parsedIsServiceOrder
+        ? parsedServiceDeliveryLabel
+        : '${map['delivery_type_label'] ?? ''}';
+    final String parsedOrderStatusLabel = parsedIsServiceOrder &&
+            parsedOrderStatus == 'service_requested'
+        ? 'Solicitação enviada'
+        : parsedIsServiceOrder && parsedOrderStatus == 'service_chat_open'
+            ? 'Serviço em andamento'
+            : parsedIsServiceOrder && parsedOrderStatus == 'service_completed'
+                ? 'Serviço concluído'
+                : '${map['order_status_label'] ?? ''}';
+    final String parsedPaymentStatusLabel =
+        parsedIsServiceOrder && parsedPaymentMethod == 'chat'
+            ? (parsedOrderStatus == 'service_chat_open'
+                ? 'Serviço em andamento'
+                : parsedOrderStatus == 'service_completed'
+                    ? 'Serviço concluído'
+                    : 'Solicitação enviada')
+            : '${map['payment_status_label'] ?? ''}';
+    final bool parsedServiceChatAvailable =
+        StoreCustomerOrderCurrency.parseBool(map['service_chat_available']) ||
+            parsedOrderStatus == 'service_requested' ||
+            parsedOrderStatus == 'service_chat_open';
+
     return StoreCustomerOrderItem(
       id: '${map['id'] ?? ''}',
       orderNumber: '${map['order_number'] ?? ''}',
-      deliveryType: '${map['delivery_type'] ?? ''}',
-      deliveryTypeLabel: '${map['delivery_type_label'] ?? ''}',
-      paymentMethod: '${map['payment_method'] ?? ''}',
+      deliveryType: parsedDeliveryType,
+      deliveryTypeLabel: parsedDeliveryTypeLabel,
+      paymentMethod: parsedPaymentMethod,
       paymentMethodLabel: '${map['payment_method_label'] ?? ''}',
-      paymentStatus: '${map['payment_status'] ?? ''}',
-      paymentStatusLabel: '${map['payment_status_label'] ?? ''}',
-      orderStatus: '${map['order_status'] ?? ''}',
-      orderStatusLabel: '${map['order_status_label'] ?? ''}',
+      paymentStatus: parsedPaymentStatus,
+      paymentStatusLabel: parsedPaymentStatusLabel,
+      orderStatus: parsedOrderStatus,
+      orderStatusLabel: parsedOrderStatusLabel,
       subtotal: StoreCustomerOrderCurrency.parseDouble(map['subtotal']),
-      shippingAmount:
-          StoreCustomerOrderCurrency.parseDouble(map['shipping_amount']),
-      shippingDiscount:
-          StoreCustomerOrderCurrency.parseDouble(map['shipping_discount']),
+      shippingAmount: StoreCustomerOrderCurrency.parseDouble(
+        map['shipping_amount'],
+      ),
+      shippingDiscount: StoreCustomerOrderCurrency.parseDouble(
+        map['shipping_discount'],
+      ),
       total: StoreCustomerOrderCurrency.parseDouble(map['total']),
       deliveryAddress: '${delivery['address'] ?? ''}',
       pickupAddress: '${pickup['address'] ?? ''}',
       sellerPhone: '${pickup['seller_phone'] ?? pickup['phone'] ?? ''}',
       sellerName: '${seller['name'] ?? ''}',
       sellerLogoUrl: '${seller['logo_url'] ?? ''}',
+      customerEmail:
+          '${map['customer_email'] ?? customer['email'] ?? ''}'.trim(),
       createdAt: '${map['created_at'] ?? ''}',
-      containsServiceItems:
-          StoreCustomerOrderCurrency.parseBool(map['contains_service_items']),
-      containsPhysicalItems:
-          StoreCustomerOrderCurrency.parseBool(map['contains_physical_items']),
-      isServiceOrder:
-          StoreCustomerOrderCurrency.parseBool(map['is_service_order']),
+      containsServiceItems: parsedContainsServiceItems,
+      containsPhysicalItems: parsedContainsPhysicalItems,
+      isServiceOrder: parsedIsServiceOrder,
       isMixedOrder: StoreCustomerOrderCurrency.parseBool(map['is_mixed_order']),
       serviceDeliveryType: '${map['service_delivery_type'] ?? ''}',
-      serviceDeliveryLabel: '${map['service_delivery_label'] ?? 'Serviço'}',
+      serviceDeliveryLabel: parsedServiceDeliveryLabel,
       serviceDeliveryDescription:
           '${map['service_delivery_description'] ?? ''}',
       serviceActionLabel: '${map['service_action_label'] ?? ''}',
-      serviceChatAvailable:
-          StoreCustomerOrderCurrency.parseBool(map['service_chat_available']),
+      serviceChatAvailable: parsedServiceChatAvailable,
       lokallyGuaranteeMessage: '${map['lokally_guarantee_message'] ?? ''}',
       releaseStatus: '${map['release_status'] ?? ''}',
       releaseStatusLabel: '${map['release_status_label'] ?? ''}',
@@ -3816,20 +5746,16 @@ class StoreCustomerOrderItem {
           '${map['dispute_resolution_target_label'] ?? ''}',
       disputeResolutionMessage: '${map['dispute_resolution_message'] ?? ''}',
       disputeResolvedAt: '${map['dispute_resolved_at'] ?? ''}',
-      isDisputeResolved:
-          StoreCustomerOrderCurrency.parseBool(map['is_dispute_resolved']),
-      canAuthorizePayout:
-          StoreCustomerOrderCurrency.parseBool(map['can_authorize_payout']),
-      canOpenDispute:
-          StoreCustomerOrderCurrency.parseBool(map['can_open_dispute']),
-      items: rawItems
-          .whereType<Map>()
-          .map(
-            (item) => StoreCustomerOrderProductItem.fromMap(
-              Map<String, dynamic>.from(item),
-            ),
-          )
-          .toList(),
+      isDisputeResolved: StoreCustomerOrderCurrency.parseBool(
+        map['is_dispute_resolved'],
+      ),
+      canAuthorizePayout: StoreCustomerOrderCurrency.parseBool(
+        map['can_authorize_payout'],
+      ),
+      canOpenDispute: StoreCustomerOrderCurrency.parseBool(
+        map['can_open_dispute'],
+      ),
+      items: parsedItems,
     );
   }
 }
@@ -3891,12 +5817,14 @@ class StoreCustomerServiceChatThread {
   final String storeOrderId;
   final String status;
   final bool safetyNoticeAccepted;
+  final StoreCustomerServiceProgressData serviceProgress;
 
   StoreCustomerServiceChatThread({
     required this.id,
     required this.storeOrderId,
     required this.status,
     required this.safetyNoticeAccepted,
+    required this.serviceProgress,
   });
 
   factory StoreCustomerServiceChatThread.fromMap(Map<String, dynamic> map) {
@@ -3904,8 +5832,14 @@ class StoreCustomerServiceChatThread {
       id: '${map['id'] ?? ''}',
       storeOrderId: '${map['store_order_id'] ?? ''}',
       status: '${map['status'] ?? ''}',
-      safetyNoticeAccepted:
-          StoreCustomerOrderCurrency.parseBool(map['safety_notice_accepted']),
+      safetyNoticeAccepted: StoreCustomerOrderCurrency.parseBool(
+        map['safety_notice_accepted'],
+      ),
+      serviceProgress: StoreCustomerServiceProgressData.fromMap(
+        map['service_progress'] is Map
+            ? Map<String, dynamic>.from(map['service_progress'])
+            : <String, dynamic>{},
+      ),
     );
   }
 }
@@ -3927,7 +5861,7 @@ class StoreCustomerServiceChatSafetyNotice {
     final dynamic detailsValue = map['details'];
 
     return StoreCustomerServiceChatSafetyNotice(
-      title: '${map['title'] ?? 'Garantia Lokally'}',
+      title: '${map['title'] ?? 'store_lokally_guarantee'}',
       message: '${map['message'] ?? ''}',
       details: detailsValue is List
           ? detailsValue.map((item) => item.toString()).toList()
@@ -3937,13 +5871,12 @@ class StoreCustomerServiceChatSafetyNotice {
 
   factory StoreCustomerServiceChatSafetyNotice.defaultNotice() {
     return StoreCustomerServiceChatSafetyNotice(
-      title: 'Garantia Lokally',
-      message:
-          'Você tem a Garantia Lokally. Não troque informações de contato nem confirme recebimento antes de receber seu produto ou serviço.',
+      title: 'store_lokally_guarantee',
+      message: 'store_lokally_guarantee_notice_message',
       details: const [
-        'Mantenha as conversas e arquivos dentro do Chat Lokally sempre que possível.',
-        'O pagamento fica protegido até a confirmação do recebimento do produto ou serviço.',
-        'Não libere o recebimento se o serviço não foi entregue conforme combinado.',
+        'store_lokally_guarantee_notice_detail_chat',
+        'store_lokally_guarantee_notice_detail_payment',
+        'store_lokally_guarantee_notice_detail_release',
       ],
     );
   }
@@ -3996,9 +5929,7 @@ class StoreServiceChatFilePreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: Container(
           padding: const EdgeInsets.all(9),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(14),
-          ),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(14)),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -4013,7 +5944,7 @@ class StoreServiceChatFilePreview extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      fileName.isEmpty ? 'Arquivo anexado' : fileName,
+                      fileName.isEmpty ? 'store_attached_file'.tr : fileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: textBold.copyWith(
@@ -4024,8 +5955,8 @@ class StoreServiceChatFilePreview extends StatelessWidget {
                     const SizedBox(height: 2),
                     Text(
                       fileUrl.trim().isEmpty
-                          ? 'Arquivo sem link'
-                          : 'Baixar / abrir',
+                          ? 'store_file_without_link'.tr
+                          : 'store_download_or_open'.tr,
                       style: textRegular.copyWith(
                         color: helperColor,
                         fontSize: 10.2,
@@ -4111,6 +6042,10 @@ class StoreChatFileHelper {
       case 'eps':
       case 'cdr':
         return Icons.design_services_outlined;
+      case 'mp3':
+        return Icons.audiotrack_outlined;
+      case 'mp4':
+        return Icons.video_file_outlined;
       default:
         return Icons.insert_drive_file_outlined;
     }
@@ -4121,6 +6056,8 @@ class StoreCustomerServiceChatMessage {
   final String id;
   final String senderType;
   final String messageType;
+  final String meetingId;
+  final StoreCustomerServiceMeetingData? meeting;
   final String message;
   final String fileUrl;
   final String fileOriginalName;
@@ -4132,6 +6069,8 @@ class StoreCustomerServiceChatMessage {
     required this.id,
     required this.senderType,
     required this.messageType,
+    required this.meetingId,
+    required this.meeting,
     required this.message,
     required this.fileUrl,
     required this.fileOriginalName,
@@ -4142,25 +6081,116 @@ class StoreCustomerServiceChatMessage {
 
   bool get hasFile => fileUrl.isNotEmpty || fileOriginalName.isNotEmpty;
 
+  bool get isLokallyMeeting {
+    return messageType == 'lokally_meeting_invite' ||
+        messageType == 'lokally_meeting_accepted' ||
+        messageType == 'lokally_meeting_declined';
+  }
+
   String get fileDisplayName {
     return StoreChatFileHelper.displayName(
       originalName: fileOriginalName,
       fileUrl: fileUrl,
-      fallback: 'Arquivo anexado',
+      fallback: 'store_attached_file'.tr,
     );
   }
 
   factory StoreCustomerServiceChatMessage.fromMap(Map<String, dynamic> map) {
+    Map<String, dynamic> meetingMap = <String, dynamic>{};
+
+    final dynamic meetingValue = map['meeting'];
+    if (meetingValue is Map) {
+      meetingMap = Map<String, dynamic>.from(meetingValue);
+    } else {
+      final dynamic metaValue = map['meta_data'];
+      if (metaValue is Map) {
+        meetingMap = Map<String, dynamic>.from(metaValue);
+      }
+    }
+
+    final StoreCustomerServiceMeetingData? parsedMeeting = meetingMap.isNotEmpty
+        ? StoreCustomerServiceMeetingData.fromMap(meetingMap)
+        : null;
+
     return StoreCustomerServiceChatMessage(
       id: '${map['id'] ?? ''}',
       senderType: '${map['sender_type'] ?? ''}',
       messageType: '${map['message_type'] ?? ''}',
+      meetingId: '${map['meeting_id'] ?? parsedMeeting?.id ?? ''}',
+      meeting: parsedMeeting,
       message: '${map['message'] ?? ''}',
       fileUrl: '${map['file_url'] ?? ''}',
       fileOriginalName: '${map['file_original_name'] ?? ''}',
       fileMimeType: '${map['file_mime_type'] ?? ''}',
       fileSize: int.tryParse('${map['file_size'] ?? ''}'),
       createdAt: '${map['created_at'] ?? ''}',
+    );
+  }
+}
+
+class StoreCustomerServiceMeetingData {
+  final String id;
+  final String status;
+  final String title;
+  final String note;
+  final String scheduledAt;
+  final String timezone;
+  final String declineReason;
+  final String roomKey;
+  final String acceptedAt;
+  final String declinedAt;
+
+  const StoreCustomerServiceMeetingData({
+    required this.id,
+    required this.status,
+    required this.title,
+    required this.note,
+    required this.scheduledAt,
+    required this.timezone,
+    required this.declineReason,
+    required this.roomKey,
+    required this.acceptedAt,
+    required this.declinedAt,
+  });
+
+  String get scheduledAtLabel {
+    return formatDateTime(scheduledAt);
+  }
+
+  static String twoDigits(int value) {
+    return value.toString().padLeft(2, '0');
+  }
+
+  static String formatDateTime(String value) {
+    final String normalized = value.trim();
+
+    if (normalized.isEmpty) {
+      return '';
+    }
+
+    try {
+      final DateTime dateTime = DateTime.parse(
+        normalized.replaceFirst(' ', 'T'),
+      );
+
+      return '${twoDigits(dateTime.day)}/${twoDigits(dateTime.month)}/${dateTime.year} às ${twoDigits(dateTime.hour)}:${twoDigits(dateTime.minute)}';
+    } catch (_) {
+      return normalized;
+    }
+  }
+
+  factory StoreCustomerServiceMeetingData.fromMap(Map<String, dynamic> map) {
+    return StoreCustomerServiceMeetingData(
+      id: '${map['id'] ?? ''}',
+      status: '${map['status'] ?? ''}',
+      title: '${map['title'] ?? 'Lokally Meeting'}',
+      note: '${map['note'] ?? ''}',
+      scheduledAt: '${map['scheduled_at'] ?? ''}',
+      timezone: '${map['timezone'] ?? 'America/Sao_Paulo'}',
+      declineReason: '${map['decline_reason'] ?? ''}',
+      roomKey: '${map['room_key'] ?? ''}',
+      acceptedAt: '${map['accepted_at'] ?? ''}',
+      declinedAt: '${map['declined_at'] ?? ''}',
     );
   }
 }
@@ -4195,7 +6225,7 @@ class StoreCustomerOrderDispute {
       id: '${map['id'] ?? ''}',
       storeOrderId: '${map['store_order_id'] ?? ''}',
       status: '${map['status'] ?? ''}',
-      statusLabel: '${map['status_label'] ?? 'Disputa aberta'}',
+      statusLabel: '${map['status_label'] ?? 'store_dispute_opened'}',
       openedBy: '${map['opened_by'] ?? ''}',
       openedAt: '${map['opened_at'] ?? ''}',
       deadlineAt: '${map['deadline_at'] ?? ''}',
@@ -4237,7 +6267,7 @@ class StoreCustomerOrderDisputeMessage {
     return StoreChatFileHelper.displayName(
       originalName: fileOriginalName,
       fileUrl: fileUrl,
-      fallback: 'Arquivo da disputa',
+      fallback: 'store_dispute_file'.tr,
     );
   }
 

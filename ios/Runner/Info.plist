@@ -48,7 +48,7 @@
 <string>Main</string>
 
 <key>NSCameraUsageDescription</key>
-<string>A Lokally precisa acessar a câmera para tirar fotos de perfil e documentos quando solicitado.</string>
+<string>A Lokally precisa acessar a câmera para fotos de perfil, documentos e videochamadas pelo Lokally Meeting quando solicitado.</string>
 
 <key>NSPhotoLibraryUsageDescription</key>
 <string>A Lokally precisa acessar sua galeria para selecionar fotos de perfil, comprovantes ou documentos quando solicitado.</string>
@@ -63,7 +63,7 @@
 <string>A Lokally pode usar sua localização durante uma viagem ativa para atualizar o trajeto e melhorar o acompanhamento da corrida.</string>
 
 <key>NSMicrophoneUsageDescription</key>
-<string>A Lokally precisa acessar o microfone apenas quando houver recurso de áudio ou gravação solicitado pelo usuário.</string>
+<string>A Lokally precisa acessar o microfone para áudio, gravação solicitada pelo usuário e videochamadas pelo Lokally Meeting.</string>
 
 <key>NSSpeechRecognitionUsageDescription</key>
 <string>A Lokally precisa desta permissão apenas quando houver recurso de reconhecimento de voz solicitado pelo usuário.</string>

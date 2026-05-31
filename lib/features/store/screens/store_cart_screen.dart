@@ -1,5 +1,8 @@
+﻿import 'dart:async';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.dart';
@@ -15,6 +18,7 @@ import 'package:url_launcher/url_launcher.dart';
 enum StoreCartDeliveryMode {
   pickup,
   lokallyShipping,
+  nationalShipping,
 }
 
 enum StoreCartPaymentMode {
@@ -59,6 +63,175 @@ class StoreShippingPreview {
       shippingTotal: StoreCartCurrency.parseDouble(map['shipping_total']),
       total: StoreCartCurrency.parseDouble(map['total']),
     );
+  }
+}
+
+class StoreNationalShippingOption {
+  final String storeSellerId;
+  final String serviceCode;
+  final String serviceName;
+  final String label;
+  final String carrier;
+  final double price;
+  final int deliveryDays;
+  final Map<String, dynamic> rawData;
+
+  StoreNationalShippingOption({
+    required this.storeSellerId,
+    required this.serviceCode,
+    required this.serviceName,
+    required this.label,
+    required this.carrier,
+    required this.price,
+    required this.deliveryDays,
+    required this.rawData,
+  });
+
+  String get displayName {
+    if (label.trim().isNotEmpty) {
+      return label.trim();
+    }
+
+    if (serviceName.trim().isNotEmpty) {
+      return serviceName.trim();
+    }
+
+    if (carrier.trim().isNotEmpty) {
+      return carrier.trim();
+    }
+
+    return 'store_shipping_option'.tr;
+  }
+
+  String get deliveryDescription {
+    final String priceText = StoreCartCurrency.format(price);
+
+    if (deliveryDays > 0) {
+      return 'store_shipping_deadline_days'.trParams({
+        'price': priceText,
+        'days': '$deliveryDays',
+      });
+    }
+
+    return 'store_shipping_deadline_by_carrier'.trParams({'price': priceText});
+  }
+
+  factory StoreNationalShippingOption.fromMap(
+    Map<String, dynamic> map, {
+    String fallbackStoreSellerId = '',
+  }) {
+    final String serviceCode =
+        '${map['service_code'] ?? map['serviceCode'] ?? map['shipping_service_code'] ?? map['ShippingServiceCode'] ?? map['code'] ?? map['id'] ?? ''}'
+            .trim();
+
+    final String serviceName =
+        '${map['service_name'] ?? map['serviceName'] ?? map['ShippingServiceDescription'] ?? map['name'] ?? ''}'
+            .trim();
+
+    final String label =
+        '${map['label'] ?? map['title'] ?? map['display_name'] ?? map['displayName'] ?? ''}'
+            .trim();
+
+    final String carrier =
+        '${map['carrier'] ?? map['carrier_name'] ?? map['company'] ?? map['transportadora'] ?? ''}'
+            .trim();
+
+    final dynamic deliveryValue = map['delivery_days'] ??
+        map['deliveryDays'] ??
+        map['DeliveryTime'] ??
+        map['deadline'] ??
+        map['prazo'];
+
+    return StoreNationalShippingOption(
+      storeSellerId:
+          '${map['store_seller_id'] ?? map['seller_id'] ?? fallbackStoreSellerId}'
+              .trim(),
+      serviceCode: serviceCode,
+      serviceName: serviceName,
+      label: label,
+      carrier: carrier,
+      price: StoreCartCurrency.parseDouble(
+        map['price'] ??
+            map['amount'] ??
+            map['shipping_amount'] ??
+            map['ShippingPrice'] ??
+            map['value'],
+      ),
+      deliveryDays: int.tryParse('$deliveryValue') ?? 0,
+      rawData: map,
+    );
+  }
+
+  static List<StoreNationalShippingOption> listFromResponse(
+    Map<String, dynamic> data,
+  ) {
+    final List<StoreNationalShippingOption> options =
+        <StoreNationalShippingOption>[];
+
+    void readOptions(dynamic value, {String fallbackStoreSellerId = ''}) {
+      if (value is! List) {
+        return;
+      }
+
+      for (final dynamic item in value) {
+        if (item is! Map) {
+          continue;
+        }
+
+        final Map<String, dynamic> optionMap = Map<String, dynamic>.from(item);
+        final StoreNationalShippingOption option =
+            StoreNationalShippingOption.fromMap(
+          optionMap,
+          fallbackStoreSellerId: fallbackStoreSellerId,
+        );
+
+        if (option.serviceCode.isNotEmpty && option.price > 0) {
+          options.add(option);
+        }
+      }
+    }
+
+    readOptions(data['options']);
+    readOptions(data['shipping_options']);
+    readOptions(data['national_shipping_options']);
+    readOptions(data['available_options']);
+    readOptions(data['services']);
+    readOptions(data['quotes']);
+
+    final dynamic storesValue = data['stores'] ?? data['store_quotes'];
+    if (storesValue is List) {
+      for (final dynamic storeItem in storesValue) {
+        if (storeItem is! Map) {
+          continue;
+        }
+
+        final Map<String, dynamic> storeMap =
+            Map<String, dynamic>.from(storeItem);
+        final String storeSellerId =
+            '${storeMap['store_seller_id'] ?? storeMap['seller_id'] ?? storeMap['id'] ?? ''}';
+
+        readOptions(
+          storeMap['options'] ??
+              storeMap['shipping_options'] ??
+              storeMap['national_shipping_options'] ??
+              storeMap['services'],
+          fallbackStoreSellerId: storeSellerId,
+        );
+      }
+    }
+
+    final Set<String> seen = <String>{};
+    return options.where((option) {
+      final String key =
+          '${option.storeSellerId}:${option.serviceCode}:${option.price}';
+
+      if (seen.contains(key)) {
+        return false;
+      }
+
+      seen.add(key);
+      return true;
+    }).toList();
   }
 }
 
@@ -175,12 +348,31 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   StoreCartPaymentMode paymentMode = StoreCartPaymentMode.appBalance;
   Address? selectedDeliveryAddress;
 
+  final TextEditingController nationalCepController = TextEditingController();
+  final TextEditingController nationalRecipientNameController =
+      TextEditingController();
+  final TextEditingController nationalRecipientPhoneController =
+      TextEditingController();
+  final TextEditingController nationalStreetController =
+      TextEditingController();
+  final TextEditingController nationalNumberController =
+      TextEditingController();
+  final TextEditingController nationalComplementController =
+      TextEditingController();
+  final TextEditingController nationalDistrictController =
+      TextEditingController();
+  final TextEditingController nationalCityController = TextEditingController();
+  final TextEditingController nationalStateController = TextEditingController();
   final List<StoreCartItemData> cartItems = StoreCartSession.items;
 
   bool isShippingPreviewLoading = false;
   String shippingPreviewError = '';
   StoreShippingPreview shippingPreview = StoreShippingPreview.empty();
+  List<StoreNationalShippingOption> nationalShippingOptions =
+      <StoreNationalShippingOption>[];
+  StoreNationalShippingOption? selectedNationalShippingOption;
   int shippingPreviewRequestId = 0;
+  Timer? nationalCepTypingTimer;
 
   double get appBalance {
     if (!Get.isRegistered<ProfileController>()) {
@@ -213,9 +405,34 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       );
     }
 
+    nationalCepController.addListener(handleNationalCepTyping);
+
     if (isCustomerLoggedIn && Get.isRegistered<ProfileController>()) {
       Get.find<ProfileController>().getProfileInfo();
+      Future<void>.delayed(const Duration(milliseconds: 450), () {
+        prefillNationalRecipientFromProfile();
+      });
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ensureDeliveryModeIsAvailable();
+    });
+  }
+
+  @override
+  void dispose() {
+    nationalCepTypingTimer?.cancel();
+    nationalCepController.removeListener(handleNationalCepTyping);
+    nationalCepController.dispose();
+    nationalRecipientNameController.dispose();
+    nationalRecipientPhoneController.dispose();
+    nationalStreetController.dispose();
+    nationalNumberController.dispose();
+    nationalComplementController.dispose();
+    nationalDistrictController.dispose();
+    nationalCityController.dispose();
+    nationalStateController.dispose();
+    super.dispose();
   }
 
   List<StoreCartStoreGroup> get storeGroups {
@@ -257,6 +474,49 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
     return cartItems.isNotEmpty && !hasPhysicalItems;
   }
 
+  bool get canUsePickup {
+    return physicalCartItems.isNotEmpty &&
+        physicalCartItems.every((item) => item.product.allowPickup);
+  }
+
+  bool get canUseLokallyShipping {
+    return physicalCartItems.isNotEmpty &&
+        physicalCartItems.every((item) => item.product.allowLokallyShipping);
+  }
+
+  bool get canUseNationalShipping {
+    return physicalCartItems.isNotEmpty &&
+        physicalCartItems.every((item) => item.product.allowNationalShipping);
+  }
+
+  bool get isLokallyShippingMode {
+    return deliveryMode == StoreCartDeliveryMode.lokallyShipping;
+  }
+
+  bool get isNationalShippingMode {
+    return deliveryMode == StoreCartDeliveryMode.nationalShipping;
+  }
+
+  String get primaryStoreCityLabel {
+    for (final StoreCartItemData item in physicalCartItems) {
+      final String city = item.product.storeCity.trim();
+
+      if (city.isNotEmpty) {
+        return city;
+      }
+    }
+
+    return 'store_city_of_store'.tr;
+  }
+
+  String get nationalRecipientPostalCode {
+    return onlyDigits(nationalCepController.text);
+  }
+
+  double get nationalShippingTotal {
+    return selectedNationalShippingOption?.price ?? 0;
+  }
+
   double get itemsSubtotal {
     return cartItems.fold<double>(
       0,
@@ -267,6 +527,10 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   double get shippingBaseValue {
     if (!hasPhysicalItems || deliveryMode == StoreCartDeliveryMode.pickup) {
       return 0;
+    }
+
+    if (deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+      return nationalShippingTotal;
     }
 
     if (shippingPreview.hasValue) {
@@ -289,6 +553,10 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       return 0;
     }
 
+    if (deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+      return 0;
+    }
+
     if (shippingPreview.hasValue) {
       return shippingPreview.shippingDiscount;
     }
@@ -299,6 +567,10 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   double get shippingTotal {
     if (!hasPhysicalItems || deliveryMode == StoreCartDeliveryMode.pickup) {
       return 0;
+    }
+
+    if (deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+      return nationalShippingTotal;
     }
 
     if (shippingPreview.hasValue) {
@@ -327,10 +599,14 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   Map<String, dynamic> buildShippingPreviewPayload() {
-    return {
-      'delivery_type': deliveryMode == StoreCartDeliveryMode.pickup
-          ? 'pickup'
-          : 'lokally_shipping',
+    final String deliveryType = deliveryMode == StoreCartDeliveryMode.pickup
+        ? 'pickup'
+        : deliveryMode == StoreCartDeliveryMode.nationalShipping
+            ? 'national_shipping'
+            : 'lokally_shipping';
+
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'delivery_type': deliveryType,
       'items': physicalCartItems.map((item) {
         return {
           'product_id': item.product.id,
@@ -338,6 +614,14 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
         };
       }).toList(),
     };
+
+    if (deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+      payload['recipient_postal_code'] = nationalRecipientPostalCode;
+      payload['destination_postal_code'] = nationalRecipientPostalCode;
+      payload['cep'] = nationalRecipientPostalCode;
+    }
+
+    return payload;
   }
 
   void clearShippingPreview() {
@@ -347,12 +631,14 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       isShippingPreviewLoading = false;
       shippingPreviewError = '';
       shippingPreview = StoreShippingPreview.empty();
+      nationalShippingOptions = <StoreNationalShippingOption>[];
+      selectedNationalShippingOption = null;
     });
   }
 
   Future<void> loadShippingPreview() async {
     if (!hasPhysicalItems ||
-        deliveryMode != StoreCartDeliveryMode.lokallyShipping ||
+        deliveryMode == StoreCartDeliveryMode.pickup ||
         cartItems.isEmpty) {
       clearShippingPreview();
       return;
@@ -363,11 +649,28 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       return;
     }
 
+    if (deliveryMode == StoreCartDeliveryMode.nationalShipping &&
+        nationalRecipientPostalCode.length != 8) {
+      shippingPreviewRequestId++;
+
+      setState(() {
+        isShippingPreviewLoading = false;
+        shippingPreviewError =
+            'store_enter_valid_zipcode_lokally_shipping_br'.tr;
+        shippingPreview = StoreShippingPreview.empty();
+        nationalShippingOptions = <StoreNationalShippingOption>[];
+        selectedNationalShippingOption = null;
+      });
+      return;
+    }
+
     if (!Get.isRegistered<ApiClient>()) {
       setState(() {
         isShippingPreviewLoading = false;
-        shippingPreviewError = 'Não foi possível conectar com o servidor.';
+        shippingPreviewError = 'store_server_connection_error'.tr;
         shippingPreview = StoreShippingPreview.empty();
+        nationalShippingOptions = <StoreNationalShippingOption>[];
+        selectedNationalShippingOption = null;
       });
       return;
     }
@@ -401,13 +704,62 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
 
       if (!success) {
         final String message = responseBody is Map
-            ? '${responseBody['message'] ?? response.statusText ?? 'Não foi possível calcular o frete.'}'
-            : response.statusText ?? 'Não foi possível calcular o frete.';
+            ? '${responseBody['message'] ?? response.statusText ?? 'store_shipping_calculate_error'.tr}'
+            : response.statusText ?? 'store_shipping_calculate_error'.tr;
 
         setState(() {
           isShippingPreviewLoading = false;
           shippingPreviewError = message;
           shippingPreview = StoreShippingPreview.empty();
+          nationalShippingOptions = <StoreNationalShippingOption>[];
+          selectedNationalShippingOption = null;
+        });
+        return;
+      }
+
+      final Map<String, dynamic> data = Map<String, dynamic>.from(dataValue);
+
+      if (deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+        final List<StoreNationalShippingOption> options =
+            StoreNationalShippingOption.listFromResponse(data);
+
+        if (options.isEmpty) {
+          setState(() {
+            isShippingPreviewLoading = false;
+            shippingPreviewError =
+                'store_no_national_shipping_option_for_zipcode'.tr;
+            shippingPreview = StoreShippingPreview.empty();
+            nationalShippingOptions = <StoreNationalShippingOption>[];
+            selectedNationalShippingOption = null;
+          });
+          return;
+        }
+
+        final String previousServiceCode =
+            selectedNationalShippingOption?.serviceCode ?? '';
+
+        StoreNationalShippingOption selectedOption = options.first;
+
+        if (previousServiceCode.isNotEmpty) {
+          selectedOption = options.firstWhere(
+            (option) => option.serviceCode == previousServiceCode,
+            orElse: () => options.first,
+          );
+        }
+
+        setState(() {
+          isShippingPreviewLoading = false;
+          shippingPreviewError = '';
+          nationalShippingOptions = options;
+          selectedNationalShippingOption = selectedOption;
+          shippingPreview = StoreShippingPreview(
+            hasValue: true,
+            itemsSubtotal: itemsSubtotal,
+            shippingAmount: selectedOption.price,
+            shippingDiscount: 0,
+            shippingTotal: selectedOption.price,
+            total: itemsSubtotal + selectedOption.price,
+          );
         });
         return;
       }
@@ -415,9 +767,9 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       setState(() {
         isShippingPreviewLoading = false;
         shippingPreviewError = '';
-        shippingPreview = StoreShippingPreview.fromMap(
-          Map<String, dynamic>.from(dataValue),
-        );
+        nationalShippingOptions = <StoreNationalShippingOption>[];
+        selectedNationalShippingOption = null;
+        shippingPreview = StoreShippingPreview.fromMap(data);
       });
     } catch (_) {
       if (!mounted || requestId != shippingPreviewRequestId) {
@@ -426,17 +778,192 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
 
       setState(() {
         isShippingPreviewLoading = false;
-        shippingPreviewError = 'Não foi possível calcular o frete.';
+        shippingPreviewError = 'store_shipping_calculate_error'.tr;
         shippingPreview = StoreShippingPreview.empty();
+        nationalShippingOptions = <StoreNationalShippingOption>[];
+        selectedNationalShippingOption = null;
       });
     }
   }
 
   void refreshShippingPreviewIfNeeded() {
-    if (hasPhysicalItems &&
-        deliveryMode == StoreCartDeliveryMode.lokallyShipping) {
+    if (hasPhysicalItems && deliveryMode != StoreCartDeliveryMode.pickup) {
       loadShippingPreview();
     }
+  }
+
+  void ensureDeliveryModeIsAvailable() {
+    if (!hasPhysicalItems) {
+      return;
+    }
+
+    final bool currentModeAvailable =
+        deliveryMode == StoreCartDeliveryMode.pickup
+            ? canUsePickup
+            : deliveryMode == StoreCartDeliveryMode.lokallyShipping
+                ? canUseLokallyShipping
+                : canUseNationalShipping;
+
+    if (currentModeAvailable) {
+      return;
+    }
+
+    setState(() {
+      if (canUsePickup) {
+        deliveryMode = StoreCartDeliveryMode.pickup;
+      } else if (canUseLokallyShipping) {
+        deliveryMode = StoreCartDeliveryMode.lokallyShipping;
+      } else if (canUseNationalShipping) {
+        deliveryMode = StoreCartDeliveryMode.nationalShipping;
+      }
+    });
+
+    refreshShippingPreviewIfNeeded();
+  }
+
+  String onlyDigits(String value) {
+    return value.replaceAll(RegExp(r'[^0-9]'), '');
+  }
+
+  void prefillNationalRecipientFromProfile() {
+    if (!mounted || !Get.isRegistered<ProfileController>()) {
+      return;
+    }
+
+    final ProfileController profileController = Get.find<ProfileController>();
+    final String name = profileController.customerName().trim();
+    final String phone = profileController.profileModel?.data?.phone ?? '';
+
+    if (nationalRecipientNameController.text.trim().isEmpty &&
+        name.isNotEmpty) {
+      nationalRecipientNameController.text = name;
+    }
+
+    if (nationalRecipientPhoneController.text.trim().isEmpty &&
+        phone.trim().isNotEmpty) {
+      nationalRecipientPhoneController.text = phone.trim();
+    }
+  }
+
+  String get nationalRecipientName {
+    return nationalRecipientNameController.text.trim();
+  }
+
+  String get nationalRecipientPhone {
+    return nationalRecipientPhoneController.text.trim();
+  }
+
+  String get nationalStreet {
+    return nationalStreetController.text.trim();
+  }
+
+  String get nationalNumber {
+    return nationalNumberController.text.trim();
+  }
+
+  String get nationalComplement {
+    return nationalComplementController.text.trim();
+  }
+
+  String get nationalDistrict {
+    return nationalDistrictController.text.trim();
+  }
+
+  String get nationalCity {
+    return nationalCityController.text.trim();
+  }
+
+  String get nationalState {
+    return nationalStateController.text.trim().toUpperCase();
+  }
+
+  String get nationalDeliveryAddressText {
+    final List<String> lines = <String>[
+      'store_recipient_with_value'
+          .trParams({'value': nationalRecipientName}),
+      'store_phone_with_value'.trParams({'value': nationalRecipientPhone}),
+      'store_zipcode_with_value'
+          .trParams({'value': nationalRecipientPostalCode}),
+      'store_address_with_value'
+          .trParams({'value': '$nationalStreet, $nationalNumber'}),
+      if (nationalComplement.isNotEmpty)
+        'store_complement_with_value'.trParams({'value': nationalComplement}),
+      'store_district_with_value'.trParams({'value': nationalDistrict}),
+      'store_city_state_with_value'
+          .trParams({'value': '$nationalCity - $nationalState'}),
+      if (selectedNationalShippingOption != null)
+        'store_shipping_company_with_value'
+            .trParams({'value': selectedNationalShippingOption!.displayName}),
+    ];
+
+    return lines.join('\n');
+  }
+
+  bool get hasCompleteNationalDeliveryAddress {
+    return nationalRecipientPostalCode.length == 8 &&
+        nationalRecipientName.isNotEmpty &&
+        nationalRecipientPhone.isNotEmpty &&
+        nationalStreet.isNotEmpty &&
+        nationalNumber.isNotEmpty &&
+        nationalDistrict.isNotEmpty &&
+        nationalCity.isNotEmpty &&
+        RegExp(r'^[A-Z]{2}$').hasMatch(nationalState);
+  }
+
+  String postalCodeFromAddress(Address? address) {
+    if (address == null) {
+      return '';
+    }
+
+    final String rawAddress = address.address ?? '';
+    final RegExpMatch? cepMatch =
+        RegExp(r'(\d{5})[-\s]?(\d{3})').firstMatch(rawAddress);
+
+    if (cepMatch == null) {
+      return '';
+    }
+
+    return '${cepMatch.group(1)}${cepMatch.group(2)}';
+  }
+
+  void updateNationalPostalCodeFromAddress(Address? address) {
+    final String cep = postalCodeFromAddress(address);
+
+    if (cep.length == 8 && nationalCepController.text != cep) {
+      nationalCepController.text = cep;
+    }
+  }
+
+  void handleNationalCepTyping() {
+    if (deliveryMode != StoreCartDeliveryMode.nationalShipping) {
+      return;
+    }
+
+    nationalCepTypingTimer?.cancel();
+
+    nationalCepTypingTimer = Timer(const Duration(milliseconds: 650), () {
+      if (!mounted) {
+        return;
+      }
+
+      if (nationalRecipientPostalCode.length == 8) {
+        loadShippingPreview();
+      }
+    });
+  }
+
+  void selectNationalShippingOption(StoreNationalShippingOption option) {
+    setState(() {
+      selectedNationalShippingOption = option;
+      shippingPreview = StoreShippingPreview(
+        hasValue: true,
+        itemsSubtotal: itemsSubtotal,
+        shippingAmount: option.price,
+        shippingDiscount: 0,
+        shippingTotal: option.price,
+        total: itemsSubtotal + option.price,
+      );
+    });
   }
 
   void increaseQuantity(StoreCartItemData item) {
@@ -473,6 +1000,10 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
   }
 
   Future<void> loadCustomerAddresses() async {
+    if (deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+      return;
+    }
+
     if (!isCustomerLoggedIn || !Get.isRegistered<AddressController>()) {
       return;
     }
@@ -508,6 +1039,8 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
     setState(() {
       selectedDeliveryAddress = address;
     });
+
+    refreshShippingPreviewIfNeeded();
   }
 
   void continueShopping() {
@@ -572,7 +1105,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'Cadastro necessário',
+                'store_registration_required'.tr,
                 textAlign: TextAlign.center,
                 style: textBold.copyWith(
                   color: Colors.black87,
@@ -581,7 +1114,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Para prosseguir com a sua compra, é necessário ser cadastrado na Lokally.',
+                'store_login_required_to_checkout'.tr,
                 textAlign: TextAlign.center,
                 style: textRegular.copyWith(
                   color: Colors.grey.shade700,
@@ -607,7 +1140,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                           ),
                         ),
                         child: Text(
-                          'Continuar navegando',
+                          'store_continue_browsing'.tr,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textBold.copyWith(
@@ -636,7 +1169,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                           ),
                         ),
                         child: Text(
-                          'Entrar ou cadastrar',
+                          'store_login_or_register'.tr,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textBold.copyWith(
@@ -659,7 +1192,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
 
   void closeOrder() {
     if (cartItems.isEmpty) {
-      showCartMessage('Seu carrinho está vazio.');
+      showCartMessage('store_cart_empty'.tr);
       return;
     }
 
@@ -672,7 +1205,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
         deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
         selectedDeliveryAddress == null) {
       showCartMessage(
-        'Selecione um endereço de entrega para receber em casa.',
+        'store_select_delivery_address_home'.tr,
       );
       return;
     }
@@ -682,15 +1215,24 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
         ((selectedDeliveryAddress?.latitude ?? 0) == 0 ||
             (selectedDeliveryAddress?.longitude ?? 0) == 0)) {
       showCartMessage(
-        'Selecione um endereço de entrega válido no mapa para calcular o Lokally Envios.',
+        'store_select_valid_map_delivery_address'.tr,
       );
       return;
     }
 
     if (hasPhysicalItems &&
-        deliveryMode == StoreCartDeliveryMode.lokallyShipping &&
+        deliveryMode == StoreCartDeliveryMode.nationalShipping &&
+        nationalRecipientPostalCode.length != 8) {
+      showCartMessage(
+        'store_enter_valid_zipcode_lokally_shipping_br'.tr,
+      );
+      return;
+    }
+
+    if (hasPhysicalItems &&
+        deliveryMode != StoreCartDeliveryMode.pickup &&
         isShippingPreviewLoading) {
-      showCartMessage('Aguarde o cálculo do frete Marketplace.');
+      showCartMessage('store_wait_marketplace_shipping_calculation'.tr);
       return;
     }
 
@@ -700,16 +1242,37 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
       showCartMessage(
         shippingPreviewError.isNotEmpty
             ? shippingPreviewError
-            : 'Calculando frete Marketplace. Tente novamente em instantes.',
+            : 'store_calculating_marketplace_shipping_try_again'.tr,
       );
       loadShippingPreview();
+      return;
+    }
+
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.nationalShipping &&
+        selectedNationalShippingOption == null) {
+      showCartMessage(
+        shippingPreviewError.isNotEmpty
+            ? shippingPreviewError
+            : 'store_calculate_select_lokally_shipping_br'.tr,
+      );
+      loadShippingPreview();
+      return;
+    }
+
+    if (hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.nationalShipping &&
+        !hasCompleteNationalDeliveryAddress) {
+      showCartMessage(
+        'store_fill_full_address_lokally_shipping_br'.tr,
+      );
       return;
     }
 
     if (paymentMode == StoreCartPaymentMode.appBalance &&
         appBalance < orderTotal) {
       showCartMessage(
-        'Saldo insuficiente. Recarregue seu saldo ou escolha cartão de crédito.',
+        'store_insufficient_balance_recharge_or_mp'.tr,
       );
       return;
     }
@@ -724,7 +1287,15 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
             .toList(),
         deliveryMode: deliveryMode,
         paymentMode: paymentMode,
-        deliveryAddress: selectedDeliveryAddress,
+        deliveryAddress: deliveryMode == StoreCartDeliveryMode.nationalShipping
+            ? null
+            : selectedDeliveryAddress,
+        selectedNationalShippingOption: selectedNationalShippingOption,
+        recipientPostalCode: nationalRecipientPostalCode,
+        nationalDeliveryAddress:
+            deliveryMode == StoreCartDeliveryMode.nationalShipping
+                ? nationalDeliveryAddressText
+                : '',
         itemsSubtotal: itemsSubtotal,
         shippingBaseValue: shippingBaseValue,
         shippingDiscount: shippingDiscount,
@@ -769,8 +1340,10 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
             StoreCartHeader(
               primaryColor: primaryColor,
               storeName: storeCount > 1
-                  ? '$storeCount lojas no pedido'
-                  : headerStore?.storeName ?? 'Loja',
+                  ? 'store_stores_in_order'.trParams({
+                      'count': '$storeCount',
+                    })
+                  : headerStore?.storeName ?? 'store_store'.tr,
               storeLogoUrl:
                   storeCount > 1 ? '' : headerStore?.storeLogoUrl ?? '',
               onBackTap: () => Get.back(),
@@ -787,7 +1360,7 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             StoreCartSectionTitle(
-                                title: 'Produtos no carrinho'),
+                                title: 'store_products_in_cart'.tr),
                             const SizedBox(height: 12),
                             ...storeGroups.map((group) {
                               return StoreCartStoreGroupView(
@@ -803,18 +1376,36 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                               StoreCartDeliverySelector(
                                 primaryColor: primaryColor,
                                 deliveryMode: deliveryMode,
+                                storeCityLabel: primaryStoreCityLabel,
+                                showPickup: canUsePickup,
+                                showLokallyShipping: canUseLokallyShipping,
+                                showNationalShipping: canUseNationalShipping,
                                 onChanged: (value) {
                                   setState(() {
                                     deliveryMode = value;
 
-                                    if (value == StoreCartDeliveryMode.pickup) {
+                                    if (value == StoreCartDeliveryMode.pickup ||
+                                        value ==
+                                            StoreCartDeliveryMode
+                                                .nationalShipping) {
                                       selectedDeliveryAddress = null;
+                                    }
+
+                                    if (value !=
+                                        StoreCartDeliveryMode
+                                            .nationalShipping) {
+                                      nationalShippingOptions =
+                                          <StoreNationalShippingOption>[];
+                                      selectedNationalShippingOption = null;
                                     }
                                   });
 
                                   if (value ==
                                       StoreCartDeliveryMode.lokallyShipping) {
                                     loadCustomerAddresses();
+                                    loadShippingPreview();
+                                  } else if (value ==
+                                      StoreCartDeliveryMode.nationalShipping) {
                                     loadShippingPreview();
                                   } else {
                                     clearShippingPreview();
@@ -840,6 +1431,49 @@ class _StoreCartScreenState extends State<StoreCartScreen> {
                                     color: Colors.redAccent,
                                     fontSize: 12.2,
                                   ),
+                                ),
+                              ],
+                            ],
+                            if (hasPhysicalItems &&
+                                deliveryMode ==
+                                    StoreCartDeliveryMode.nationalShipping) ...[
+                              const SizedBox(height: 18),
+                              StoreCartNationalShippingSelector(
+                                primaryColor: primaryColor,
+                                cepController: nationalCepController,
+                                selectedOption: selectedNationalShippingOption,
+                                options: nationalShippingOptions,
+                                isLoading: isShippingPreviewLoading,
+                                onCalculate: loadShippingPreview,
+                                onSelectOption: selectNationalShippingOption,
+                              ),
+                              if (shippingPreviewError.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                Text(
+                                  shippingPreviewError,
+                                  style: textMedium.copyWith(
+                                    color: Colors.redAccent,
+                                    fontSize: 12.2,
+                                  ),
+                                ),
+                              ],
+                              if (selectedNationalShippingOption != null) ...[
+                                const SizedBox(height: 18),
+                                StoreCartNationalDeliveryAddressForm(
+                                  primaryColor: primaryColor,
+                                  recipientNameController:
+                                      nationalRecipientNameController,
+                                  recipientPhoneController:
+                                      nationalRecipientPhoneController,
+                                  cepController: nationalCepController,
+                                  streetController: nationalStreetController,
+                                  numberController: nationalNumberController,
+                                  complementController:
+                                      nationalComplementController,
+                                  districtController:
+                                      nationalDistrictController,
+                                  cityController: nationalCityController,
+                                  stateController: nationalStateController,
                                 ),
                               ],
                             ],
@@ -995,7 +1629,7 @@ class StoreCartSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      title,
+      title.tr,
       style: textBold.copyWith(
         color: Colors.black87,
         fontSize: 18,
@@ -1051,7 +1685,7 @@ class StoreCartStoreGroupView extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Total desta loja',
+                  'store_this_store_total'.tr,
                   style: textMedium.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 12.8,
@@ -1152,7 +1786,7 @@ class StoreCartItemRow extends StatelessWidget {
                 if (item.product.isService) ...[
                   const SizedBox(height: 5),
                   Text(
-                    item.product.serviceDeliverySummary,
+                    item.product.serviceDeliverySummary.tr,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: textMedium.copyWith(
@@ -1249,38 +1883,94 @@ class StoreCartQuantityButton extends StatelessWidget {
 class StoreCartDeliverySelector extends StatelessWidget {
   final Color primaryColor;
   final StoreCartDeliveryMode deliveryMode;
+  final String storeCityLabel;
+  final bool showPickup;
+  final bool showLokallyShipping;
+  final bool showNationalShipping;
   final ValueChanged<StoreCartDeliveryMode> onChanged;
 
   const StoreCartDeliverySelector({
     super.key,
     required this.primaryColor,
     required this.deliveryMode,
+    required this.storeCityLabel,
+    required this.showPickup,
+    required this.showLokallyShipping,
+    required this.showNationalShipping,
     required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        StoreCartSectionTitle(title: 'Opções de entrega'),
-        const SizedBox(height: 10),
+    final List<Widget> options = <Widget>[];
+
+    if (showPickup) {
+      options.add(
         StoreCartSelectableLine(
           primaryColor: primaryColor,
           selected: deliveryMode == StoreCartDeliveryMode.pickup,
-          title: 'Retire Grátis',
-          description:
-              'Retire diretamente na loja dentro do horário comercial do vendedor.',
+          title: 'store_free_pickup'.tr,
+          description: 'store_pickup_description'.trParams({
+            'city': storeCityLabel,
+          }),
           onTap: () => onChanged(StoreCartDeliveryMode.pickup),
         ),
-        const SizedBox(height: 10),
+      );
+    }
+
+    if (showLokallyShipping) {
+      if (options.isNotEmpty) {
+        options.add(const SizedBox(height: 10));
+      }
+
+      options.add(
         StoreCartSelectableLine(
           primaryColor: primaryColor,
           selected: deliveryMode == StoreCartDeliveryMode.lokallyShipping,
           title: 'Lokally Envios',
-          description: 'Receba em casa com Lokally Envios.',
+          description: 'store_lokally_shipping_description'.trParams({
+            'city': storeCityLabel,
+          }),
           onTap: () => onChanged(StoreCartDeliveryMode.lokallyShipping),
         ),
+      );
+    }
+
+    if (showNationalShipping) {
+      if (options.isNotEmpty) {
+        options.add(const SizedBox(height: 10));
+      }
+
+      options.add(
+        StoreCartSelectableLine(
+          primaryColor: primaryColor,
+          selected: deliveryMode == StoreCartDeliveryMode.nationalShipping,
+          title: 'Lokally Envios BR',
+          description: 'store_lokally_shipping_br_description'.tr,
+          onTap: () => onChanged(StoreCartDeliveryMode.nationalShipping),
+        ),
+      );
+    }
+
+    if (options.isEmpty) {
+      options.add(
+        Text(
+          'store_no_delivery_option_active'.tr,
+          style: textRegular.copyWith(
+            color: Colors.grey.shade700,
+            fontSize: 12.5,
+            height: 1.3,
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StoreCartSectionTitle(title: 'store_delivery_options'.tr),
+        const SizedBox(height: 10),
+        ...options,
       ],
     );
   }
@@ -1306,7 +1996,7 @@ class StoreCartDeliveryAddressSelector extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          StoreCartSectionTitle(title: 'Endereço de entrega'),
+          StoreCartSectionTitle(title: 'store_delivery_address'.tr),
           const SizedBox(height: 10),
           StoreCartAddressAddButton(
             primaryColor: primaryColor,
@@ -1324,11 +2014,11 @@ class StoreCartDeliveryAddressSelector extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            StoreCartSectionTitle(title: 'Endereço de entrega'),
+            StoreCartSectionTitle(title: 'store_delivery_address'.tr),
             const SizedBox(height: 10),
             if (addresses.isEmpty) ...[
               Text(
-                'Escolha um endereço cadastrado ou adicione um novo endereço para receber o pedido.',
+                'store_choose_or_add_delivery_address'.tr,
                 style: textRegular.copyWith(
                   color: Colors.grey.shade700,
                   fontSize: 12.5,
@@ -1381,7 +2071,8 @@ class StoreCartAddressOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String label = '${address.addressLabel ?? 'Endereço'}'.tr;
+    final String rawLabel = '${address.addressLabel ?? ''}'.trim();
+    final String label = rawLabel.isEmpty ? 'store_address'.tr : rawLabel.tr;
     final String addressText = address.address ?? '';
 
     return GestureDetector(
@@ -1466,12 +2157,361 @@ class StoreCartAddressAddButton extends StatelessWidget {
         ),
       ),
       child: Text(
-        'Adicionar novo endereço',
+        'store_add_new_address'.tr,
         style: textBold.copyWith(
           color: primaryColor,
           fontSize: 12.6,
         ),
       ),
+    );
+  }
+}
+
+class StoreCartNationalShippingSelector extends StatelessWidget {
+  final Color primaryColor;
+  final TextEditingController cepController;
+  final StoreNationalShippingOption? selectedOption;
+  final List<StoreNationalShippingOption> options;
+  final bool isLoading;
+  final VoidCallback onCalculate;
+  final ValueChanged<StoreNationalShippingOption> onSelectOption;
+
+  const StoreCartNationalShippingSelector({
+    super.key,
+    required this.primaryColor,
+    required this.cepController,
+    required this.selectedOption,
+    required this.options,
+    required this.isLoading,
+    required this.onCalculate,
+    required this.onSelectOption,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StoreCartSectionTitle(title: 'store_calculate_national_shipping'.tr),
+        const SizedBox(height: 6),
+        Text(
+          'store_calculate_national_shipping_description'.tr,
+          style: textRegular.copyWith(
+            color: Colors.grey.shade700,
+            fontSize: 12.2,
+            height: 1.28,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: cepController,
+                keyboardType: TextInputType.number,
+                maxLength: 9,
+                decoration: InputDecoration(
+                  counterText: '',
+                  hintText: 'store_enter_delivery_zipcode'.tr,
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide(color: primaryColor),
+                  ),
+                ),
+                style: textMedium.copyWith(
+                  color: Colors.black87,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            SizedBox(
+              height: 46,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : onCalculate,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Text(
+                        'store_calculate'.tr,
+                        style: textBold.copyWith(
+                          color: Colors.white,
+                          fontSize: 12.5,
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+        if (options.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ...options.map((option) {
+            final bool selected =
+                selectedOption?.serviceCode == option.serviceCode &&
+                    selectedOption?.price == option.price;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: StoreCartSelectableLine(
+                primaryColor: primaryColor,
+                selected: selected,
+                title: option.displayName,
+                description: option.deliveryDescription,
+                onTap: () => onSelectOption(option),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+}
+
+class StoreCartNationalDeliveryAddressForm extends StatelessWidget {
+  final Color primaryColor;
+  final TextEditingController recipientNameController;
+  final TextEditingController recipientPhoneController;
+  final TextEditingController cepController;
+  final TextEditingController streetController;
+  final TextEditingController numberController;
+  final TextEditingController complementController;
+  final TextEditingController districtController;
+  final TextEditingController cityController;
+  final TextEditingController stateController;
+
+  const StoreCartNationalDeliveryAddressForm({
+    super.key,
+    required this.primaryColor,
+    required this.recipientNameController,
+    required this.recipientPhoneController,
+    required this.cepController,
+    required this.streetController,
+    required this.numberController,
+    required this.complementController,
+    required this.districtController,
+    required this.cityController,
+    required this.stateController,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StoreCartSectionTitle(title: 'store_delivery_address'.tr),
+        const SizedBox(height: 6),
+        Text(
+          'store_fill_shipping_address_description'.tr,
+          style: textRegular.copyWith(
+            color: Colors.grey.shade700,
+            fontSize: 12.2,
+            height: 1.28,
+          ),
+        ),
+        const SizedBox(height: 12),
+        StoreCartNationalAddressTextField(
+          controller: recipientNameController,
+          primaryColor: primaryColor,
+          label: 'store_recipient_name'.tr,
+          hintText: 'store_who_will_receive_order'.tr,
+          textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 10),
+        StoreCartNationalAddressTextField(
+          controller: recipientPhoneController,
+          primaryColor: primaryColor,
+          label: 'store_recipient_phone'.tr,
+          hintText: 'store_phone_area_code_hint'.tr,
+          keyboardType: TextInputType.phone,
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 10),
+        StoreCartNationalAddressTextField(
+          controller: cepController,
+          primaryColor: primaryColor,
+          label: 'store_zipcode'.tr,
+          hintText: 'store_shipping_zipcode_hint'.tr,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+          maxLength: 9,
+        ),
+        const SizedBox(height: 10),
+        StoreCartNationalAddressTextField(
+          controller: streetController,
+          primaryColor: primaryColor,
+          label: 'store_street_or_avenue'.tr,
+          hintText: 'store_street_example'.tr,
+          textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              flex: 2,
+              child: StoreCartNationalAddressTextField(
+                controller: numberController,
+                primaryColor: primaryColor,
+                label: 'store_number'.tr,
+                hintText: '1114',
+                keyboardType: TextInputType.text,
+                textInputAction: TextInputAction.next,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              flex: 3,
+              child: StoreCartNationalAddressTextField(
+                controller: complementController,
+                primaryColor: primaryColor,
+                label: 'store_complement'.tr,
+                hintText: 'store_optional'.tr,
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.words,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        StoreCartNationalAddressTextField(
+          controller: districtController,
+          primaryColor: primaryColor,
+          label: 'store_district'.tr,
+          hintText: 'store_district_example'.tr,
+          textInputAction: TextInputAction.next,
+          textCapitalization: TextCapitalization.words,
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: StoreCartNationalAddressTextField(
+                controller: cityController,
+                primaryColor: primaryColor,
+                label: 'store_city'.tr,
+                hintText: 'store_city_example'.tr,
+                textInputAction: TextInputAction.next,
+                textCapitalization: TextCapitalization.words,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: StoreCartNationalAddressTextField(
+                controller: stateController,
+                primaryColor: primaryColor,
+                label: 'store_state_abbreviation'.tr,
+                hintText: 'MG',
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.characters,
+                maxLength: 2,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class StoreCartNationalAddressTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final Color primaryColor;
+  final String label;
+  final String hintText;
+  final TextInputType keyboardType;
+  final TextInputAction textInputAction;
+  final TextCapitalization textCapitalization;
+  final int? maxLength;
+
+  const StoreCartNationalAddressTextField({
+    super.key,
+    required this.controller,
+    required this.primaryColor,
+    required this.label,
+    required this.hintText,
+    this.keyboardType = TextInputType.text,
+    this.textInputAction = TextInputAction.next,
+    this.textCapitalization = TextCapitalization.none,
+    this.maxLength,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.tr,
+          style: textBold.copyWith(
+            color: Colors.black87,
+            fontSize: 12.8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          keyboardType: keyboardType,
+          textInputAction: textInputAction,
+          textCapitalization: textCapitalization,
+          maxLength: maxLength,
+          decoration: InputDecoration(
+            counterText: '',
+            hintText: hintText.tr,
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 14,
+              vertical: 12,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: primaryColor),
+            ),
+          ),
+          style: textMedium.copyWith(
+            color: Colors.black87,
+            fontSize: 13,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1501,18 +2541,20 @@ class StoreCartPaymentSelector extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        StoreCartSectionTitle(title: 'Pagamento'),
+        StoreCartSectionTitle(title: 'store_payment'.tr),
         const SizedBox(height: 10),
         StoreCartSelectableContentLine(
           primaryColor: primaryColor,
           selected: paymentMode == StoreCartPaymentMode.appBalance,
-          title: 'Pague no APP com saldo',
+          title: 'store_pay_in_app_with_balance'.tr,
           onTap: () => onChanged(StoreCartPaymentMode.appBalance),
           content: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Seu saldo é de ${StoreCartCurrency.format(appBalance)}. Utilize ele para pagar o seu pedido.',
+                'store_balance_available_for_order'.trParams({
+                  'value': StoreCartCurrency.format(appBalance),
+                }),
                 style: textRegular.copyWith(
                   color: Colors.grey.shade700,
                   fontSize: 12.2,
@@ -1525,8 +2567,7 @@ class StoreCartPaymentSelector extends StatelessWidget {
                   text: TextSpan(
                     children: [
                       TextSpan(
-                        text:
-                            'Seu saldo é insuficiente, para pagar com saldo recarregue ',
+                        text: 'store_insufficient_balance_prefix'.tr,
                         style: textRegular.copyWith(
                           color: Colors.grey.shade700,
                           fontSize: 12.2,
@@ -1534,7 +2575,7 @@ class StoreCartPaymentSelector extends StatelessWidget {
                         ),
                       ),
                       TextSpan(
-                        text: 'clicando aqui',
+                        text: 'store_clicking_here'.tr,
                         style: textBold.copyWith(
                           color: primaryColor,
                           fontSize: 12.2,
@@ -1544,7 +2585,7 @@ class StoreCartPaymentSelector extends StatelessWidget {
                           ..onTap = onWalletRechargeTap,
                       ),
                       TextSpan(
-                        text: ' ou selecione outra forma de pagamento.',
+                        text: 'store_or_select_another_payment'.tr,
                         style: textRegular.copyWith(
                           color: Colors.grey.shade700,
                           fontSize: 12.2,
@@ -1562,8 +2603,8 @@ class StoreCartPaymentSelector extends StatelessWidget {
         StoreCartSelectableLine(
           primaryColor: primaryColor,
           selected: paymentMode == StoreCartPaymentMode.mercadoPago,
-          title: 'Cartão de crédito',
-          description: 'Pague com cartão de crédito pelo Mercado Pago.',
+          title: 'store_pay_with_mercado_pago'.tr,
+          description: 'store_pay_with_mercado_pago_description'.tr,
           onTap: () => onChanged(StoreCartPaymentMode.mercadoPago),
         ),
       ],
@@ -1621,7 +2662,7 @@ class StoreCartSelectableContentLine extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  title.tr,
                   style: textBold.copyWith(
                     color: selected ? primaryColor : Colors.black87,
                     fontSize: 14.2,
@@ -1688,7 +2729,7 @@ class StoreCartSelectableLine extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  title.tr,
                   style: textBold.copyWith(
                     color: selected ? primaryColor : Colors.black87,
                     fontSize: 14.2,
@@ -1696,7 +2737,7 @@ class StoreCartSelectableLine extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  description,
+                  description.tr,
                   style: textRegular.copyWith(
                     color: Colors.grey.shade700,
                     fontSize: 12.2,
@@ -1736,7 +2777,7 @@ class StoreCartRulesSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     if (deliveryMode == StoreCartDeliveryMode.pickup) {
       return Text(
-        'Pedidos serão separados por loja. Nesta opção, o cliente retira diretamente em cada loja após o pagamento.',
+        'store_pickup_rules_summary'.tr,
         style: textRegular.copyWith(
           color: Colors.grey.shade700,
           fontSize: 12.4,
@@ -1750,15 +2791,12 @@ class StoreCartRulesSummary extends StatelessWidget {
     final bool hasMultiStoreDiscount =
         storeCount >= 2 && itemsSubtotal >= 200 && shippingDiscount > 0;
 
-    String message =
-        'Pedidos serão separados por loja. O Lokally Envios será calculado conforme a configuração da cidade ou zona da loja.';
+    String message = 'store_shipping_rules_summary'.tr;
 
     if (hasSingleStoreFreeShipping) {
-      message =
-          'Frete grátis aplicado: compra de R\$200,00 ou mais em uma única loja.';
+      message = 'store_free_shipping_applied_summary'.tr;
     } else if (hasMultiStoreDiscount) {
-      message =
-          'Desconto de 25% no Lokally Envios aplicado: compra em 2 ou mais lojas com total mínimo de R\$200,00 em produtos.';
+      message = 'store_shipping_discount_applied_summary'.tr;
     }
 
     return Text(
@@ -1797,9 +2835,9 @@ class StoreCartBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String shippingText = isShippingPreviewLoading
-        ? 'Calculando...'
+        ? 'store_calculating'.tr
         : shippingTotal <= 0
-            ? 'Grátis'
+            ? 'store_free'.tr
             : StoreCartCurrency.format(shippingTotal);
 
     return SafeArea(
@@ -1821,19 +2859,19 @@ class StoreCartBottomBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             StoreCartTotalLine(
-              label: 'Produtos',
+              label: 'store_products'.tr,
               value: StoreCartCurrency.format(itemsSubtotal),
             ),
             if (showShippingLine) ...[
               const SizedBox(height: 5),
               StoreCartTotalLine(
-                label: 'Entrega',
+                label: 'store_delivery'.tr,
                 value: shippingText,
               ),
             ],
             const SizedBox(height: 7),
             StoreCartTotalLine(
-              label: 'Total do pedido',
+              label: 'store_order_total'.tr,
               value: StoreCartCurrency.format(orderTotal),
               primaryColor: primaryColor,
               highlight: true,
@@ -1853,10 +2891,13 @@ class StoreCartBottomBar extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      'Continuar comprando',
+                      'store_continue_shopping'.tr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      softWrap: false,
                       style: textBold.copyWith(
                         color: primaryColor,
-                        fontSize: 12.4,
+                        fontSize: 12.0,
                       ),
                     ),
                   ),
@@ -1875,7 +2916,7 @@ class StoreCartBottomBar extends StatelessWidget {
                       ),
                     ),
                     child: Text(
-                      'Fechar pedido',
+                      'store_close_order'.tr,
                       style: textBold.copyWith(
                         color: Colors.white,
                         fontSize: 12.7,
@@ -1912,7 +2953,7 @@ class StoreCartTotalLine extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            label,
+            label.tr,
             style: (highlight ? textBold : textMedium).copyWith(
               color: Colors.black87,
               fontSize: highlight ? 14.5 : 12.8,
@@ -1936,6 +2977,9 @@ class StoreCheckoutScreen extends StatefulWidget {
   final StoreCartDeliveryMode deliveryMode;
   final StoreCartPaymentMode paymentMode;
   final Address? deliveryAddress;
+  final StoreNationalShippingOption? selectedNationalShippingOption;
+  final String recipientPostalCode;
+  final String nationalDeliveryAddress;
   final double itemsSubtotal;
   final double shippingBaseValue;
   final double shippingDiscount;
@@ -1949,6 +2993,9 @@ class StoreCheckoutScreen extends StatefulWidget {
     required this.deliveryMode,
     required this.paymentMode,
     required this.deliveryAddress,
+    required this.selectedNationalShippingOption,
+    required this.recipientPostalCode,
+    required this.nationalDeliveryAddress,
     required this.itemsSubtotal,
     required this.shippingBaseValue,
     required this.shippingDiscount,
@@ -2021,11 +3068,11 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
 
   String get customerName {
     if (!Get.isRegistered<ProfileController>()) {
-      return 'Cliente';
+      return 'store_customer'.tr;
     }
 
     return Get.find<ProfileController>().customerName().trim().isEmpty
-        ? 'Cliente'
+        ? 'store_customer'.tr
         : Get.find<ProfileController>().customerName();
   }
 
@@ -2039,23 +3086,34 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
 
   String get paymentLabel {
     return widget.paymentMode == StoreCartPaymentMode.appBalance
-        ? 'Pague no APP com saldo'
-        : 'Cartão de crédito via Mercado Pago';
+        ? 'store_pay_in_app_with_balance'
+        : 'store_pay_with_mercado_pago';
   }
 
   String get deliveryLabel {
     if (!widget.hasPhysicalItems) {
-      return 'Serviço';
+      return 'store_service';
     }
 
-    return widget.deliveryMode == StoreCartDeliveryMode.pickup
-        ? 'Retire Grátis'
-        : 'Lokally Envios';
+    if (widget.deliveryMode == StoreCartDeliveryMode.pickup) {
+      return 'store_free_pickup';
+    }
+
+    if (widget.deliveryMode == StoreCartDeliveryMode.nationalShipping) {
+      return 'Lokally Envios BR';
+    }
+
+    return 'Lokally Envios';
   }
 
   bool get isLokallyShipping {
     return widget.hasPhysicalItems &&
         widget.deliveryMode == StoreCartDeliveryMode.lokallyShipping;
+  }
+
+  bool get isNationalShipping {
+    return widget.hasPhysicalItems &&
+        widget.deliveryMode == StoreCartDeliveryMode.nationalShipping;
   }
 
   bool get hasFreeMarketplaceShipping {
@@ -2099,11 +3157,15 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
   }
 
   Map<String, dynamic> buildOrderPayload() {
-    return {
-      'delivery_type': !widget.hasPhysicalItems ||
-              widget.deliveryMode == StoreCartDeliveryMode.pickup
-          ? 'pickup'
-          : 'lokally_shipping',
+    final String deliveryType = !widget.hasPhysicalItems ||
+            widget.deliveryMode == StoreCartDeliveryMode.pickup
+        ? 'pickup'
+        : widget.deliveryMode == StoreCartDeliveryMode.nationalShipping
+            ? 'national_shipping'
+            : 'lokally_shipping';
+
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'delivery_type': deliveryType,
       'payment_method': widget.paymentMode == StoreCartPaymentMode.appBalance
           ? 'app_balance'
           : 'mercadopago',
@@ -2120,6 +3182,31 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
         };
       }).toList(),
     };
+
+    if (deliveryType == 'national_shipping') {
+      payload['delivery_address'] = widget.nationalDeliveryAddress;
+      payload['delivery_latitude'] = null;
+      payload['delivery_longitude'] = null;
+      payload['recipient_postal_code'] = widget.recipientPostalCode;
+      payload['destination_postal_code'] = widget.recipientPostalCode;
+      payload['cep'] = widget.recipientPostalCode;
+      payload['national_shipping_service_code'] =
+          widget.selectedNationalShippingOption?.serviceCode;
+
+      final StoreNationalShippingOption? selectedOption =
+          widget.selectedNationalShippingOption;
+
+      if (selectedOption != null && selectedOption.storeSellerId.isNotEmpty) {
+        payload['national_shipping_options'] = [
+          {
+            'store_seller_id': selectedOption.storeSellerId,
+            'service_code': selectedOption.serviceCode,
+          },
+        ];
+      }
+    }
+
+    return payload;
   }
 
   Future<void> approvePayment() async {
@@ -2128,7 +3215,7 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
     }
 
     if (!Get.isRegistered<ApiClient>()) {
-      showCheckoutMessage('Não foi possível conectar com o servidor.');
+      showCheckoutMessage('store_server_connection_error'.tr);
       return;
     }
 
@@ -2157,8 +3244,8 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
       });
 
       final String message = responseBody is Map
-          ? '${responseBody['message'] ?? response.statusText ?? 'Não foi possível criar o pedido.'}'
-          : response.statusText ?? 'Não foi possível criar o pedido.';
+          ? '${responseBody['message'] ?? response.statusText ?? 'store_order_create_error'.tr}'
+          : response.statusText ?? 'store_order_create_error'.tr;
 
       showCheckoutMessage(message);
       return;
@@ -2201,24 +3288,31 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
 
       if (paymentUrl.isEmpty) {
         showCheckoutMessage(
-          'Pedido criado, mas não foi possível abrir o checkout do Mercado Pago.',
+          'store_order_created_checkout_open_error'.tr,
         );
         return;
       }
 
-      final bool opened = await launchUrl(
-        Uri.parse(paymentUrl),
-        mode: LaunchMode.externalApplication,
+      final bool? returnedFromCheckout = await Get.to(
+        () => StoreMarketplaceMercadoPagoWebViewScreen(
+          paymentUrl: paymentUrl,
+          primaryColor: Theme.of(context).primaryColor,
+        ),
       );
 
-      if (!opened) {
-        showCheckoutMessage('Não foi possível abrir o Mercado Pago.');
+      if (!mounted) {
         return;
       }
 
-      showCheckoutMessage(
-        'Finalize o pagamento no Mercado Pago. Depois acompanhe em Meus pedidos.',
-      );
+      if (returnedFromCheckout == true) {
+        showCheckoutMessage(
+          'store_payment_sent_follow_orders'.tr,
+        );
+      } else {
+        showCheckoutMessage(
+          'store_order_created_finish_mp_payment'.tr,
+        );
+      }
       return;
     }
 
@@ -2273,28 +3367,28 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      StoreCheckoutSectionTitle(title: 'Dados do cliente'),
+                      StoreCheckoutSectionTitle(title: 'store_customer_data'.tr),
                       const SizedBox(height: 10),
                       StoreCheckoutSimpleLine(
-                        label: 'Número do pedido',
+                        label: 'store_order_number'.tr,
                         value: mainOrderNumber,
                         highlight: true,
                         primaryColor: primaryColor,
                       ),
                       const SizedBox(height: 6),
                       StoreCheckoutSimpleLine(
-                        label: 'Nome',
+                        label: 'store_name'.tr,
                         value: customerName,
                       ),
                       if (customerPhone.isNotEmpty) ...[
                         const SizedBox(height: 6),
                         StoreCheckoutSimpleLine(
-                          label: 'Telefone',
+                          label: 'store_phone'.tr,
                           value: customerPhone,
                         ),
                       ],
                       const StoreCheckoutDivider(),
-                      StoreCheckoutSectionTitle(title: 'Resumo do pedido'),
+                      StoreCheckoutSectionTitle(title: 'store_order_summary'.tr),
                       const SizedBox(height: 10),
                       ...storeGroups.map((group) {
                         return StoreCheckoutStoreSummary(
@@ -2309,23 +3403,51 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                       }),
                       if (widget.hasPhysicalItems) ...[
                         const StoreCheckoutDivider(),
-                        StoreCheckoutSectionTitle(title: 'Entrega'),
+                        StoreCheckoutSectionTitle(title: 'store_delivery'.tr),
                         const SizedBox(height: 10),
                         StoreCheckoutSimpleLine(
-                          label: 'Opção selecionada',
+                          label: 'store_selected_option'.tr,
                           value: deliveryLabel,
                         ),
                         if (isLokallyShipping) ...[
                           const SizedBox(height: 6),
                           StoreCheckoutSimpleLine(
-                            label: 'Endereço de entrega',
+                            label: 'store_delivery_address'.tr,
                             value: widget.deliveryAddress?.address ?? '-',
                           ),
                           const SizedBox(height: 6),
                           StoreCheckoutSimpleLine(
-                            label: 'Frete',
+                            label: 'store_shipping'.tr,
                             value: checkoutShippingTotal <= 0
-                                ? 'Grátis'
+                                ? 'store_free'.tr
+                                : StoreCartCurrency.format(
+                                    checkoutShippingTotal,
+                                  ),
+                          ),
+                        ],
+                        if (isNationalShipping) ...[
+                          const SizedBox(height: 6),
+                          StoreCheckoutSimpleLine(
+                            label: 'store_delivery_zipcode'.tr,
+                            value: widget.recipientPostalCode,
+                          ),
+                          const SizedBox(height: 6),
+                          StoreCheckoutMultilineInfo(
+                            label: 'store_delivery_address'.tr,
+                            value: widget.nationalDeliveryAddress,
+                          ),
+                          const SizedBox(height: 6),
+                          StoreCheckoutSimpleLine(
+                            label: 'store_shipping_company'.tr,
+                            value: widget.selectedNationalShippingOption
+                                    ?.displayName ??
+                                '-',
+                          ),
+                          const SizedBox(height: 6),
+                          StoreCheckoutSimpleLine(
+                            label: 'store_shipping'.tr,
+                            value: checkoutShippingTotal <= 0
+                                ? 'store_free'.tr
                                 : StoreCartCurrency.format(
                                     checkoutShippingTotal,
                                   ),
@@ -2333,15 +3455,15 @@ class _StoreCheckoutScreenState extends State<StoreCheckoutScreen> {
                         ],
                       ],
                       const StoreCheckoutDivider(),
-                      StoreCheckoutSectionTitle(title: 'Pagamento'),
+                      StoreCheckoutSectionTitle(title: 'store_payment'.tr),
                       const SizedBox(height: 10),
                       StoreCheckoutSimpleLine(
-                        label: 'Forma de pagamento',
+                        label: 'store_payment_method'.tr,
                         value: paymentLabel,
                       ),
                       const SizedBox(height: 6),
                       StoreCheckoutSimpleLine(
-                        label: 'Total',
+                        label: 'store_total'.tr,
                         value: StoreCartCurrency.format(checkoutOrderTotal),
                         highlight: true,
                         primaryColor: primaryColor,
@@ -2409,7 +3531,7 @@ class StoreCheckoutHeader extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Checkout',
+              'store_checkout'.tr,
               style: textBold.copyWith(
                 color: Colors.white,
                 fontSize: 19,
@@ -2433,7 +3555,7 @@ class StoreCheckoutSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      title,
+      title.tr,
       style: textBold.copyWith(
         color: Colors.black87,
         fontSize: 18,
@@ -2462,7 +3584,7 @@ class StoreCheckoutSimpleLine extends StatelessWidget {
       children: [
         Expanded(
           child: Text(
-            label,
+            label.tr,
             style: textMedium.copyWith(
               color: Colors.grey.shade700,
               fontSize: 13,
@@ -2472,11 +3594,56 @@ class StoreCheckoutSimpleLine extends StatelessWidget {
         const SizedBox(width: 12),
         Expanded(
           child: Text(
-            value.isEmpty ? '-' : value,
+            (value.isEmpty ? '-' : value).tr,
             textAlign: TextAlign.right,
             style: (highlight ? textBold : textMedium).copyWith(
               color: highlight ? primaryColor : Colors.black87,
               fontSize: highlight ? 16 : 13,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class StoreCheckoutMultilineInfo extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const StoreCheckoutMultilineInfo({
+    super.key,
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label.tr,
+          style: textMedium.copyWith(
+            color: Colors.grey.shade700,
+            fontSize: 13,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Text(
+            value.isEmpty ? '-' : value,
+            style: textMedium.copyWith(
+              color: Colors.black87,
+              fontSize: 12.6,
+              height: 1.28,
             ),
           ),
         ),
@@ -2508,6 +3675,11 @@ class StoreCheckoutStoreSummary extends StatelessWidget {
   bool get isLokallyShipping {
     return hasPhysicalItems &&
         deliveryMode == StoreCartDeliveryMode.lokallyShipping;
+  }
+
+  bool get isNationalShipping {
+    return hasPhysicalItems &&
+        deliveryMode == StoreCartDeliveryMode.nationalShipping;
   }
 
   @override
@@ -2556,7 +3728,9 @@ class StoreCheckoutStoreSummary extends StatelessWidget {
           }),
           if (paymentApproved && hasPhysicalItems) ...[
             const SizedBox(height: 10),
-            if (isLokallyShipping)
+            if (isNationalShipping)
+              StoreCheckoutNationalShippingInfo(primaryColor: primaryColor)
+            else if (isLokallyShipping)
               StoreCheckoutLokallyShippingInfo(primaryColor: primaryColor)
             else
               StoreCheckoutPickupInfo(
@@ -2615,18 +3789,21 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
 
       return '- ${item.quantity}x ${item.product.title}'
           '$photoText'
-          '\nValor unitário: ${StoreCartCurrency.format(item.product.finalPrice)}'
-          '\nTotal do item: ${StoreCartCurrency.format(item.total)}';
+          '\n${'store_unit_price_with_value'.trParams({
+            'value': StoreCartCurrency.format(item.product.finalPrice),
+          })}'
+          '\n${'store_item_total_with_value'.trParams({
+            'value': StoreCartCurrency.format(item.total),
+          })}';
     }).join('\n\n');
 
-    return 'Olá, ${group.storeName}, eu fiz um pedido no Marketplace da Lokally, '
-        'pedido $orderNumber, e escolhi retirar o pedido. '
-        'Gostaria de saber o horário que poderei retirar?'
-        '\n\nPedido: $orderNumber'
-        '\nStatus atual: Retirar Produto'
-        '\nForma de pagamento: $paymentLabel'
-        '\nTotal do pedido: ${StoreCartCurrency.format(group.subtotal)}'
-        '\n\nProdutos:\n$productsText';
+    return 'store_pickup_whatsapp_message'.trParams({
+      'store': group.storeName,
+      'order': orderNumber,
+      'payment': paymentLabel.tr,
+      'total': StoreCartCurrency.format(group.subtotal),
+      'products': productsText,
+    });
   }
 
   Future<void> openWhatsApp(BuildContext context) async {
@@ -2635,7 +3812,7 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'WhatsApp da loja não disponível.',
+            'store_shop_whatsapp_unavailable'.tr,
             style: textMedium.copyWith(
               color: Colors.white,
               fontSize: 12.8,
@@ -2666,7 +3843,7 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Não foi possível abrir o WhatsApp da loja.',
+            'store_shop_whatsapp_open_error'.tr,
             style: textMedium.copyWith(
               color: Colors.white,
               fontSize: 12.8,
@@ -2692,7 +3869,7 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Retirada liberada',
+          'store_pickup_released'.tr,
           style: textBold.copyWith(
             color: Colors.black87,
             fontSize: 13.5,
@@ -2700,7 +3877,9 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Apresente o pedido $orderNumber ao vendedor no momento da retirada.',
+          'store_show_order_to_seller_on_pickup'.trParams({
+            'order': orderNumber,
+          }),
           style: textBold.copyWith(
             color: Colors.black87,
             fontSize: 12.5,
@@ -2709,7 +3888,7 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         Text(
-          'Horários disponíveis: horário comercial do vendedor.',
+          'store_pickup_business_hours'.tr,
           style: textRegular.copyWith(
             color: Colors.grey.shade700,
             fontSize: 12.5,
@@ -2720,7 +3899,7 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
         Text(
           hasAddress
               ? group.storeAddress
-              : 'Endereço de retirada será enviado pela loja.',
+              : 'store_pickup_address_sent_by_store'.tr,
           style: textRegular.copyWith(
             color: Colors.grey.shade700,
             fontSize: 12.5,
@@ -2742,7 +3921,7 @@ class StoreCheckoutPickupInfo extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'Contatar loja pelo WhatsApp',
+                'store_contact_store_whatsapp'.tr,
                 style: textBold.copyWith(
                   color: Colors.white,
                   fontSize: 13,
@@ -2767,7 +3946,28 @@ class StoreCheckoutLokallyShippingInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Text(
-      'Pedido aprovado. O vendedor tem até 24h para solicitar um parceiro Lokally para enviar o seu pedido.',
+      'store_order_approved_lokally_shipping_info'.tr,
+      style: textBold.copyWith(
+        color: primaryColor,
+        fontSize: 13.2,
+        height: 1.25,
+      ),
+    );
+  }
+}
+
+class StoreCheckoutNationalShippingInfo extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreCheckoutNationalShippingInfo({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      'store_order_approved_national_shipping_info'.tr,
       style: textBold.copyWith(
         color: primaryColor,
         fontSize: 13.2,
@@ -2793,10 +3993,12 @@ class StoreCheckoutApprovedMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       !hasPhysicalItems
-          ? 'Pagamento aprovado. As informações do serviço foram enviadas ao vendedor.'
+          ? 'store_payment_approved_service_info_sent'.tr
           : deliveryMode == StoreCartDeliveryMode.pickup
-              ? 'Pagamento aprovado. As informações de retirada foram liberadas.'
-              : 'Pagamento aprovado. O vendedor tem até 24h para solicitar o Lokally Envios.',
+              ? 'store_payment_approved_pickup_info_released'.tr
+              : deliveryMode == StoreCartDeliveryMode.nationalShipping
+                  ? 'store_payment_approved_national_shipping'.tr
+                  : 'store_payment_approved_lokally_shipping'.tr,
       style: textBold.copyWith(
         color: primaryColor,
         fontSize: 13.2,
@@ -2848,7 +4050,7 @@ class StoreCheckoutBottomBar extends StatelessWidget {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           color: Colors.white,
           child: Text(
-            'Pedido aprovado',
+            'store_order_approved'.tr,
             textAlign: TextAlign.center,
             style: textBold.copyWith(
               color: primaryColor,
@@ -2889,14 +4091,153 @@ class StoreCheckoutBottomBar extends StatelessWidget {
                   )
                 : Text(
                     paymentMode == StoreCartPaymentMode.appBalance
-                        ? 'Pagar com saldo'
-                        : 'Pagar com Mercado Pago',
+                        ? 'store_pay_with_balance'.tr
+                        : 'store_pay_with_mercado_pago'.tr,
                     style: textBold.copyWith(
                       color: Colors.white,
                       fontSize: 13.5,
                     ),
                   ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreMarketplaceMercadoPagoWebViewScreen extends StatefulWidget {
+  final String paymentUrl;
+  final Color primaryColor;
+
+  const StoreMarketplaceMercadoPagoWebViewScreen({
+    super.key,
+    required this.paymentUrl,
+    required this.primaryColor,
+  });
+
+  @override
+  State<StoreMarketplaceMercadoPagoWebViewScreen> createState() =>
+      _StoreMarketplaceMercadoPagoWebViewScreenState();
+}
+
+class _StoreMarketplaceMercadoPagoWebViewScreenState
+    extends State<StoreMarketplaceMercadoPagoWebViewScreen> {
+  bool isLoading = true;
+
+  bool isFinalMercadoPagoUrl(Uri? uri) {
+    if (uri == null) {
+      return false;
+    }
+
+    final String value = uri.toString().toLowerCase();
+
+    return value.contains('collection_status=approved') ||
+        value.contains('status=approved') ||
+        value.contains('/success') ||
+        value.contains('payment_status=approved') ||
+        value.contains('approved');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: widget.primaryColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            Container(
+              color: widget.primaryColor,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              child: Row(
+                children: [
+                  GestureDetector(
+                    onTap: () => Get.back(result: false),
+                    child: Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      'Mercado Pago',
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 19,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Get.back(result: true),
+                    child: Text(
+                      'store_finish'.tr,
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Stack(
+                children: [
+                  InAppWebView(
+                    initialUrlRequest: URLRequest(
+                      url: WebUri(widget.paymentUrl),
+                    ),
+                    onLoadStart: (controller, uri) {
+                      if (!mounted) {
+                        return;
+                      }
+
+                      setState(() {
+                        isLoading = true;
+                      });
+
+                      if (isFinalMercadoPagoUrl(uri)) {
+                        Get.back(result: true);
+                      }
+                    },
+                    onLoadStop: (controller, uri) {
+                      if (!mounted) {
+                        return;
+                      }
+
+                      setState(() {
+                        isLoading = false;
+                      });
+
+                      if (isFinalMercadoPagoUrl(uri)) {
+                        Get.back(result: true);
+                      }
+                    },
+                  ),
+                  if (isLoading)
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: LinearProgressIndicator(
+                        color: widget.primaryColor,
+                        backgroundColor: Colors.white,
+                        minHeight: 3,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -2929,6 +4270,11 @@ class StoreCartProductData {
   final String storeAddress;
   final String storePhone;
   final String storeEmail;
+  final String storeCity;
+  final String storeState;
+  final bool allowPickup;
+  final bool allowLokallyShipping;
+  final bool allowNationalShipping;
   final String productType;
   final String serviceDeliveryType;
 
@@ -2944,6 +4290,11 @@ class StoreCartProductData {
     required this.storeAddress,
     required this.storePhone,
     required this.storeEmail,
+    required this.storeCity,
+    required this.storeState,
+    required this.allowPickup,
+    required this.allowLokallyShipping,
+    required this.allowNationalShipping,
     required this.productType,
     required this.serviceDeliveryType,
   });
@@ -2955,6 +4306,52 @@ class StoreCartProductData {
 
     final String sellerId = '${map['seller_id'] ?? ''}';
     final String storeId = '${store['id'] ?? sellerId}';
+    final bool hasAnyDeliveryFlag = map.containsKey('allow_pickup') ||
+        map.containsKey('allow_lokally_shipping') ||
+        map.containsKey('allow_national_shipping') ||
+        map.containsKey('delivery_immediate') ||
+        map.containsKey('delivery_full_24h') ||
+        map.containsKey('delivery_lokally_br');
+
+    final bool allowPickup = hasAnyDeliveryFlag
+        ? parseBool(map['allow_pickup'] ?? map['delivery_immediate'])
+        : true;
+    final bool allowLokallyShipping = hasAnyDeliveryFlag
+        ? parseBool(map['allow_lokally_shipping'] ?? map['delivery_full_24h'])
+        : true;
+    final bool allowNationalShipping = parseBool(
+      map['allow_national_shipping'] ??
+          map['delivery_lokally_br'] ??
+          map['national_shipping_enabled'] ??
+          store['national_shipping_enabled'],
+    );
+
+    final String storeCity = firstNotEmpty(<dynamic>[
+      store['shipping_origin_city'],
+      store['origin_city'],
+      store['city'],
+      store['city_name'],
+      map['shipping_origin_city'],
+      map['seller_shipping_origin_city'],
+      map['store_shipping_origin_city'],
+      map['store_city'],
+      map['seller_city'],
+      map['origin_city'],
+      map['city'],
+    ]);
+
+    final String storeState = firstNotEmpty(<dynamic>[
+      store['shipping_origin_state'],
+      store['origin_state'],
+      store['state'],
+      map['shipping_origin_state'],
+      map['seller_shipping_origin_state'],
+      map['store_shipping_origin_state'],
+      map['store_state'],
+      map['seller_state'],
+      map['origin_state'],
+      map['state'],
+    ]);
 
     return StoreCartProductData(
       id: '${map['id'] ?? ''}',
@@ -2965,17 +4362,69 @@ class StoreCartProductData {
       ),
       mainImageUrl: '${map['main_image_url'] ?? ''}',
       storeId: storeId,
-      storeName: '${store['name'] ?? 'Loja'}',
+      storeName: '${store['name'] ?? 'store_store'.tr}',
       storeLogoUrl: '${store['logo_url'] ?? ''}',
       storeAddress:
           '${store['address'] ?? store['store_address'] ?? store['full_address'] ?? ''}',
       storePhone:
           '${store['phone'] ?? store['contact_phone'] ?? store['business_phone'] ?? store['mobile'] ?? ''}',
       storeEmail: '${store['email'] ?? store['business_email'] ?? ''}',
+      storeCity: storeCity,
+      storeState: storeState,
+      allowPickup: allowPickup,
+      allowLokallyShipping: allowLokallyShipping,
+      allowNationalShipping: allowNationalShipping,
       productType: '${map['product_type'] ?? ''}'.trim().toLowerCase(),
       serviceDeliveryType:
           '${map['service_delivery_type'] ?? ''}'.trim().toLowerCase(),
     );
+  }
+
+  String get storeCityLabel {
+    if (storeCity.isNotEmpty && storeState.isNotEmpty) {
+      return '$storeCity - $storeState';
+    }
+
+    if (storeCity.isNotEmpty) {
+      return storeCity;
+    }
+
+    return storeState;
+  }
+
+  static bool parseBool(dynamic value) {
+    if (value == null) {
+      return false;
+    }
+
+    if (value is bool) {
+      return value;
+    }
+
+    if (value is num) {
+      return value != 0;
+    }
+
+    final String normalized = '$value'.trim().toLowerCase();
+
+    return normalized == '1' ||
+        normalized == 'true' ||
+        normalized == 'sim' ||
+        normalized == 'yes' ||
+        normalized == 'ativo' ||
+        normalized == 'active';
+  }
+
+  static String firstNotEmpty(List<dynamic> values) {
+    for (final dynamic value in values) {
+      final String text = '$value'.trim();
+
+      if (text.isNotEmpty && text != 'null') {
+        return text;
+      }
+    }
+
+    return '';
   }
 
   bool get isService {
@@ -2984,7 +4433,7 @@ class StoreCartProductData {
     }
 
     final String text = '$title $serviceDeliveryType'.toLowerCase();
-    return text.contains('serviço') ||
+    return text.contains('serviÃ§o') ||
         text.contains('redes sociais') ||
         text.contains('marketing digital') ||
         text.contains('online') ||
@@ -2996,34 +4445,34 @@ class StoreCartProductData {
   String get serviceDeliveryLabel {
     switch (serviceDeliveryType) {
       case 'download':
-        return 'Download';
+        return 'store_download';
       case 'presential':
       case 'presencial':
-        return 'Presencial';
+        return 'store_presential';
       case 'home_office':
       case 'homeoffice':
-        return 'Home Office';
+        return 'store_home_office';
       case 'online':
       case 'digital':
       default:
-        return 'Online';
+        return 'store_online';
     }
   }
 
   String get serviceDeliverySummary {
     switch (serviceDeliveryType) {
       case 'download':
-        return 'Formato: Download';
+        return 'store_format_download';
       case 'presential':
       case 'presencial':
-        return 'Formato: Presencial';
+        return 'store_format_presential';
       case 'home_office':
       case 'homeoffice':
-        return 'Formato: Home Office';
+        return 'store_format_home_office';
       case 'online':
       case 'digital':
       default:
-        return 'Formato: Online';
+        return 'store_format_online';
     }
   }
 
@@ -3081,6 +4530,10 @@ class StoreCartStoreGroup {
   String get storePhone => firstProduct?.storePhone ?? '';
 
   String get storeEmail => firstProduct?.storeEmail ?? '';
+
+  String get storeCity => firstProduct?.storeCity ?? '';
+
+  String get storeState => firstProduct?.storeState ?? '';
 }
 
 class StoreCartCurrency {
@@ -3114,3 +4567,4 @@ class StoreCartCurrency {
     return 'R\$$integer,$decimal';
   }
 }
+

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
@@ -14,6 +15,10 @@ import 'package:ride_sharing_user_app/features/store/screens/seller/store_seller
 import 'package:ride_sharing_user_app/features/store/screens/store_seller_registration_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_product_details_screen.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_cart_screen.dart';
+import 'package:ride_sharing_user_app/features/store/screens/categories/store_product_category_screen.dart';
+import 'package:ride_sharing_user_app/features/services_marketplace/screens/lokally_services_home_screen.dart';
+import 'package:ride_sharing_user_app/features/store/widgets/store_marketplace_footer.dart';
+import 'package:ride_sharing_user_app/features/store/widgets/store_marketplace_header.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -43,6 +48,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   static const String publicCategoriesUri = '/api/store/public-categories';
   static const String publicProductsUri = '/api/store/products';
+  static const String publicHomeSectionsUri = '/api/store/home-sections';
   static const String marketplaceSettingsUri = '/api/store/settings';
   static const String marketplaceBannersUri = '/api/store/banners';
   static const String boostedProductsUri = '/api/store/boosted-products';
@@ -74,6 +80,9 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       StoreMarketplaceSettings.defaults();
 
   final ScrollController welcomeCarouselController = ScrollController();
+  final ScrollController marketplaceScrollController = ScrollController();
+  final int welcomeShuffleSeed = DateTime.now().millisecondsSinceEpoch;
+  bool showBackToTopButton = false;
   final PageController marketplaceBannerPageController = PageController();
   final PageController boostedProductsPageController = PageController(
     viewportFraction: 0.94,
@@ -89,6 +98,12 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   ];
 
   List<StoreProductData> products = <StoreProductData>[];
+  List<StoreProductData> homeWelcomeOffers = <StoreProductData>[];
+  List<StoreProductData> homeHighlightedProducts = <StoreProductData>[];
+  List<StoreProductData> homeRealEstateProducts = <StoreProductData>[];
+  List<StoreProductData> homeServiceProducts = <StoreProductData>[];
+  List<StoreProductData> homeVehicleProducts = <StoreProductData>[];
+  List<StoreProductData> homeMixedFeedProducts = <StoreProductData>[];
   List<StoreProductData> boostedProducts = <StoreProductData>[];
   List<StoreBoostedCategoryData> boostedCategories =
       <StoreBoostedCategoryData>[];
@@ -98,7 +113,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
   @override
   void initState() {
     super.initState();
-    startWelcomeCarousel();
+    marketplaceScrollController.addListener(handleMarketplaceScroll);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadPublicStore();
@@ -111,9 +126,39 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     marketplaceBannerTimer?.cancel();
     boostedProductsTimer?.cancel();
     welcomeCarouselController.dispose();
+    marketplaceScrollController.removeListener(handleMarketplaceScroll);
+    marketplaceScrollController.dispose();
     marketplaceBannerPageController.dispose();
     boostedProductsPageController.dispose();
     super.dispose();
+  }
+
+  void handleMarketplaceScroll() {
+    if (!marketplaceScrollController.hasClients) {
+      return;
+    }
+
+    final bool shouldShow = marketplaceScrollController.offset > 520;
+
+    if (shouldShow == showBackToTopButton) {
+      return;
+    }
+
+    setState(() {
+      showBackToTopButton = shouldShow;
+    });
+  }
+
+  void scrollMarketplaceToTop() {
+    if (!marketplaceScrollController.hasClients) {
+      return;
+    }
+
+    marketplaceScrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 420),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   String? normalizeMarketplaceZoneId(dynamic value) {
@@ -338,6 +383,12 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
     setState(() {
       products = <StoreProductData>[];
+      homeWelcomeOffers = <StoreProductData>[];
+      homeHighlightedProducts = <StoreProductData>[];
+      homeRealEstateProducts = <StoreProductData>[];
+      homeServiceProducts = <StoreProductData>[];
+      homeVehicleProducts = <StoreProductData>[];
+      homeMixedFeedProducts = <StoreProductData>[];
       boostedProducts = <StoreProductData>[];
       boostedCategories = <StoreBoostedCategoryData>[];
       marketplaceBanners = <StoreMarketplaceBannerData>[];
@@ -480,6 +531,12 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
         setState(() {
           products = <StoreProductData>[];
+          homeWelcomeOffers = <StoreProductData>[];
+          homeHighlightedProducts = <StoreProductData>[];
+          homeRealEstateProducts = <StoreProductData>[];
+          homeServiceProducts = <StoreProductData>[];
+          homeVehicleProducts = <StoreProductData>[];
+          homeMixedFeedProducts = <StoreProductData>[];
           boostedProducts = <StoreProductData>[];
           boostedCategories = <StoreBoostedCategoryData>[];
           marketplaceBanners = <StoreMarketplaceBannerData>[];
@@ -501,21 +558,15 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
         return;
       }
 
-      if (resolvedZoneId == null || resolvedZoneId.isEmpty) {
-        if (!mounted) {
-          return;
-        }
-
-        clearPublicStoreForUnavailableZone();
-        return;
-      }
-
-      await loadPublicCategories();
-      await loadMarketplaceBanners();
-      await loadPublicProducts();
-      await loadBoostedProducts();
-      await loadBoostedCategories();
-      await checkSellerStatusOnOpen();
+      await Future.wait(<Future<void>>[
+        loadPublicCategories(),
+        loadMarketplaceBanners(),
+        loadMarketplaceHomeSections(),
+        loadPublicProducts(),
+        loadBoostedProducts(),
+        loadBoostedCategories(),
+        checkSellerStatusOnOpen(),
+      ]);
     } finally {
       if (mounted) {
         setState(() {
@@ -679,8 +730,14 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
 
   Future<void> loadPublicCategories() async {
     try {
+      /*
+       * Categorias do Marketplace:
+       * A API já retorna somente categorias públicas/ativas que devem aparecer no app.
+       * Aqui não usamos zone_id para não esconder categorias válidas quando o zone_id local
+       * estiver desatualizado, vazio, em cache ou em formato diferente.
+       */
       final Response response = await Get.find<ApiClient>().getData(
-        uriWithMarketplaceZone(publicCategoriesUri),
+        publicCategoriesUri,
       );
 
       if (!mounted) {
@@ -699,19 +756,54 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       final dynamic dataValue = responseBody['data'];
       final List<dynamic> data = dataValue is List ? dataValue : <dynamic>[];
 
-      final List<StoreCategoryData> loadedCategories = <StoreCategoryData>[
-        StoreCategoryData.all(),
-      ];
+      final List<StoreCategoryData> apiCategories = data
+          .whereType<Map>()
+          .map((item) {
+            return StoreCategoryData.fromMap(
+              Map<String, dynamic>.from(item),
+            );
+          })
+          .where((category) => category.id.isNotEmpty)
+          .toList();
 
-      loadedCategories.addAll(
-        data.whereType<Map>().map((item) {
-          return StoreCategoryData.fromMap(
-            Map<String, dynamic>.from(item),
-          );
-        }).where((category) {
-          return category.id.isNotEmpty;
-        }),
-      );
+      StoreCategoryData? admAllCategory;
+      final List<StoreCategoryData> regularCategories = <StoreCategoryData>[];
+      final Set<String> addedCategoryKeys = <String>{};
+
+      for (final StoreCategoryData category in apiCategories) {
+        final String normalizedName = category.name.trim().toLowerCase();
+        final String normalizedSlug = category.slug.trim().toLowerCase();
+        final bool isExplicitAllCategory = normalizedName == 'todos' ||
+            normalizedName == 'all' ||
+            normalizedSlug == 'todos' ||
+            normalizedSlug == 'all';
+
+        if (isExplicitAllCategory) {
+          admAllCategory ??= category;
+          continue;
+        }
+
+        final String categoryKey = category.deduplicationKey;
+
+        if (categoryKey.isEmpty || addedCategoryKeys.contains(categoryKey)) {
+          continue;
+        }
+
+        addedCategoryKeys.add(categoryKey);
+        regularCategories.add(category);
+      }
+
+      regularCategories.sort((a, b) {
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+      final List<StoreCategoryData> loadedCategories = <StoreCategoryData>[
+        StoreCategoryData.all(
+          imageUrl: admAllCategory?.primaryIconUrl ?? '',
+          iconUrl: admAllCategory?.primaryIconUrl ?? '',
+        ),
+        ...regularCategories,
+      ];
 
       setState(() {
         mainCategories = loadedCategories;
@@ -786,6 +878,79 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
           hasLoadedPublicStore = true;
         });
         showStoreMessage('Não foi possível carregar os produtos da loja.');
+      }
+    }
+  }
+
+  Future<void> loadMarketplaceHomeSections() async {
+    final String separator = publicHomeSectionsUri.contains('?') ? '&' : '?';
+    final String uri =
+        '$publicHomeSectionsUri${separator}seed=$welcomeShuffleSeed&limit=6&feed_limit=30';
+
+    try {
+      final Response response = await Get.find<ApiClient>().getData(uri);
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic responseBody = response.body;
+
+      if (response.statusCode != 200 ||
+          responseBody is! Map ||
+          responseBody['status'] != true) {
+        setState(() {
+          homeWelcomeOffers = <StoreProductData>[];
+          homeHighlightedProducts = <StoreProductData>[];
+          homeRealEstateProducts = <StoreProductData>[];
+          homeServiceProducts = <StoreProductData>[];
+          homeVehicleProducts = <StoreProductData>[];
+          homeMixedFeedProducts = <StoreProductData>[];
+        });
+        return;
+      }
+
+      final dynamic dataValue = responseBody['data'];
+      final Map<String, dynamic> data = dataValue is Map
+          ? Map<String, dynamic>.from(dataValue)
+          : <String, dynamic>{};
+      final dynamic sectionsValue = data['sections'];
+      final Map<String, dynamic> sections = sectionsValue is Map
+          ? Map<String, dynamic>.from(sectionsValue)
+          : <String, dynamic>{};
+
+      List<StoreProductData> parseSection(String key) {
+        final dynamic itemsValue = sections[key];
+        final List<dynamic> items =
+            itemsValue is List ? itemsValue : <dynamic>[];
+
+        return items
+            .whereType<Map>()
+            .map((item) => StoreProductData.fromMap(
+                  Map<String, dynamic>.from(item),
+                ))
+            .where((product) => product.id.isNotEmpty)
+            .toList();
+      }
+
+      setState(() {
+        homeWelcomeOffers = parseSection('welcome_offers');
+        homeHighlightedProducts = parseSection('highlighted_products');
+        homeRealEstateProducts = <StoreProductData>[];
+        homeServiceProducts = <StoreProductData>[];
+        homeVehicleProducts = <StoreProductData>[];
+        homeMixedFeedProducts = parseSection('mixed_feed');
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          homeWelcomeOffers = <StoreProductData>[];
+          homeHighlightedProducts = <StoreProductData>[];
+          homeRealEstateProducts = <StoreProductData>[];
+          homeServiceProducts = <StoreProductData>[];
+          homeVehicleProducts = <StoreProductData>[];
+          homeMixedFeedProducts = <StoreProductData>[];
+        });
       }
     }
   }
@@ -1172,9 +1337,197 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     return mainCategories[selectedMainCategoryIndex];
   }
 
+  bool isServicesCategory(StoreCategoryData category) {
+    final String normalized = category.normalizedIdentifier;
+
+    return normalized.contains('servico') ||
+        normalized.contains('service') ||
+        normalized.contains('servicos');
+  }
+
+  bool isVehiclesCategory(StoreCategoryData category) {
+    final String normalized = category.normalizedIdentifier;
+
+    return normalized.contains('veiculo') ||
+        normalized.contains('veiculos') ||
+        normalized.contains('auto') ||
+        normalized.contains('carro') ||
+        normalized.contains('moto');
+  }
+
+  bool isRealEstateCategory(StoreCategoryData category) {
+    final String normalized = category.normalizedIdentifier;
+
+    return normalized.contains('imovel') ||
+        normalized.contains('imoveis') ||
+        normalized.contains('real estate');
+  }
+
+  StoreCategoryData? findMarketplaceMenuCategory(
+    bool Function(StoreCategoryData category) matcher,
+  ) {
+    for (final StoreCategoryData category in mainCategories) {
+      if (category.isAll) {
+        continue;
+      }
+
+      if (matcher(category)) {
+        return category;
+      }
+    }
+
+    return null;
+  }
+
+  StoreMarketplaceCategoryViewData fixedMarketplaceMenuItem({
+    required String id,
+    required String name,
+    required String normalizedIdentifier,
+    required String localIconAsset,
+    StoreCategoryData? sourceCategory,
+  }) {
+    final String networkIconUrl = sourceCategory?.primaryIconUrl ?? '';
+
+    return StoreMarketplaceCategoryViewData(
+      id: sourceCategory?.id ?? id,
+      name: name,
+      primaryIconUrl: networkIconUrl,
+      localIconAsset: networkIconUrl.isEmpty ? localIconAsset : null,
+      isAll: false,
+      normalizedIdentifier:
+          sourceCategory?.normalizedIdentifier ?? normalizedIdentifier,
+    );
+  }
+
+  List<StoreMarketplaceCategoryViewData> get marketplaceHeaderCategories {
+    final StoreCategoryData? servicesCategory =
+        findMarketplaceMenuCategory(isServicesCategory);
+
+    return <StoreMarketplaceCategoryViewData>[
+      fixedMarketplaceMenuItem(
+        id: 'lokally-fixed-products',
+        name: 'Produtos',
+        normalizedIdentifier: 'produtos',
+        localIconAsset: 'assets/image/produtos.png',
+      ),
+      fixedMarketplaceMenuItem(
+        id: 'lokally-fixed-services',
+        name: 'Serviços',
+        normalizedIdentifier: 'servicos',
+        localIconAsset: 'assets/image/servicos_icon.png',
+        sourceCategory: servicesCategory,
+      ),
+      fixedMarketplaceMenuItem(
+        id: 'lokally-fixed-vehicles',
+        name: 'Veículos',
+        normalizedIdentifier: 'veiculos autos carros motos',
+        localIconAsset: 'assets/image/car_menu.png',
+      ),
+      fixedMarketplaceMenuItem(
+        id: 'lokally-fixed-real-estate',
+        name: 'Imóveis',
+        normalizedIdentifier: 'imoveis real estate',
+        localIconAsset: 'assets/image/imóveis.png',
+      ),
+      fixedMarketplaceMenuItem(
+        id: 'lokally-fixed-more',
+        name: '+ Ver mais',
+        normalizedIdentifier: 'ver mais categorias',
+        localIconAsset: 'assets/image/todos.png',
+      ),
+    ];
+  }
+
+  int get selectedMarketplaceHeaderCategoryIndex {
+    final StoreCategoryData selected = selectedMainCategory;
+
+    if (selected.isAll) {
+      return -1;
+    }
+
+    if (isServicesCategory(selected)) {
+      return 1;
+    }
+
+    if (isVehiclesCategory(selected)) {
+      return 2;
+    }
+
+    if (isRealEstateCategory(selected)) {
+      return 3;
+    }
+
+    return -1;
+  }
+
+  bool marketplaceCategoryHasProductsByType(
+    StoreCategoryData category,
+    bool Function(StoreProductData product) test,
+  ) {
+    if (category.id.isNotEmpty &&
+        products.any(
+            (product) => test(product) && product.categoryId == category.id)) {
+      return true;
+    }
+
+    return category.subcategories.any((subcategory) {
+      return marketplaceCategoryHasProductsByType(subcategory, test);
+    });
+  }
+
+  StoreCategoryData marketplaceCategoryWithFilteredChildren(
+    StoreCategoryData category,
+    bool Function(StoreProductData product) test,
+  ) {
+    final List<StoreCategoryData> filteredChildren =
+        category.subcategories.where((subcategory) {
+      return marketplaceCategoryHasProductsByType(subcategory, test);
+    }).map((subcategory) {
+      return marketplaceCategoryWithFilteredChildren(subcategory, test);
+    }).toList();
+
+    return StoreCategoryData(
+      id: category.id,
+      parentId: category.parentId,
+      name: category.name,
+      slug: category.slug,
+      imageUrl: category.imageUrl,
+      iconUrl: category.iconUrl,
+      subcategories: filteredChildren,
+    );
+  }
+
   List<StoreCategoryData> get activeSubcategories {
     if (selectedMainCategory.isAll) {
       return <StoreCategoryData>[];
+    }
+
+    if (isVehiclesCategory(selectedMainCategory)) {
+      return selectedMainCategory.subcategories.where((subcategory) {
+        return marketplaceCategoryHasProductsByType(
+          subcategory,
+          (product) => product.isVehicleAd,
+        );
+      }).map((subcategory) {
+        return marketplaceCategoryWithFilteredChildren(
+          subcategory,
+          (product) => product.isVehicleAd,
+        );
+      }).toList();
+    }
+
+    if (isRealEstateCategory(selectedMainCategory)) {
+      return selectedMainCategory.subcategories.where((subcategory) {
+        return marketplaceCategoryHasProductsByType(
+          subcategory,
+          (product) => product.isRealEstateAd,
+        );
+      }).map((subcategory) {
+        return marketplaceCategoryWithFilteredChildren(
+          subcategory,
+          (product) => product.isRealEstateAd,
+        );
+      }).toList();
     }
 
     return selectedMainCategory.subcategories;
@@ -1220,22 +1573,50 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
         .where((id) => id.isNotEmpty)
         .toSet();
 
-    return products.where((product) {
+    List<StoreProductData> result = products.where((product) {
       return product.categoryId == selected.id ||
           subcategoryIds.contains(product.categoryId);
     }).toList();
+
+    if (isVehiclesCategory(selected)) {
+      result = result.where((product) => product.isVehicleAd).toList();
+    } else if (isRealEstateCategory(selected)) {
+      result = result.where((product) => product.isRealEstateAd).toList();
+    } else if (isServicesCategory(selected)) {
+      result = result.where((product) => product.isService).toList();
+    }
+
+    return result;
   }
 
   List<StoreProductData> get welcomeProducts {
     final List<StoreProductData> baseProducts = visibleProducts;
-    final List<StoreProductData> promotionalProducts =
-        baseProducts.where((product) => product.hasPromotion).take(8).toList();
+    final List<StoreProductData> sourceProducts =
+        baseProducts.where((product) => product.hasPromotion).toList();
 
-    if (promotionalProducts.isNotEmpty) {
-      return promotionalProducts;
-    }
+    final List<StoreProductData> pool = sourceProducts.isNotEmpty
+        ? sourceProducts
+        : List<StoreProductData>.from(baseProducts);
 
-    return baseProducts.take(8).toList();
+    pool.shuffle(Random(welcomeShuffleSeed));
+
+    return pool.take(6).toList();
+  }
+
+  List<StoreProductData> excludeProductsByIds(
+    List<StoreProductData> source,
+    Set<String> excludedIds,
+  ) {
+    return source.where((product) {
+      return product.id.isNotEmpty && !excludedIds.contains(product.id);
+    }).toList();
+  }
+
+  List<StoreProductData> productsByType({
+    required bool Function(StoreProductData product) test,
+    required Set<String> excludedIds,
+  }) {
+    return excludeProductsByIds(products.where(test).toList(), excludedIds);
   }
 
   List<StoreProductData> get searchResults {
@@ -2036,15 +2417,337 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     );
   }
 
-  void handleMainCategorySelected(int index) {
+  bool shouldOpenProductCategoryScreen(StoreCategoryData category) {
+    if (category.isAll) {
+      return false;
+    }
+
+    final String normalized = category.normalizedIdentifier;
+
+    if (normalized.contains('servico') ||
+        normalized.contains('service') ||
+        normalized.contains('imovel') ||
+        normalized.contains('imoveis') ||
+        normalized.contains('real estate') ||
+        normalized.contains('veiculo') ||
+        normalized.contains('veiculos') ||
+        normalized.contains('auto') ||
+        normalized.contains('carro') ||
+        normalized.contains('moto')) {
+      return false;
+    }
+
+    return true;
+  }
+
+  void openProductCategoryScreen(StoreCategoryData category) {
+    Get.to(
+      () => StoreProductCategoryScreen(
+        initialCategoryId: category.id,
+        initialCategoryName: category.name,
+        initialCategorySlug: category.slug,
+      ),
+    );
+  }
+
+  void openPhysicalProductsScreen() {
+    Get.to(
+      () => const StoreProductCategoryScreen(
+        initialCategoryId: '',
+        initialCategoryName: 'Produtos',
+        initialCategorySlug: '',
+      ),
+    );
+  }
+
+  void openServicesHomeScreen() {
+    Get.to(() => const LokallyServicesHomeScreen());
+  }
+
+  void openVehicleCategoryScreen([StoreCategoryData? category]) {
+    Get.to(
+      () => StoreProductCategoryScreen(
+        initialCategoryId: category?.id ?? '',
+        initialCategoryName: category?.name ?? 'Veículos',
+        initialCategorySlug: category?.slug ?? 'veiculos',
+      ),
+    );
+  }
+
+  void openRealEstateCategoryScreen([StoreCategoryData? category]) {
+    Get.to(
+      () => const StoreProductCategoryScreen(
+        initialCategoryId: '',
+        initialCategoryName: 'Imóveis',
+        initialCategorySlug: 'imoveis',
+      ),
+    );
+  }
+
+  void resetMarketplaceHomeVitrines() {
     setState(() {
-      selectedMainCategoryIndex = index;
+      selectedMainCategoryIndex = 0;
+      selectedSubcategoryId = '';
+      searchQuery = '';
+    });
+
+    unawaited(loadMarketplaceBanners());
+  }
+
+  void handleFixedMarketplaceMenuSelected(int index) {
+    if (index == 0) {
+      openPhysicalProductsScreen();
+      return;
+    }
+
+    if (index == 1) {
+      openServicesHomeScreen();
+      return;
+    }
+
+    if (index == 2) {
+      openVehicleCategoryScreen(
+          findMarketplaceMenuCategory(isVehiclesCategory));
+      return;
+    }
+
+    if (index == 3) {
+      openRealEstateCategoryScreen(
+        findMarketplaceMenuCategory(isRealEstateCategory),
+      );
+      return;
+    }
+
+    if (index == 4) {
+      showMarketplaceMoreCategoriesSheet();
+    }
+  }
+
+  void handleMarketplaceCategorySelected(StoreCategoryData category) {
+    if (isServicesCategory(category)) {
+      openServicesHomeScreen();
+      return;
+    }
+
+    if (isVehiclesCategory(category)) {
+      openVehicleCategoryScreen(category);
+      return;
+    }
+
+    if (isRealEstateCategory(category)) {
+      openRealEstateCategoryScreen(category);
+      return;
+    }
+
+    final int categoryIndex = mainCategories.indexWhere(
+      (item) => item.id == category.id,
+    );
+
+    if (categoryIndex < 0) {
+      return;
+    }
+
+    if (shouldOpenProductCategoryScreen(category)) {
+      openProductCategoryScreen(category);
+      return;
+    }
+
+    setState(() {
+      selectedMainCategoryIndex = categoryIndex;
       selectedSubcategoryId = '';
       searchQuery = '';
     });
 
     unawaited(loadMarketplaceBanners());
     trackBoostedCategoryViews(visibleBoostedCategories);
+  }
+
+  void handleMainCategorySelected(int index) {
+    if (index < 0 || index >= mainCategories.length) {
+      return;
+    }
+
+    handleMarketplaceCategorySelected(mainCategories[index]);
+  }
+
+  void showMarketplaceMoreCategoriesSheet() {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final List<StoreCategoryData> categories =
+        mainCategories.where((category) => !category.isAll).toList();
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (modalContext) {
+        return SafeArea(
+          child: Container(
+            width: double.infinity,
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(modalContext).size.height * 0.78,
+            ),
+            margin: const EdgeInsets.all(14),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(28),
+              boxShadow: [
+                BoxShadow(
+                  offset: const Offset(0, 12),
+                  blurRadius: 30,
+                  color: Colors.black.withValues(alpha: 0.14),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        Icons.category_rounded,
+                        color: primaryColor,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Todas as categorias',
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: () => Navigator.of(modalContext).pop(),
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.grey.shade700,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Categorias com produtos, anúncios ou serviços ativos no Marketplace.',
+                    style: textRegular.copyWith(
+                      color: Colors.grey.shade600,
+                      fontSize: 12.8,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Flexible(
+                  child: categories.isEmpty
+                      ? Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Nenhuma categoria disponível no momento.',
+                            style: textMedium.copyWith(
+                              color: Colors.grey.shade700,
+                              fontSize: 13,
+                            ),
+                          ),
+                        )
+                      : ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: categories.length,
+                          separatorBuilder: (_, __) => Divider(
+                            height: 1,
+                            color: Colors.grey.shade200,
+                          ),
+                          itemBuilder: (context, itemIndex) {
+                            final StoreCategoryData category =
+                                categories[itemIndex];
+
+                            return ListTile(
+                              contentPadding: EdgeInsets.zero,
+                              minLeadingWidth: 42,
+                              leading: Container(
+                                width: 42,
+                                height: 42,
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: primaryColor.withValues(alpha: 0.09),
+                                  borderRadius: BorderRadius.circular(15),
+                                ),
+                                child: category.primaryIconUrl.isNotEmpty
+                                    ? Image.network(
+                                        category.primaryIconUrl,
+                                        fit: BoxFit.contain,
+                                        errorBuilder: (_, __, ___) => Icon(
+                                          Icons.storefront_rounded,
+                                          color: primaryColor,
+                                          size: 22,
+                                        ),
+                                      )
+                                    : Icon(
+                                        isServicesCategory(category)
+                                            ? Icons.handshake_rounded
+                                            : isVehiclesCategory(category)
+                                                ? Icons.directions_car_rounded
+                                                : isRealEstateCategory(category)
+                                                    ? Icons.home_work_rounded
+                                                    : Icons.storefront_rounded,
+                                        color: primaryColor,
+                                        size: 22,
+                                      ),
+                              ),
+                              title: Text(
+                                category.name,
+                                style: textBold.copyWith(
+                                  color: Colors.black87,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              subtitle: category.subcategories.isEmpty
+                                  ? null
+                                  : Text(
+                                      '${category.subcategories.length} subcategorias',
+                                      style: textRegular.copyWith(
+                                        color: Colors.grey.shade600,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                              trailing: Icon(
+                                Icons.chevron_right_rounded,
+                                color: Colors.grey.shade500,
+                              ),
+                              onTap: () {
+                                Navigator.of(modalContext).pop();
+                                handleMarketplaceCategorySelected(category);
+                              },
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   void handleSubcategorySelected(String subcategoryId) {
@@ -2061,12 +2764,38 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
     final Color primaryColor = Theme.of(context).primaryColor;
     final Color textColor =
         Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
-    final List<StoreProductData> welcomeProductsForView = welcomeProducts;
+    final bool shouldShowHomeVitrines =
+        selectedMainCategory.isAll && selectedSubcategoryId.isEmpty;
+    final List<StoreProductData> welcomeProductsForView =
+        shouldShowHomeVitrines && homeWelcomeOffers.isNotEmpty
+            ? homeWelcomeOffers
+            : welcomeProducts;
+    final Set<String> homeUsedProductIds = welcomeProductsForView
+        .map((product) => product.id)
+        .where((id) => id.isNotEmpty)
+        .toSet();
+    final List<StoreProductData> homeHighlightedProductsForView =
+        shouldShowHomeVitrines && homeHighlightedProducts.isNotEmpty
+            ? homeHighlightedProducts
+            : productsByType(
+                test: (product) =>
+                    !product.isService &&
+                    !product.isVehicleAd &&
+                    !product.isRealEstateAd,
+                excludedIds: homeUsedProductIds,
+              ).take(6).toList();
+    homeUsedProductIds
+        .addAll(homeHighlightedProductsForView.map((product) => product.id));
+    final List<StoreProductData> homeMixedFeedProductsForView =
+        shouldShowHomeVitrines && homeMixedFeedProducts.isNotEmpty
+            ? homeMixedFeedProducts
+            : excludeProductsByIds(products, homeUsedProductIds);
     final List<StoreProductData> boostedProductsForView =
         selectedMainCategory.isAll ? boostedProducts : <StoreProductData>[];
     final List<StoreBoostedCategoryData> boostedCategoriesForView =
         visibleBoostedCategories;
-    final List<StoreProductData> productsForView = visibleProducts;
+    final List<StoreProductData> productsForView =
+        shouldShowHomeVitrines ? homeMixedFeedProductsForView : visibleProducts;
     final bool marketplaceAvailable = marketplaceSettings.marketplaceEnabled;
     final bool showMarketplaceUnavailable =
         hasLoadedMarketplaceSettings && !marketplaceAvailable;
@@ -2080,32 +2809,10 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
       backgroundColor: Colors.white,
       body: Stack(
         children: [
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: IgnorePointer(
-              child: Container(
-                height: 360,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      primaryColor,
-                      primaryColor.withValues(alpha: 0.92),
-                      primaryColor.withValues(alpha: 0.58),
-                      Colors.white.withValues(alpha: 0),
-                    ],
-                    stops: const [0.0, 0.38, 0.75, 1.0],
-                  ),
-                ),
-              ),
-            ),
-          ),
+          const SizedBox.shrink(),
           Column(
             children: [
-              StoreModeSelectorHeader(
+              StoreMarketplaceModeSelectorHeader(
                 primaryColor: primaryColor,
                 onShoppingTap: handleSimpleTap,
                 onTravelTap: handleTravelTap,
@@ -2116,6 +2823,7 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                   color: primaryColor,
                   onRefresh: loadPublicStore,
                   child: SingleChildScrollView(
+                    controller: marketplaceScrollController,
                     padding: const EdgeInsets.fromLTRB(
                       Dimensions.paddingSizeDefault,
                       10,
@@ -2123,185 +2831,249 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
                       150,
                     ),
                     physics: const AlwaysScrollableScrollPhysics(),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: Stack(
+                      clipBehavior: Clip.none,
                       children: [
-                        if (isLoadingMarketplaceSettings &&
-                            !hasLoadedMarketplaceSettings) ...[
-                          StorePublicLoadingBlock(primaryColor: primaryColor),
-                        ] else if (showMarketplaceUnavailable) ...[
-                          StoreMarketplaceUnavailableBlock(
+                        Positioned(
+                          top: -10,
+                          left: -Dimensions.paddingSizeDefault,
+                          right: -Dimensions.paddingSizeDefault,
+                          child: StoreMarketplaceHeaderGradient(
                             primaryColor: primaryColor,
-                            supportWhatsappAvailable:
-                                marketplaceSettings.hasSupportWhatsapp,
-                            onSupportTap: marketplaceSettings.hasSupportWhatsapp
-                                ? openSellerSupportWhatsApp
-                                : null,
+                            height: 315,
                           ),
-                        ] else if (shouldShowInitialMarketplaceLoading) ...[
-                          StoreMarketplaceInitialLoadingBlock(
-                            primaryColor: primaryColor,
-                          ),
-                        ] else ...[
-                          if (searchQuery.trim().isNotEmpty) ...[
-                            StoreSearchResultsList(
-                              products: searchResults,
-                              primaryColor: primaryColor,
-                              onProductTap: handleProductTap,
-                            ),
-                            const SizedBox(height: 14),
-                          ],
-                          StoreMainCategoryMenu(
-                            categories: mainCategories,
-                            selectedIndex: selectedMainCategoryIndex,
-                            primaryColor: primaryColor,
-                            onSelected: handleMainCategorySelected,
-                          ),
-                          if (activeSubcategories.isNotEmpty) ...[
-                            const SizedBox(height: 10),
-                            StoreSubcategoryMenu(
-                              subcategories: activeSubcategories,
-                              selectedSubcategoryId: selectedSubcategoryId,
-                              primaryColor: primaryColor,
-                              onSelected: handleSubcategorySelected,
-                            ),
-                          ],
-                          const SizedBox(height: 14),
-                          if (marketplaceBanners.isNotEmpty) ...[
-                            StoreStableBannerSlot(
-                              primaryColor: primaryColor,
-                              child: StoreBannerCarousel(
-                                banners: marketplaceBanners,
-                                selectedIndex: selectedMarketplaceBannerIndex,
-                                pageController: marketplaceBannerPageController,
+                        ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (isLoadingMarketplaceSettings &&
+                                !hasLoadedMarketplaceSettings) ...[
+                              StorePublicLoadingBlock(
+                                  primaryColor: primaryColor),
+                            ] else if (showMarketplaceUnavailable) ...[
+                              StoreMarketplaceUnavailableBlock(
                                 primaryColor: primaryColor,
-                                onPageChanged: (index) {
-                                  setState(() {
-                                    selectedMarketplaceBannerIndex = index;
-                                  });
-                                },
-                                onBannerTap: handleMarketplaceBannerTap,
+                                supportWhatsappAvailable:
+                                    marketplaceSettings.hasSupportWhatsapp,
+                                onSupportTap:
+                                    marketplaceSettings.hasSupportWhatsapp
+                                        ? openSellerSupportWhatsApp
+                                        : null,
                               ),
-                            ),
-                            const SizedBox(height: 18),
-                          ] else if (isLoadingMarketplaceBanners &&
-                              !hasLoadedMarketplaceBanners) ...[
-                            StoreStableBannerSlot(
-                              primaryColor: primaryColor,
-                              child: StoreBannerLoading(
+                            ] else if (shouldShowInitialMarketplaceLoading) ...[
+                              StoreMarketplaceInitialLoadingBlock(
                                 primaryColor: primaryColor,
                               ),
-                            ),
-                            const SizedBox(height: 18),
-                          ],
-                          if (selectedMainCategory.isAll &&
-                              isLoadingBoostedProducts &&
-                              !hasLoadedBoostedProducts) ...[
-                            StoreBoostedProductsLoading(
-                              primaryColor: primaryColor,
-                            ),
-                            const SizedBox(height: 18),
-                          ] else if (boostedProductsForView.isNotEmpty) ...[
-                            StoreBoostedProductsSection(
-                              products: boostedProductsForView,
-                              primaryColor: primaryColor,
-                              pageController: boostedProductsPageController,
-                              selectedIndex: selectedBoostedProductIndex,
-                              onPageChanged: (index) {
-                                setState(() {
-                                  selectedBoostedProductIndex = index;
-                                });
-                              },
-                              onProductTap: handleBoostedProductTap,
-                            ),
-                            const SizedBox(height: 20),
-                          ],
-                          if (!selectedMainCategory.isAll &&
-                              boostedCategoriesForView.isNotEmpty) ...[
-                            StoreBoostedCategoriesSection(
-                              categories: boostedCategoriesForView,
-                              primaryColor: primaryColor,
-                              onCategoryTap: handleBoostedCategoryTap,
-                            ),
-                            const SizedBox(height: 20),
-                          ],
-                          if (isLoadingPublicStore ||
-                              !hasLoadedPublicStore) ...[
-                            StorePublicLoadingBlock(primaryColor: primaryColor),
-                          ] else if (products.isEmpty) ...[
-                            StoreEmptyPublicProducts(
-                                primaryColor: primaryColor),
-                          ] else ...[
-                            if (welcomeProductsForView.isNotEmpty) ...[
-                              StoreSectionHeader(
-                                title: 'Ofertas de boas-vindas',
-                                badge: 'Selecionados',
-                                primaryColor: primaryColor,
-                              ),
-                              const SizedBox(height: 12),
-                              SizedBox(
-                                height: 372,
-                                child: ListView.builder(
-                                  controller: welcomeCarouselController,
-                                  scrollDirection: Axis.horizontal,
-                                  itemCount: welcomeProductsForView.length,
-                                  itemBuilder: (context, index) {
-                                    return WelcomeOfferCard(
-                                      product: welcomeProductsForView[index],
-                                      primaryColor: primaryColor,
-                                      onTap: () => handleProductTap(
-                                        welcomeProductsForView[index],
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                            ],
-                            Text(
-                              selectedMainCategory.isAll
-                                  ? 'Produtos em destaque'
-                                  : selectedSubcategoryId.isEmpty
-                                      ? selectedMainCategory.name
-                                      : activeSubcategories
-                                          .firstWhere(
-                                            (subcategory) =>
-                                                subcategory.id ==
-                                                selectedSubcategoryId,
-                                            orElse: () => selectedMainCategory,
-                                          )
-                                          .name,
-                              style: textBold.copyWith(
-                                color: textColor,
-                                fontSize: 21,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            GridView.builder(
-                              padding: EdgeInsets.zero,
-                              itemCount: productsForView.length,
-                              shrinkWrap: true,
-                              physics: const NeverScrollableScrollPhysics(),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 14,
-                                mainAxisExtent: 372,
-                              ),
-                              itemBuilder: (context, index) {
-                                final StoreProductData product =
-                                    productsForView[index];
-
-                                return StoreProductCard(
-                                  product: product,
+                            ] else ...[
+                              if (searchQuery.trim().isNotEmpty) ...[
+                                StoreSearchResultsList(
+                                  products: searchResults,
                                   primaryColor: primaryColor,
-                                  onTap: () => handleProductTap(product),
-                                );
-                              },
-                            ),
+                                  onProductTap: handleProductTap,
+                                ),
+                                const SizedBox(height: 14),
+                              ],
+                              StoreMarketplaceMainCategoryMenu(
+                                categories: marketplaceHeaderCategories,
+                                selectedIndex:
+                                    selectedMarketplaceHeaderCategoryIndex,
+                                primaryColor: primaryColor,
+                                onSelected: handleFixedMarketplaceMenuSelected,
+                              ),
+                              if (activeSubcategories.isNotEmpty) ...[
+                                const SizedBox(height: 10),
+                                StoreSubcategoryMenu(
+                                  subcategories: activeSubcategories,
+                                  selectedSubcategoryId: selectedSubcategoryId,
+                                  primaryColor: primaryColor,
+                                  onSelected: handleSubcategorySelected,
+                                ),
+                              ],
+                              const SizedBox(height: 14),
+                              if (marketplaceBanners.isNotEmpty) ...[
+                                StoreStableBannerSlot(
+                                  primaryColor: primaryColor,
+                                  child: StoreBannerCarousel(
+                                    banners: marketplaceBanners,
+                                    selectedIndex:
+                                        selectedMarketplaceBannerIndex,
+                                    pageController:
+                                        marketplaceBannerPageController,
+                                    primaryColor: primaryColor,
+                                    onPageChanged: (index) {
+                                      setState(() {
+                                        selectedMarketplaceBannerIndex = index;
+                                      });
+                                    },
+                                    onBannerTap: handleMarketplaceBannerTap,
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                              ] else if (isLoadingMarketplaceBanners &&
+                                  !hasLoadedMarketplaceBanners) ...[
+                                StoreStableBannerSlot(
+                                  primaryColor: primaryColor,
+                                  child: StoreBannerLoading(
+                                    primaryColor: primaryColor,
+                                  ),
+                                ),
+                                const SizedBox(height: 18),
+                              ],
+                              if (selectedMainCategory.isAll &&
+                                  isLoadingBoostedProducts &&
+                                  !hasLoadedBoostedProducts) ...[
+                                StoreBoostedProductsLoading(
+                                  primaryColor: primaryColor,
+                                ),
+                                const SizedBox(height: 18),
+                              ] else if (boostedProductsForView.isNotEmpty) ...[
+                                StoreBoostedProductsSection(
+                                  products: boostedProductsForView,
+                                  primaryColor: primaryColor,
+                                  pageController: boostedProductsPageController,
+                                  selectedIndex: selectedBoostedProductIndex,
+                                  onPageChanged: (index) {
+                                    setState(() {
+                                      selectedBoostedProductIndex = index;
+                                    });
+                                  },
+                                  onProductTap: handleBoostedProductTap,
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+                              if (!selectedMainCategory.isAll &&
+                                  boostedCategoriesForView.isNotEmpty) ...[
+                                StoreBoostedCategoriesSection(
+                                  categories: boostedCategoriesForView,
+                                  primaryColor: primaryColor,
+                                  onCategoryTap: handleBoostedCategoryTap,
+                                ),
+                                const SizedBox(height: 20),
+                              ],
+                              if (isLoadingPublicStore ||
+                                  !hasLoadedPublicStore) ...[
+                                StorePublicLoadingBlock(
+                                    primaryColor: primaryColor),
+                              ] else if (products.isEmpty) ...[
+                                StoreEmptyPublicProducts(
+                                    primaryColor: primaryColor),
+                              ] else ...[
+                                if (welcomeProductsForView.isNotEmpty) ...[
+                                  StoreSectionHeader(
+                                    title: 'Ofertas de boas-vindas',
+                                    badge: '',
+                                    primaryColor: primaryColor,
+                                  ),
+                                  const SizedBox(height: 12),
+                                  StoreAutoHorizontalList(
+                                    height: 350,
+                                    itemCount: welcomeProductsForView.length,
+                                    scrollStep: 194,
+                                    itemBuilder: (context, index) {
+                                      return WelcomeOfferCard(
+                                        product: welcomeProductsForView[index],
+                                        primaryColor: primaryColor,
+                                        onTap: () => handleProductTap(
+                                          welcomeProductsForView[index],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 20),
+                                ],
+                                if (shouldShowHomeVitrines) ...[
+                                  if (homeHighlightedProductsForView
+                                      .isNotEmpty) ...[
+                                    StoreProductCarouselSection(
+                                      title: 'Produtos em destaque',
+                                      badge: '',
+                                      products: homeHighlightedProductsForView,
+                                      primaryColor: primaryColor,
+                                      onProductTap: handleProductTap,
+                                    ),
+                                    const SizedBox(height: 22),
+                                  ],
+                                  if (productsForView.isNotEmpty) ...[
+                                    StoreSectionHeader(
+                                      title: 'Mais opções para você',
+                                      badge: '',
+                                      primaryColor: primaryColor,
+                                    ),
+                                    const SizedBox(height: 12),
+                                    GridView.builder(
+                                      padding: EdgeInsets.zero,
+                                      itemCount: productsForView.length,
+                                      shrinkWrap: true,
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      gridDelegate:
+                                          const SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 2,
+                                        crossAxisSpacing: 12,
+                                        mainAxisSpacing: 14,
+                                        mainAxisExtent: 348,
+                                      ),
+                                      itemBuilder: (context, index) {
+                                        final StoreProductData product =
+                                            productsForView[index];
+
+                                        return StoreProductCard(
+                                          product: product,
+                                          primaryColor: primaryColor,
+                                          onTap: () =>
+                                              handleProductTap(product),
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ] else ...[
+                                  Text(
+                                    selectedSubcategoryId.isEmpty
+                                        ? selectedMainCategory.name
+                                        : activeSubcategories
+                                            .firstWhere(
+                                              (subcategory) =>
+                                                  subcategory.id ==
+                                                  selectedSubcategoryId,
+                                              orElse: () =>
+                                                  selectedMainCategory,
+                                            )
+                                            .name,
+                                    style: textBold.copyWith(
+                                      color: textColor,
+                                      fontSize: 21,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  GridView.builder(
+                                    padding: EdgeInsets.zero,
+                                    itemCount: productsForView.length,
+                                    shrinkWrap: true,
+                                    physics:
+                                        const NeverScrollableScrollPhysics(),
+                                    gridDelegate:
+                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      crossAxisSpacing: 12,
+                                      mainAxisSpacing: 14,
+                                      mainAxisExtent: 348,
+                                    ),
+                                    itemBuilder: (context, index) {
+                                      final StoreProductData product =
+                                          productsForView[index];
+
+                                      return StoreProductCard(
+                                        product: product,
+                                        primaryColor: primaryColor,
+                                        onTap: () => handleProductTap(product),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ],
                           ],
-                        ],
+                        ),
                       ],
                     ),
                   ),
@@ -2309,9 +3081,26 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
               ),
             ],
           ),
+          Positioned(
+            right: 18,
+            bottom: 92,
+            child: AnimatedScale(
+              scale: showBackToTopButton ? 1 : 0,
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOut,
+              child: AnimatedOpacity(
+                opacity: showBackToTopButton ? 1 : 0,
+                duration: const Duration(milliseconds: 180),
+                child: StoreMarketplaceBackToTopButton(
+                  primaryColor: primaryColor,
+                  onTap: scrollMarketplaceToTop,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
-      bottomNavigationBar: StoreBottomSearchCartBar(
+      bottomNavigationBar: StoreMarketplaceBottomSearchCartBar(
         primaryColor: primaryColor,
         onSearchTap: marketplaceAvailable
             ? showProductSearchSheet
@@ -2323,302 +3112,6 @@ class _StoreHomeScreenState extends State<StoreHomeScreen> {
             : () => showStoreMessage(
                   'Marketplace temporariamente indisponível.',
                 ),
-      ),
-    );
-  }
-}
-
-class StoreModeSelectorHeader extends StatelessWidget {
-  final Color primaryColor;
-  final VoidCallback onShoppingTap;
-  final VoidCallback onTravelTap;
-  final VoidCallback onDeliveryTap;
-
-  const StoreModeSelectorHeader({
-    super.key,
-    required this.primaryColor,
-    required this.onShoppingTap,
-    required this.onTravelTap,
-    required this.onDeliveryTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: primaryColor,
-      padding: const EdgeInsets.fromLTRB(16, 46, 16, 12),
-      child: StoreModeSelectorPill(
-        primaryColor: primaryColor,
-        onShoppingTap: onShoppingTap,
-        onTravelTap: onTravelTap,
-        onDeliveryTap: onDeliveryTap,
-      ),
-    );
-  }
-}
-
-class StoreModeSelectorPill extends StatelessWidget {
-  final Color primaryColor;
-  final VoidCallback onShoppingTap;
-  final VoidCallback onTravelTap;
-  final VoidCallback onDeliveryTap;
-
-  const StoreModeSelectorPill({
-    super.key,
-    required this.primaryColor,
-    required this.onShoppingTap,
-    required this.onTravelTap,
-    required this.onDeliveryTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 64,
-      width: double.infinity,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.96),
-        borderRadius: BorderRadius.circular(30),
-        boxShadow: [
-          BoxShadow(
-            offset: const Offset(0, 8),
-            blurRadius: 18,
-            color: Colors.black.withValues(alpha: 0.08),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: StoreModeSelectorItem(
-              label: 'Shopping',
-              asset: 'assets/image/shopping.png',
-              selected: true,
-              primaryColor: primaryColor,
-              onTap: onShoppingTap,
-            ),
-          ),
-          Expanded(
-            child: StoreModeSelectorItem(
-              label: 'Viagens',
-              asset: 'assets/image/viagens.png',
-              selected: false,
-              primaryColor: primaryColor,
-              onTap: onTravelTap,
-            ),
-          ),
-          Expanded(
-            child: StoreModeSelectorItem(
-              label: 'Entregas',
-              asset: 'assets/image/entregas.png',
-              selected: false,
-              primaryColor: primaryColor,
-              onTap: onDeliveryTap,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StoreModeSelectorItem extends StatelessWidget {
-  final String label;
-  final String asset;
-  final bool selected;
-  final Color primaryColor;
-  final VoidCallback onTap;
-
-  const StoreModeSelectorItem({
-    super.key,
-    required this.label,
-    required this.asset,
-    required this.selected,
-    required this.primaryColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final Color backgroundColor =
-        selected ? primaryColor.withValues(alpha: 0.12) : Colors.transparent;
-    final Color textColor = Colors.black87;
-
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        height: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        decoration: BoxDecoration(
-          color: backgroundColor,
-          borderRadius: BorderRadius.circular(26),
-          border: selected
-              ? Border.all(color: primaryColor.withValues(alpha: 0.18))
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              asset,
-              width: 30,
-              height: 30,
-              fit: BoxFit.contain,
-            ),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.visible,
-                softWrap: false,
-                style: textBold.copyWith(
-                  color: textColor,
-                  fontSize: 13.2,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class StoreBottomSearchCartBar extends StatelessWidget {
-  final Color primaryColor;
-  final VoidCallback onSearchTap;
-  final VoidCallback onCartTap;
-
-  const StoreBottomSearchCartBar({
-    super.key,
-    required this.primaryColor,
-    required this.onSearchTap,
-    required this.onCartTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(26),
-          border: Border.all(color: primaryColor.withValues(alpha: 0.32)),
-          boxShadow: [
-            BoxShadow(
-              offset: const Offset(0, 8),
-              blurRadius: 22,
-              color: Colors.black.withValues(alpha: 0.08),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                onTap: onSearchTap,
-                child: Container(
-                  height: 48,
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: primaryColor.withValues(alpha: 0.07),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.search_rounded,
-                        color: primaryColor,
-                        size: 23,
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Buscar produtos',
-                        style: textMedium.copyWith(
-                          color: Colors.grey.shade700,
-                          fontSize: 13.5,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 10),
-            ValueListenableBuilder<int>(
-              valueListenable: StoreCartSession.cartRevision,
-              builder: (context, revision, _) {
-                final int cartQuantity = StoreCartSession.totalQuantity;
-
-                return GestureDetector(
-                  onTap: onCartTap,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      Container(
-                        width: 50,
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: primaryColor,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(
-                          Icons.shopping_cart_outlined,
-                          color: Colors.white,
-                          size: 25,
-                        ),
-                      ),
-                      if (cartQuantity > 0)
-                        Positioned(
-                          top: -6,
-                          right: -6,
-                          child: Container(
-                            constraints: const BoxConstraints(
-                              minWidth: 21,
-                              minHeight: 21,
-                            ),
-                            padding: const EdgeInsets.symmetric(horizontal: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(
-                                color: Colors.white,
-                                width: 2,
-                              ),
-                              boxShadow: [
-                                BoxShadow(
-                                  offset: const Offset(0, 4),
-                                  blurRadius: 10,
-                                  color: Colors.black.withValues(alpha: 0.16),
-                                ),
-                              ],
-                            ),
-                            child: Center(
-                              child: Text(
-                                cartQuantity > 99 ? '99+' : '$cartQuantity',
-                                style: textBold.copyWith(
-                                  color: Colors.white,
-                                  fontSize: 10.5,
-                                  height: 1,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -2896,41 +3389,6 @@ class StoreSearchResultTile extends StatelessWidget {
   }
 }
 
-class StoreMainCategoryMenu extends StatelessWidget {
-  final List<StoreCategoryData> categories;
-  final int selectedIndex;
-  final Color primaryColor;
-  final ValueChanged<int> onSelected;
-
-  const StoreMainCategoryMenu({
-    super.key,
-    required this.categories,
-    required this.selectedIndex,
-    required this.primaryColor,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 94,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.zero,
-        itemCount: categories.length,
-        itemBuilder: (context, index) {
-          return StoreCategoryTextItem(
-            category: categories[index],
-            isSelected: index == selectedIndex,
-            primaryColor: primaryColor,
-            onTap: () => onSelected(index),
-          );
-        },
-      ),
-    );
-  }
-}
-
 class StoreSubcategoryMenu extends StatelessWidget {
   final List<StoreCategoryData> subcategories;
   final String selectedSubcategoryId;
@@ -2987,117 +3445,6 @@ class StoreSubcategoryMenu extends StatelessWidget {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-class StoreCategoryTextItem extends StatelessWidget {
-  final StoreCategoryData category;
-  final bool isSelected;
-  final Color primaryColor;
-  final VoidCallback onTap;
-
-  const StoreCategoryTextItem({
-    super.key,
-    required this.category,
-    required this.isSelected,
-    required this.primaryColor,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final String? localIconAsset = category.localIconAsset;
-    final bool hasNetworkIcon = category.iconUrl.isNotEmpty;
-    final bool hasIcon = localIconAsset != null || hasNetworkIcon;
-    final Color labelColor =
-        Colors.white.withValues(alpha: isSelected ? 1 : 0.94);
-
-    Widget iconWidget() {
-      if (!hasIcon) {
-        return SizedBox(
-          width: 58,
-          height: 58,
-          child: Icon(
-            category.isAll ? Icons.apps_rounded : Icons.storefront_rounded,
-            color: Colors.white.withValues(alpha: 0.92),
-            size: 36,
-          ),
-        );
-      }
-
-      final Widget image = localIconAsset != null
-          ? Image.asset(
-              localIconAsset,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) {
-                return Icon(
-                  category.isAll
-                      ? Icons.apps_rounded
-                      : Icons.storefront_rounded,
-                  color: Colors.white.withValues(alpha: 0.92),
-                  size: 36,
-                );
-              },
-            )
-          : Image.network(
-              category.iconUrl,
-              fit: BoxFit.contain,
-              errorBuilder: (_, __, ___) {
-                return Icon(
-                  category.isAll
-                      ? Icons.apps_rounded
-                      : Icons.storefront_rounded,
-                  color: Colors.white.withValues(alpha: 0.92),
-                  size: 36,
-                );
-              },
-            );
-
-      return SizedBox(
-        width: 58,
-        height: 58,
-        child: image,
-      );
-    }
-
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 88,
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.only(top: 2, bottom: 6),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            iconWidget(),
-            const SizedBox(height: 3),
-            Text(
-              category.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: (isSelected ? textBold : textMedium).copyWith(
-                color: labelColor,
-                fontSize: category.isAll ? 12.8 : 12.0,
-                height: 1.0,
-              ),
-            ),
-            const SizedBox(height: 6),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              width: isSelected ? 30 : 0,
-              height: 3,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -3264,28 +3611,7 @@ class StoreBannerLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        height: 142,
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Center(
-          child: SizedBox(
-            width: 24,
-            height: 24,
-            child: CircularProgressIndicator(
-              color: primaryColor,
-              strokeWidth: 2.4,
-            ),
-          ),
-        ),
-      ),
-    );
+    return StoreSkeletonBanner(primaryColor: primaryColor);
   }
 }
 
@@ -3308,6 +3634,8 @@ class StoreSectionHeader extends StatelessWidget {
         Expanded(
           child: Text(
             title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: textBold.copyWith(
               color: Theme.of(context).textTheme.bodyLarge?.color ??
                   Colors.black87,
@@ -3315,20 +3643,21 @@ class StoreSectionHeader extends StatelessWidget {
             ),
           ),
         ),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-          decoration: BoxDecoration(
-            color: primaryColor.withValues(alpha: 0.10),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            badge,
-            style: textBold.copyWith(
-              color: primaryColor,
-              fontSize: 12,
+        if (badge.trim().isNotEmpty)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Text(
+              badge,
+              style: textBold.copyWith(
+                color: primaryColor,
+                fontSize: 12,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
@@ -3752,20 +4081,404 @@ class StoreBoostedProductsLoading extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return StoreSkeletonBoostedBlock(primaryColor: primaryColor);
+  }
+}
+
+class StoreProductCarouselSection extends StatelessWidget {
+  final String title;
+  final String badge;
+  final List<StoreProductData> products;
+  final Color primaryColor;
+  final ValueChanged<StoreProductData> onProductTap;
+
+  const StoreProductCarouselSection({
+    super.key,
+    required this.title,
+    required this.badge,
+    required this.products,
+    required this.primaryColor,
+    required this.onProductTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (products.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        StoreSectionHeader(
+          title: title,
+          badge: badge,
+          primaryColor: primaryColor,
+        ),
+        const SizedBox(height: 12),
+        StoreAutoHorizontalList(
+          height: 350,
+          itemCount: products.length,
+          scrollStep: 194,
+          itemBuilder: (context, index) {
+            final StoreProductData product = products[index];
+
+            return Container(
+              width: 182,
+              margin: EdgeInsets.only(
+                right: index == products.length - 1 ? 0 : 12,
+              ),
+              child: StoreProductCard(
+                product: product,
+                primaryColor: primaryColor,
+                onTap: () => onProductTap(product),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class StoreAutoHorizontalList extends StatefulWidget {
+  final double height;
+  final int itemCount;
+  final IndexedWidgetBuilder itemBuilder;
+  final double scrollStep;
+  final int autoScrollThreshold;
+
+  const StoreAutoHorizontalList({
+    super.key,
+    required this.height,
+    required this.itemCount,
+    required this.itemBuilder,
+    this.scrollStep = 194,
+    this.autoScrollThreshold = 3,
+  });
+
+  @override
+  State<StoreAutoHorizontalList> createState() =>
+      _StoreAutoHorizontalListState();
+}
+
+class _StoreAutoHorizontalListState extends State<StoreAutoHorizontalList> {
+  final ScrollController scrollController = ScrollController();
+  Timer? autoScrollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    restartAutoScroll();
+  }
+
+  @override
+  void didUpdateWidget(covariant StoreAutoHorizontalList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.itemCount != widget.itemCount ||
+        oldWidget.autoScrollThreshold != widget.autoScrollThreshold ||
+        oldWidget.scrollStep != widget.scrollStep) {
+      restartAutoScroll();
+    }
+  }
+
+  @override
+  void dispose() {
+    autoScrollTimer?.cancel();
+    scrollController.dispose();
+    super.dispose();
+  }
+
+  void restartAutoScroll() {
+    autoScrollTimer?.cancel();
+    autoScrollTimer = null;
+
+    if (widget.itemCount < widget.autoScrollThreshold) {
+      return;
+    }
+
+    autoScrollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      if (!mounted || !scrollController.hasClients) {
+        return;
+      }
+
+      final double maxScroll = scrollController.position.maxScrollExtent;
+
+      if (maxScroll <= 0) {
+        return;
+      }
+
+      final double currentScroll = scrollController.offset;
+      double nextScroll = currentScroll + widget.scrollStep;
+
+      if (nextScroll >= maxScroll - 4) {
+        nextScroll = 0;
+      }
+
+      scrollController.animateTo(
+        nextScroll.clamp(0.0, maxScroll).toDouble(),
+        duration: const Duration(milliseconds: 650),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: widget.height,
+      child: ListView.builder(
+        controller: scrollController,
+        scrollDirection: Axis.horizontal,
+        itemCount: widget.itemCount,
+        itemBuilder: widget.itemBuilder,
+      ),
+    );
+  }
+}
+
+class StoreSkeletonLine extends StatelessWidget {
+  final double width;
+  final double height;
+  final double radius;
+  final Color? color;
+
+  const StoreSkeletonLine({
+    super.key,
+    required this.width,
+    required this.height,
+    this.radius = 10,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: color ?? Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
+class StoreSkeletonBanner extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreSkeletonBanner({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       height: 142,
       width: double.infinity,
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: primaryColor.withValues(alpha: 0.05),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: primaryColor.withValues(alpha: 0.12)),
+        border: Border.all(color: Colors.grey.shade100),
+        boxShadow: [
+          BoxShadow(
+            offset: const Offset(0, 8),
+            blurRadius: 22,
+            color: Colors.black.withValues(alpha: 0.04),
+          ),
+        ],
       ),
-      child: Center(
-        child: CircularProgressIndicator(
-          color: primaryColor,
-          strokeWidth: 2.4,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          StoreSkeletonLine(
+            width: 118,
+            height: 18,
+            radius: 11,
+            color: Colors.grey.shade100,
+          ),
+          const SizedBox(height: 14),
+          StoreSkeletonLine(
+            width: 210,
+            height: 14,
+            radius: 9,
+            color: Colors.grey.shade100,
+          ),
+          const Spacer(),
+          Align(
+            alignment: Alignment.centerRight,
+            child: StoreSkeletonLine(
+              width: 126,
+              height: 30,
+              radius: 14,
+              color: primaryColor.withValues(alpha: 0.10),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreSkeletonBoostedBlock extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreSkeletonBoostedBlock({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 142,
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.grey.shade100),
+      ),
+      child: Row(
+        children: [
+          StoreSkeletonLine(
+            width: 92,
+            height: 92,
+            radius: 18,
+            color: Colors.grey.shade100,
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                StoreSkeletonLine(
+                  width: double.infinity,
+                  height: 14,
+                  radius: 8,
+                  color: Colors.grey.shade100,
+                ),
+                const SizedBox(height: 10),
+                StoreSkeletonLine(
+                  width: 160,
+                  height: 14,
+                  radius: 8,
+                  color: Colors.grey.shade100,
+                ),
+                const Spacer(),
+                StoreSkeletonLine(
+                  width: 118,
+                  height: 28,
+                  radius: 14,
+                  color: primaryColor.withValues(alpha: 0.10),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreSkeletonProductsBlock extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreSkeletonProductsBlock({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        StoreSkeletonBanner(primaryColor: primaryColor),
+        const SizedBox(height: 18),
+        Row(
+          children: [
+            StoreSkeletonLine(
+              width: 180,
+              height: 24,
+              radius: 13,
+              color: Colors.grey.shade100,
+            ),
+            const Spacer(),
+            StoreSkeletonLine(
+              width: 94,
+              height: 26,
+              radius: 13,
+              color: primaryColor.withValues(alpha: 0.08),
+            ),
+          ],
         ),
-      ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 350,
+          child: Row(
+            children: List.generate(2, (index) {
+              return Expanded(
+                child: Container(
+                  margin: EdgeInsets.only(right: index == 0 ? 12 : 0),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: Colors.grey.shade100),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      AspectRatio(
+                        aspectRatio: 1,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade100,
+                            borderRadius: const BorderRadius.only(
+                              topLeft: Radius.circular(18),
+                              topRight: Radius.circular(18),
+                            ),
+                          ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            StoreSkeletonLine(
+                              width: double.infinity,
+                              height: 12,
+                              radius: 8,
+                              color: Colors.grey.shade100,
+                            ),
+                            const SizedBox(height: 8),
+                            StoreSkeletonLine(
+                              width: 96,
+                              height: 12,
+                              radius: 8,
+                              color: Colors.grey.shade100,
+                            ),
+                            const SizedBox(height: 12),
+                            StoreSkeletonLine(
+                              width: 118,
+                              height: 18,
+                              radius: 10,
+                              color: primaryColor.withValues(alpha: 0.10),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3810,13 +4523,21 @@ class StoreProductCard extends StatelessWidget {
               Stack(
                 children: [
                   AspectRatio(
-                    aspectRatio: 1,
+                    aspectRatio: product.isRealEstateAd ? 1.18 : 1,
                     child: StoreProductHeroImage(
                       imageUrl: product.mainImageUrl,
                       primaryColor: primaryColor,
                     ),
                   ),
-                  if (product.hasPromotion)
+                  if (product.isClassifiedAd && !product.isRealEstateAd)
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: StoreVerifiedAdBadge(
+                        primaryColor: primaryColor,
+                      ),
+                    ),
+                  if (product.hasPromotion && !product.isClassifiedAd)
                     Positioned(
                       right: 0,
                       top: 0,
@@ -3826,37 +4547,46 @@ class StoreProductCard extends StatelessWidget {
                     ),
                 ],
               ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: product.isRealEstateAd ? 36 : 32,
+                      width: double.infinity,
+                      child: Text(
                         product.title,
                         maxLines: 2,
-                        overflow: TextOverflow.clip,
+                        overflow: TextOverflow.ellipsis,
                         softWrap: true,
                         style: textBold.copyWith(
                           color: textColor,
-                          fontSize: 13.0,
+                          fontSize: product.isRealEstateAd ? 13.4 : 13.0,
                           height: 1.10,
                         ),
                       ),
-                      const SizedBox(height: 5),
-                      ProductPriceColumn(
-                        product: product,
-                        primaryColor: primaryColor,
-                      ),
-                      const SizedBox(height: 5),
-                      StoreDeliveryInfo(
-                        product: product,
-                        primaryColor: primaryColor,
-                      ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 5),
+                    ProductPriceColumn(
+                      product: product,
+                      primaryColor: primaryColor,
+                    ),
+                    const SizedBox(height: 5),
+                    product.isRealEstateAd
+                        ? StoreRealEstateCardInfo(
+                            product: product,
+                            primaryColor: primaryColor,
+                          )
+                        : StoreDeliveryInfo(
+                            product: product,
+                            primaryColor: primaryColor,
+                          ),
+                  ],
                 ),
               ),
+              const Spacer(),
               StoreBottomActionStrip(
                 primaryColor: primaryColor,
                 label: product.actionLabel,
@@ -3864,6 +4594,52 @@ class StoreProductCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class StoreVerifiedAdBadge extends StatelessWidget {
+  final Color primaryColor;
+
+  const StoreVerifiedAdBadge({
+    super.key,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            offset: const Offset(0, 4),
+            blurRadius: 12,
+            color: Colors.black.withValues(alpha: 0.12),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.verified_rounded,
+            color: primaryColor,
+            size: 14,
+          ),
+          const SizedBox(width: 4),
+          Text(
+            'Anúncio verificado',
+            style: textBold.copyWith(
+              color: primaryColor,
+              fontSize: 10.4,
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4133,6 +4909,41 @@ class StoreDeliveryInfo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (product.isClassifiedAd) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(
+          color: primaryColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: primaryColor.withValues(alpha: 0.16),
+          ),
+        ),
+        child: Row(
+          children: [
+            Icon(
+              Icons.verified_rounded,
+              color: primaryColor,
+              size: 15,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Anúncio verificado',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textBold.copyWith(
+                  color: primaryColor,
+                  fontSize: 11.4,
+                  height: 1.05,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final String label = product.isService ? 'Formato do serviço' : 'Entrega';
     final String value = product.isService
         ? product.compactServiceDeliveryLabel
@@ -4146,27 +4957,132 @@ class StoreDeliveryInfo extends StatelessWidget {
           label,
           maxLines: 1,
           overflow: TextOverflow.clip,
+          softWrap: false,
           style: textMedium.copyWith(
             color: Colors.grey.shade600,
-            fontSize: 9.2,
+            fontSize: 10.8,
             height: 1,
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          maxLines: 2,
-          softWrap: true,
-          overflow: TextOverflow.clip,
-          style: textBold.copyWith(
-            color: primaryColor,
-            fontSize: 10.4,
-            height: 1.08,
+        const SizedBox(height: 3),
+        SizedBox(
+          width: double.infinity,
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              style: textBold.copyWith(
+                color: primaryColor,
+                fontSize: 12.0,
+                height: 1.05,
+              ),
+            ),
           ),
         ),
       ],
     );
   }
+}
+
+class StoreRealEstateCardInfo extends StatelessWidget {
+  final StoreProductData product;
+  final Color primaryColor;
+
+  const StoreRealEstateCardInfo({
+    super.key,
+    required this.product,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final List<RealEstateCardAttribute> attributes =
+        product.realEstateCardAttributes.take(4).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.verified_rounded,
+              color: primaryColor,
+              size: 15,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                'Anúncio verificado',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textBold.copyWith(
+                  color: primaryColor,
+                  fontSize: 11.7,
+                  height: 1.05,
+                ),
+              ),
+            ),
+          ],
+        ),
+        if (attributes.isNotEmpty) ...[
+          const SizedBox(height: 7),
+          GridView.builder(
+            padding: EdgeInsets.zero,
+            itemCount: attributes.length,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisExtent: 18,
+              crossAxisSpacing: 7,
+              mainAxisSpacing: 4,
+            ),
+            itemBuilder: (context, index) {
+              final RealEstateCardAttribute attribute = attributes[index];
+
+              return Row(
+                children: [
+                  Icon(
+                    attribute.icon,
+                    color: primaryColor,
+                    size: 13.5,
+                  ),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      attribute.label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textMedium.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 10.7,
+                        height: 1.05,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class RealEstateCardAttribute {
+  final IconData icon;
+  final String label;
+
+  const RealEstateCardAttribute({
+    required this.icon,
+    required this.label,
+  });
 }
 
 class StoreBottomActionStrip extends StatelessWidget {
@@ -4373,20 +5289,7 @@ class StorePublicLoadingBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 180,
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: Colors.grey.shade50,
-        borderRadius: BorderRadius.circular(22),
-      ),
-      child: Center(
-        child: CircularProgressIndicator(
-          color: primaryColor,
-          strokeWidth: 2.5,
-        ),
-      ),
-    );
+    return StoreSkeletonProductsBlock(primaryColor: primaryColor);
   }
 }
 
@@ -4842,14 +5745,21 @@ class StoreCategoryData {
     this.subcategories = const <StoreCategoryData>[],
   });
 
-  factory StoreCategoryData.all() {
+  factory StoreCategoryData.all({
+    String imageUrl = '',
+    String iconUrl = '',
+  }) {
+    final String normalizedImageUrl = normalizeMediaUrl(imageUrl);
+    final String normalizedIconUrl = normalizeMediaUrl(iconUrl);
+
     return StoreCategoryData(
       id: '',
       parentId: '',
       name: 'Todos',
-      slug: 'all',
-      imageUrl: '',
-      iconUrl: '',
+      slug: 'todos',
+      imageUrl: normalizedImageUrl,
+      iconUrl:
+          normalizedIconUrl.isNotEmpty ? normalizedIconUrl : normalizedImageUrl,
     );
   }
 
@@ -4869,9 +5779,26 @@ class StoreCategoryData {
     final List<dynamic> subcategoryList =
         subcategoriesValue is List ? subcategoriesValue : <dynamic>[];
 
-    final String imageUrl = '${map['image_url'] ?? ''}';
-    final String iconUrl =
-        '${map['icon_url'] ?? map['icon_image_url'] ?? map['icon'] ?? imageUrl}';
+    final String imageUrl = normalizeMediaUrl(
+      map['image_url'] ??
+          map['imageUrl'] ??
+          map['image_full_url'] ??
+          map['imageFullUrl'] ??
+          map['image_path'] ??
+          map['imagePath'] ??
+          map['image'] ??
+          '',
+    );
+    final String iconUrl = normalizeMediaUrl(
+      map['icon_url'] ??
+          map['iconUrl'] ??
+          map['icon_image_url'] ??
+          map['iconImageUrl'] ??
+          map['icon_path'] ??
+          map['iconPath'] ??
+          map['icon'] ??
+          imageUrl,
+    );
 
     return StoreCategoryData(
       id: '${map['id'] ?? ''}',
@@ -4892,6 +5819,76 @@ class StoreCategoryData {
 
   bool get isAll => id.isEmpty;
 
+  String get deduplicationKey {
+    final String normalizedId = id.trim().toLowerCase();
+
+    if (normalizedId.isNotEmpty) {
+      return normalizedId;
+    }
+
+    final String normalizedSlug = slug.trim().toLowerCase();
+
+    if (normalizedSlug.isNotEmpty) {
+      return normalizedSlug;
+    }
+
+    return normalizedIdentifier;
+  }
+
+  String get primaryIconUrl {
+    if (iconUrl.trim().isNotEmpty) {
+      return iconUrl.trim();
+    }
+
+    return imageUrl.trim();
+  }
+
+  bool get representsAllCategory {
+    final String normalizedName = name.trim().toLowerCase();
+    final String normalizedSlug = slug.trim().toLowerCase();
+    final String normalized = normalizedIdentifier;
+
+    return id.isEmpty ||
+        normalizedName == 'todos' ||
+        normalizedName == 'all' ||
+        normalizedSlug == 'todos' ||
+        normalizedSlug == 'all' ||
+        normalized == 'todos todos' ||
+        normalized == 'todos all';
+  }
+
+  static String normalizeMediaUrl(dynamic value) {
+    final String rawValue = '${value ?? ''}'.trim();
+
+    if (rawValue.isEmpty || rawValue == 'null') {
+      return '';
+    }
+
+    if (rawValue.startsWith('http://') || rawValue.startsWith('https://')) {
+      return rawValue;
+    }
+
+    String path = rawValue.replaceAll('\\', '/');
+
+    while (path.startsWith('/')) {
+      path = path.substring(1);
+    }
+
+    if (path.isEmpty || path == 'null') {
+      return '';
+    }
+
+    if (path.startsWith('storage/')) {
+      return 'https://admlokally.online/$path';
+    }
+
+    if (path.startsWith('public/')) {
+      path = path.substring(7);
+    }
+
+    return 'https://admlokally.online/storage/$path';
+  }
+
   String get normalizedIdentifier {
     return '$name $slug'
         .toLowerCase()
@@ -4910,9 +5907,16 @@ class StoreCategoryData {
   }
 
   String? get localIconAsset {
+    if (primaryIconUrl.isNotEmpty) {
+      return null;
+    }
+
     final String normalized = normalizedIdentifier;
 
-    if (isAll || normalized.contains('todos') || normalized.contains('all')) {
+    if (isAll ||
+        representsAllCategory ||
+        normalized.contains('todos') ||
+        normalized.contains('all')) {
       return 'assets/image/todos.png';
     }
 
@@ -4956,6 +5960,17 @@ class StoreProductData {
   final String boostId;
   final String boostBadge;
   final bool isBoosted;
+  final String listingType;
+  final String listingTypeLabel;
+  final String propertyType;
+  final double totalMonthlyCost;
+  final double areaM2;
+  final int bedrooms;
+  final int suites;
+  final int bathrooms;
+  final int parkingSpaces;
+  final String furnishedType;
+  final bool acceptsPets;
 
   StoreProductData({
     required this.id,
@@ -4983,6 +5998,17 @@ class StoreProductData {
     this.boostId = '',
     this.boostBadge = '',
     this.isBoosted = false,
+    this.listingType = '',
+    this.listingTypeLabel = '',
+    this.propertyType = '',
+    this.totalMonthlyCost = 0,
+    this.areaM2 = 0,
+    this.bedrooms = 0,
+    this.suites = 0,
+    this.bathrooms = 0,
+    this.parkingSpaces = 0,
+    this.furnishedType = '',
+    this.acceptsPets = false,
   });
 
   factory StoreProductData.fromMap(Map<String, dynamic> map) {
@@ -4990,25 +6016,57 @@ class StoreProductData {
         ? Map<String, dynamic>.from(map['store'])
         : <String, dynamic>{};
 
+    final String mappedProductType =
+        '${map['product_type'] ?? ''}'.trim().toLowerCase();
+    final String mappedAvailabilityType =
+        '${map['availability_type'] ?? ''}'.trim().toLowerCase();
+    final String mappedCategory =
+        '${map['category_name'] ?? map['category'] ?? ''}'.trim();
+    final String normalizedCategory = mappedCategory.toLowerCase();
+    final String mappedListingType =
+        '${map['listing_type'] ?? ''}'.trim().toLowerCase();
+    final double totalMonthlyCost = parseDouble(map['total_monthly_cost']);
+    final bool isMappedRealEstate = mappedProductType == 'real_estate_ad' ||
+        mappedProductType == 'real_estate' ||
+        mappedProductType == 'imovel' ||
+        mappedProductType == 'imóvel' ||
+        mappedAvailabilityType == 'real_estate_ad' ||
+        normalizedCategory.contains('imóveis') ||
+        normalizedCategory.contains('imoveis');
+
     final double regularPrice = parseDouble(map['regular_price']);
-    final double price =
+    final double basePrice =
         regularPrice > 0 ? regularPrice : parseDouble(map['price']);
     final double promotionalPrice = parseDouble(
       map['promotional_price'] ?? map['old_price'],
     );
     final double finalPriceFromApi = parseDouble(map['final_price']);
-    final double finalPrice = finalPriceFromApi > 0
-        ? finalPriceFromApi
-        : (promotionalPrice > 0 ? promotionalPrice : parseDouble(map['price']));
+    final double realEstateMainPrice = isMappedRealEstate &&
+            mappedListingType != 'sale' &&
+            totalMonthlyCost > 0
+        ? totalMonthlyCost
+        : 0;
+    final double finalPrice = realEstateMainPrice > 0
+        ? realEstateMainPrice
+        : (finalPriceFromApi > 0
+            ? finalPriceFromApi
+            : (promotionalPrice > 0
+                ? promotionalPrice
+                : parseDouble(map['price'])));
+    final double price =
+        realEstateMainPrice > 0 ? realEstateMainPrice : basePrice;
     final bool apiPromotion = map['has_promotion'] == true;
-    final bool boostedPromotion =
-        promotionalPrice > 0 && price > 0 && promotionalPrice < price;
-    final bool hasPromotion = apiPromotion || boostedPromotion;
+    final bool boostedPromotion = !isMappedRealEstate &&
+        promotionalPrice > 0 &&
+        basePrice > 0 &&
+        promotionalPrice < basePrice;
+    final bool hasPromotion =
+        !isMappedRealEstate && (apiPromotion || boostedPromotion);
 
     return StoreProductData(
       id: '${map['id'] ?? ''}',
       sellerId: '${map['seller_id'] ?? map['store_seller_id'] ?? ''}',
-      title: '${map['name'] ?? ''}',
+      title: '${map['name'] ?? map['title'] ?? ''}',
       slug: '${map['slug'] ?? ''}',
       shortDescription: '${map['short_description'] ?? ''}',
       price: price,
@@ -5018,14 +6076,16 @@ class StoreProductData {
       stock: int.tryParse('${map['stock'] ?? 0}') ?? 0,
       unit: '${map['unit'] ?? 'unidade'}',
       categoryId: '${map['category_id'] ?? ''}',
-      category: '${map['category_name'] ?? ''}',
-      mainImageUrl: '${map['main_image_url'] ?? map['image_url'] ?? ''}',
+      category: mappedCategory,
+      mainImageUrl:
+          '${map['main_image_url'] ?? map['image_url'] ?? map['image'] ?? map['thumbnail'] ?? ''}',
       storeName: '${store['name'] ?? map['store_name'] ?? ''}',
       storeLogoUrl: '${store['logo_url'] ?? map['seller_logo_url'] ?? ''}',
       storeCoverImageUrl: '${store['cover_image_url'] ?? ''}',
-      availabilityType: '${map['availability_type'] ?? 'immediate'}',
+      availabilityType:
+          mappedAvailabilityType.isEmpty ? 'immediate' : mappedAvailabilityType,
       availabilityLabel: '${map['availability_label'] ?? 'Imediata'}',
-      productType: '${map['product_type'] ?? 'physical'}'.trim().toLowerCase(),
+      productType: mappedProductType.isEmpty ? 'physical' : mappedProductType,
       conditionType: '${map['condition_type'] ?? 'new'}'.trim().toLowerCase(),
       serviceDeliveryType:
           '${map['service_delivery_type'] ?? ''}'.trim().toLowerCase(),
@@ -5034,6 +6094,19 @@ class StoreProductData {
       isBoosted: map['is_boosted'] == true ||
           '${map['is_boosted'] ?? ''}' == '1' ||
           '${map['is_boosted'] ?? ''}'.toLowerCase() == 'true',
+      listingType: mappedListingType,
+      listingTypeLabel: '${map['listing_type_label'] ?? ''}',
+      propertyType: '${map['property_type'] ?? ''}',
+      totalMonthlyCost: totalMonthlyCost,
+      areaM2: parseDouble(map['area_m2']),
+      bedrooms: parseInt(map['bedrooms']),
+      suites: parseInt(map['suites']),
+      bathrooms: parseInt(map['bathrooms']),
+      parkingSpaces: parseInt(map['parking_spaces']),
+      furnishedType: '${map['furnished_type'] ?? ''}'.trim().toLowerCase(),
+      acceptsPets: map['accepts_pets'] == true ||
+          '${map['accepts_pets'] ?? ''}' == '1' ||
+          '${map['accepts_pets'] ?? ''}'.toLowerCase() == 'true',
     );
   }
 
@@ -5061,6 +6134,17 @@ class StoreProductData {
       'boost_id': boostId,
       'boost_badge': boostBadge,
       'is_boosted': isBoosted,
+      'listing_type': listingType,
+      'listing_type_label': listingTypeLabel,
+      'property_type': propertyType,
+      'total_monthly_cost': totalMonthlyCost,
+      'area_m2': areaM2,
+      'bedrooms': bedrooms,
+      'suites': suites,
+      'bathrooms': bathrooms,
+      'parking_spaces': parkingSpaces,
+      'furnished_type': furnishedType,
+      'accepts_pets': acceptsPets,
       'store': <String, dynamic>{
         'id': sellerId,
         'name': storeName,
@@ -5098,6 +6182,178 @@ class StoreProductData {
   }
 
   bool get isService => productType == 'service';
+
+  bool get isVehicleAd {
+    return productType == 'vehicle' ||
+        availabilityType == 'vehicle_ad' ||
+        category.toLowerCase().contains('auto e moto') ||
+        category.toLowerCase().contains('veículo') ||
+        category.toLowerCase().contains('veiculo');
+  }
+
+  bool get isRealEstateAd {
+    return productType == 'real_estate' ||
+        productType == 'imovel' ||
+        productType == 'imóvel' ||
+        availabilityType == 'real_estate_ad' ||
+        category.toLowerCase().contains('imóveis') ||
+        category.toLowerCase().contains('imoveis');
+  }
+
+  bool get isClassifiedAd => isVehicleAd || isRealEstateAd;
+
+  String get realEstateListingLabel {
+    if (listingTypeLabel.trim().isNotEmpty) {
+      return listingTypeLabel.trim();
+    }
+
+    switch (listingType) {
+      case 'sale':
+        return 'Venda';
+      case 'rent':
+        return 'Aluguel';
+      case 'seasonal':
+        return 'Temporada';
+      default:
+        return 'Imóvel';
+    }
+  }
+
+  String get realEstatePropertyLabel {
+    final String value = propertyType.trim();
+
+    if (value.isEmpty) {
+      return 'Imóvel';
+    }
+
+    return value
+        .replaceAll('_', ' ')
+        .split(' ')
+        .where((word) => word.trim().isNotEmpty)
+        .map((word) {
+      final String clean = word.trim();
+      return clean[0].toUpperCase() + clean.substring(1).toLowerCase();
+    }).join(' ');
+  }
+
+  String get realEstateAreaLabel {
+    if (areaM2 <= 0) {
+      return '';
+    }
+
+    final String raw = areaM2 % 1 == 0
+        ? areaM2.toInt().toString()
+        : areaM2.toStringAsFixed(1).replaceAll('.', ',');
+
+    return '$raw m²';
+  }
+
+  String get realEstateBedroomsLabel {
+    if (bedrooms <= 0) {
+      return '';
+    }
+
+    return '$bedrooms quarto${bedrooms == 1 ? '' : 's'}';
+  }
+
+  String get realEstateBathroomsLabel {
+    if (bathrooms <= 0) {
+      return '';
+    }
+
+    return '$bathrooms banheiro${bathrooms == 1 ? '' : 's'}';
+  }
+
+  String get realEstateParkingLabel {
+    if (parkingSpaces <= 0) {
+      return '';
+    }
+
+    return '$parkingSpaces vaga${parkingSpaces == 1 ? '' : 's'}';
+  }
+
+  String get furnishedLabel {
+    switch (furnishedType) {
+      case 'furnished':
+      case 'mobiliado':
+        return 'Mobiliado';
+      case 'semi_furnished':
+      case 'semi-mobiliado':
+      case 'semi_mobiliado':
+        return 'Semi-mobiliado';
+      case 'unfurnished':
+      case 'sem_mobilia':
+      case 'sem-mobilia':
+      case 'sem mobília':
+      case 'sem mobilia':
+        return 'Sem mobília';
+      default:
+        return '';
+    }
+  }
+
+  List<RealEstateCardAttribute> get realEstateCardAttributes {
+    final List<RealEstateCardAttribute> attributes =
+        <RealEstateCardAttribute>[];
+
+    if (realEstateAreaLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.square_foot_rounded,
+        label: realEstateAreaLabel,
+      ));
+    }
+
+    if (realEstateBedroomsLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.bed_rounded,
+        label: realEstateBedroomsLabel,
+      ));
+    }
+
+    if (realEstateBathroomsLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.bathtub_outlined,
+        label: realEstateBathroomsLabel,
+      ));
+    }
+
+    if (realEstateParkingLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.directions_car_rounded,
+        label: realEstateParkingLabel,
+      ));
+    }
+
+    if (attributes.length < 4 && realEstatePropertyLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.apartment_rounded,
+        label: realEstatePropertyLabel,
+      ));
+    }
+
+    if (attributes.length < 4 && realEstateListingLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.sell_outlined,
+        label: realEstateListingLabel,
+      ));
+    }
+
+    if (attributes.length < 4 && acceptsPets) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.pets_rounded,
+        label: 'Aceita pet',
+      ));
+    }
+
+    if (attributes.length < 4 && furnishedLabel.isNotEmpty) {
+      attributes.add(RealEstateCardAttribute(
+        icon: Icons.weekend_rounded,
+        label: furnishedLabel,
+      ));
+    }
+
+    return attributes.take(4).toList();
+  }
 
   String get compactServiceDeliveryLabel {
     switch (serviceDeliveryType) {
@@ -5154,7 +6410,29 @@ class StoreProductData {
   }
 
   String get actionLabel {
+    if (isClassifiedAd) {
+      return 'Ver anúncio';
+    }
+
     return isService ? 'Ver serviço' : 'Ver oferta';
+  }
+
+  static int parseInt(dynamic value) {
+    if (value == null) {
+      return 0;
+    }
+
+    if (value is int) {
+      return value;
+    }
+
+    if (value is num) {
+      return value.toInt();
+    }
+
+    return int.tryParse('$value') ??
+        double.tryParse('$value'.replaceAll(',', '.'))?.toInt() ??
+        0;
   }
 
   static double parseDouble(dynamic value) {

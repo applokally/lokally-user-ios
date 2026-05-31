@@ -1,7 +1,398 @@
 import 'package:flutter/material.dart';
+import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/features/store/screens/store_cart_screen.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 
+class StoreMarketplaceCategoryViewData {
+  final String id;
+  final String name;
+  final String primaryIconUrl;
+  final String? localIconAsset;
+  final bool isAll;
+  final String normalizedIdentifier;
+
+  const StoreMarketplaceCategoryViewData({
+    required this.id,
+    required this.name,
+    required this.primaryIconUrl,
+    required this.localIconAsset,
+    required this.isAll,
+    required this.normalizedIdentifier,
+  });
+}
+
+/// Header superior padrão do Marketplace.
+/// Deve ser usado pela Home e pelas páginas de categorias para manter o mesmo visual.
+class StoreMarketplaceModeSelectorHeader extends StatelessWidget {
+  final Color primaryColor;
+  final VoidCallback onShoppingTap;
+  final VoidCallback onTravelTap;
+  final VoidCallback onDeliveryTap;
+
+  const StoreMarketplaceModeSelectorHeader({
+    super.key,
+    required this.primaryColor,
+    required this.onShoppingTap,
+    required this.onTravelTap,
+    required this.onDeliveryTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: primaryColor,
+      padding: EdgeInsets.fromLTRB(
+        16,
+        MediaQuery.of(context).padding.top + 10,
+        16,
+        12,
+      ),
+      child: StoreMarketplaceModeSelectorPill(
+        primaryColor: primaryColor,
+        onShoppingTap: onShoppingTap,
+        onTravelTap: onTravelTap,
+        onDeliveryTap: onDeliveryTap,
+      ),
+    );
+  }
+}
+
+class StoreMarketplaceModeSelectorPill extends StatelessWidget {
+  final Color primaryColor;
+  final VoidCallback onShoppingTap;
+  final VoidCallback onTravelTap;
+  final VoidCallback onDeliveryTap;
+
+  const StoreMarketplaceModeSelectorPill({
+    super.key,
+    required this.primaryColor,
+    required this.onShoppingTap,
+    required this.onTravelTap,
+    required this.onDeliveryTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 64,
+      width: double.infinity,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        borderRadius: BorderRadius.circular(30),
+        boxShadow: [
+          BoxShadow(
+            offset: const Offset(0, 8),
+            blurRadius: 18,
+            color: Colors.black.withValues(alpha: 0.08),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 5,
+            child: StoreMarketplaceModeSelectorItem(
+              label: 'Lokally Shop',
+              asset: 'assets/image/shopping.png',
+              selected: true,
+              primaryColor: primaryColor,
+              onTap: onShoppingTap,
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: StoreMarketplaceModeSelectorItem(
+              label: 'Viagens',
+              asset: 'assets/image/viagens.png',
+              selected: false,
+              primaryColor: primaryColor,
+              onTap: onTravelTap,
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: StoreMarketplaceModeSelectorItem(
+              label: 'Entregas',
+              asset: 'assets/image/entregas.png',
+              selected: false,
+              primaryColor: primaryColor,
+              onTap: onDeliveryTap,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StoreMarketplaceModeSelectorItem extends StatelessWidget {
+  final String label;
+  final String asset;
+  final bool selected;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  const StoreMarketplaceModeSelectorItem({
+    super.key,
+    required this.label,
+    required this.asset,
+    required this.selected,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color backgroundColor =
+        selected ? primaryColor.withValues(alpha: 0.12) : Colors.transparent;
+    final Color textColor = Colors.black87;
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        height: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(26),
+          border: selected
+              ? Border.all(color: primaryColor.withValues(alpha: 0.18))
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              asset,
+              width: 30,
+              height: 30,
+              fit: BoxFit.contain,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.visible,
+                softWrap: false,
+                style: textBold.copyWith(
+                  color: textColor,
+                  fontSize: 13.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fundo degradê padrão que fica atrás das categorias e banners.
+class StoreMarketplaceHeaderGradient extends StatelessWidget {
+  final Color primaryColor;
+  final double height;
+
+  const StoreMarketplaceHeaderGradient({
+    super.key,
+    required this.primaryColor,
+    this.height = 315,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        height: height,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              primaryColor,
+              primaryColor.withValues(alpha: 0.90),
+              primaryColor.withValues(alpha: 0.30),
+              Colors.white.withValues(alpha: 0),
+            ],
+            stops: const [0.0, 0.42, 0.75, 1.0],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Menu de categorias principais padrão.
+/// A categoria selecionada fica em destaque e as demais continuam visíveis.
+class StoreMarketplaceMainCategoryMenu extends StatelessWidget {
+  final List<StoreMarketplaceCategoryViewData> categories;
+  final int selectedIndex;
+  final Color primaryColor;
+  final ValueChanged<int> onSelected;
+
+  const StoreMarketplaceMainCategoryMenu({
+    super.key,
+    required this.categories,
+    required this.selectedIndex,
+    required this.primaryColor,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 84,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: EdgeInsets.zero,
+        itemCount: categories.length,
+        itemBuilder: (context, index) {
+          return StoreMarketplaceCategoryMenuItem(
+            category: categories[index],
+            isSelected: index == selectedIndex,
+            primaryColor: primaryColor,
+            onTap: () => onSelected(index),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class StoreMarketplaceCategoryMenuItem extends StatelessWidget {
+  final StoreMarketplaceCategoryViewData category;
+  final bool isSelected;
+  final Color primaryColor;
+  final VoidCallback onTap;
+
+  const StoreMarketplaceCategoryMenuItem({
+    super.key,
+    required this.category,
+    required this.isSelected,
+    required this.primaryColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final String networkIconUrl = category.primaryIconUrl;
+    final bool hasNetworkIcon = networkIconUrl.isNotEmpty;
+    final String? localIconAsset = category.localIconAsset;
+    final bool hasIcon = hasNetworkIcon || localIconAsset != null;
+    final Color labelColor =
+        Colors.white.withValues(alpha: isSelected ? 1 : 0.94);
+
+    Widget iconWidget() {
+      if (!hasIcon) {
+        return SizedBox(
+          width: 58,
+          height: 58,
+          child: Icon(
+            category.isAll ? Icons.apps_rounded : Icons.storefront_rounded,
+            color: Colors.white.withValues(alpha: 0.92),
+            size: 36,
+          ),
+        );
+      }
+
+      final Widget image = hasNetworkIcon
+          ? Image.network(
+              networkIconUrl,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) {
+                if (localIconAsset != null) {
+                  return Image.asset(
+                    localIconAsset,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) {
+                      return Icon(
+                        category.isAll
+                            ? Icons.apps_rounded
+                            : Icons.storefront_rounded,
+                        color: Colors.white.withValues(alpha: 0.92),
+                        size: 36,
+                      );
+                    },
+                  );
+                }
+
+                return Icon(
+                  category.isAll
+                      ? Icons.apps_rounded
+                      : Icons.storefront_rounded,
+                  color: Colors.white.withValues(alpha: 0.92),
+                  size: 36,
+                );
+              },
+            )
+          : Image.asset(
+              localIconAsset!,
+              fit: BoxFit.contain,
+              errorBuilder: (_, __, ___) {
+                return Icon(
+                  category.isAll
+                      ? Icons.apps_rounded
+                      : Icons.storefront_rounded,
+                  color: Colors.white.withValues(alpha: 0.92),
+                  size: 36,
+                );
+              },
+            );
+
+      return SizedBox(
+        width: 50,
+        height: 50,
+        child: image,
+      );
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 72,
+        margin: const EdgeInsets.only(right: 3),
+        padding: const EdgeInsets.only(top: 1, bottom: 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            iconWidget(),
+            const SizedBox(height: 2),
+            Text(
+              category.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: (isSelected ? textBold : textMedium).copyWith(
+                color: labelColor,
+                fontSize: category.isAll ? 12.1 : 11.4,
+                height: 1.0,
+              ),
+            ),
+            const SizedBox(height: 4),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: isSelected ? 30 : 0,
+              height: 3,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Header antigo preservado para não quebrar telas que ainda usam busca no topo.
+/// A Home nova e as páginas de categoria devem usar StoreMarketplaceModeSelectorHeader
+/// + StoreMarketplaceHeaderGradient + StoreMarketplaceMainCategoryMenu.
 class StoreMarketplaceHeader extends StatelessWidget {
   final Color primaryColor;
   final ValueChanged<String> onSearchChanged;
@@ -54,6 +445,11 @@ class StoreMarketplaceHeader extends StatelessWidget {
               child: Image.asset(
                 'assets/image/loja.png',
                 fit: BoxFit.contain,
+                errorBuilder: (_, __, ___) => const Icon(
+                  Icons.storefront_rounded,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
             ),
             const SizedBox(width: 10),
@@ -227,7 +623,7 @@ class StoreMarketplaceHeaderSearchField extends StatelessWidget {
             color: Colors.grey.shade600,
             size: 20,
           ),
-          hintText: 'Buscar produtos',
+          hintText: 'store_search_products'.tr,
           hintStyle: textRegular.copyWith(
             color: Colors.grey.shade500,
             fontSize: 13.5,

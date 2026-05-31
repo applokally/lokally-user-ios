@@ -223,11 +223,11 @@ class ProfileScreen extends StatelessWidget {
 
                     if (snapshot.data == true) {
                       return ProfileMenuItem(
-                        title: 'Minha Loja',
+                        title: 'Meu Negócio',
                         icon: Images.profileMyTrip,
                         highlighted: true,
                         highlightIcon: Icons.storefront_rounded,
-                        subtitle: 'Painel do vendedor Marketplace',
+                        subtitle: 'Painel gerencial Marketplace',
                         onTap: () =>
                             Get.to(() => const StoreSellerDashboardScreen()),
                       );
