@@ -1,14 +1,14 @@
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/features/auth/domain/models/error_response.dart';
-import 'package:ride_sharing_user_app/features/splash/controllers/config_controller.dart';
 import 'package:ride_sharing_user_app/helper/display_helper.dart';
-import 'package:ride_sharing_user_app/helper/login_helper.dart';
 
 class ApiChecker {
   static void checkApi(Response response) {
     if (response.statusCode == 401) {
-      Get.find<ConfigController>().removeSharedData();
-      LoginHelper.checkLoginMedium();
+      showCustomSnackBar(
+        'Sua sessão não pôde ser confirmada agora. Tente novamente ou faça login ao acessar uma área protegida.',
+      );
+      return;
     } else if (response.statusCode == 0 || response.statusCode == 1) {
       return;
     } else if (response.statusCode == 403) {

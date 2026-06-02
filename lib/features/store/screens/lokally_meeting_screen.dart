@@ -42,6 +42,15 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
   MediaStream? remoteStream;
   Timer? signalTimer;
 
+  final List<RTCIceCandidate> pendingRemoteIceCandidates = <RTCIceCandidate>[];
+
+  bool offerSent = false;
+  bool answerSent = false;
+  bool answerReceived = false;
+  bool offerReceived = false;
+  bool isReadingSignals = false;
+  DateTime? lastReadySignalAt;
+
   bool isPreparing = true;
   bool isEnding = false;
   bool isAudioEnabled = true;
@@ -91,25 +100,147 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
               : 'Entrando no Lokally Meeting...';
         });
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
         setState(() {
           isPreparing = false;
           statusText =
-              'Não foi possível iniciar o Lokally Meeting. Verifique câmera, microfone e conexão.';
+              'Não foi possível iniciar o Lokally Meeting. Verifique câmera, microfone e conexão. ${shortError(error)}';
         });
       }
     }
   }
 
+  String shortError(Object error) {
+    final String value = error.toString().replaceAll('\n', ' ').trim();
+
+    if (value.isEmpty) {
+      return '';
+    }
+
+    return value.length > 120 ? value.substring(0, 120) : value;
+  }
+
+  String normalizeRemoteSdp(String value) {
+    String sdp = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+    final List<String> lines = sdp
+        .split('\n')
+        .map((line) => line.trimRight())
+        .where((line) => line.trim().isNotEmpty)
+        .where((line) => line.trim() != 'a=extmap-allow-mixed')
+        .where((line) => !line.contains('urn:ietf:params:rtp-hdrext:sdes:mid'))
+        .where((line) => !line.contains(
+            'http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time'))
+        .toList();
+
+    sdp = lines.join('\r\n');
+
+    if (!sdp.endsWith('\r\n')) {
+      sdp = '$sdp\r\n';
+    }
+
+    return sdp;
+  }
+
+  Future<void> recreatePeerConnectionForRemoteOfferRetry() async {
+    final RTCPeerConnection? oldPeer = peerConnection;
+
+    try {
+      await oldPeer?.close();
+      await oldPeer?.dispose();
+    } catch (_) {}
+
+    try {
+      await remoteStream?.dispose();
+    } catch (_) {}
+
+    peerConnection = null;
+    remoteStream = null;
+    pendingRemoteIceCandidates.clear();
+    offerSent = false;
+    answerSent = false;
+    answerReceived = false;
+
+    await preparePeerConnection();
+  }
+
+  Future<void> setRemoteOfferWithFallback(String sdp, String type) async {
+    RTCPeerConnection? connection = peerConnection;
+
+    if (connection == null) {
+      throw Exception('peer_connection_unavailable');
+    }
+
+    final String normalizedSdp = normalizeRemoteSdp(sdp);
+    Object? firstError;
+    Object? secondError;
+
+    try {
+      await connection.setRemoteDescription(RTCSessionDescription(sdp, type));
+      return;
+    } catch (error) {
+      firstError = error;
+    }
+
+    try {
+      await connection.setRemoteDescription(
+        RTCSessionDescription(normalizedSdp, type),
+      );
+      return;
+    } catch (error) {
+      secondError = error;
+    }
+
+    await recreatePeerConnectionForRemoteOfferRetry();
+    connection = peerConnection;
+
+    if (connection == null) {
+      throw Exception('peer_connection_retry_unavailable');
+    }
+
+    try {
+      await connection.setRemoteDescription(
+        RTCSessionDescription(normalizedSdp, type),
+      );
+      return;
+    } catch (thirdError) {
+      throw Exception(
+        'set_remote_offer_failed first=${shortError(firstError ?? '')} second=${shortError(secondError ?? '')} third=${shortError(thirdError)}',
+      );
+    }
+  }
+
+  int signalPriority(Map<String, dynamic> signal) {
+    final String type = '${signal['signal_type'] ?? ''}';
+
+    if (type == 'offer' || type == 'answer') {
+      return 0;
+    }
+
+    if (type == 'renegotiate') {
+      return 1;
+    }
+
+    if (type == 'ice_candidate') {
+      return 2;
+    }
+
+    return 3;
+  }
+
   Future<void> prepareLocalMedia() async {
     final Map<String, dynamic> mediaConstraints = {
-      'audio': true,
+      'audio': {
+        'echoCancellation': true,
+        'noiseSuppression': true,
+        'autoGainControl': true,
+      },
       'video': {
         'facingMode': 'user',
-        'width': {'ideal': 1280},
-        'height': {'ideal': 720},
-        'frameRate': {'ideal': 30},
+        'width': {'ideal': 960, 'max': 1280},
+        'height': {'ideal': 540, 'max': 720},
+        'frameRate': {'ideal': 15, 'max': 20},
       },
     };
 
@@ -122,6 +253,31 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
 
     remoteStream = await createLocalMediaStream('lokally_meeting_remote');
     remoteRenderer.srcObject = remoteStream;
+
+    peerConnection?.onConnectionState = (state) {
+      if (!mounted || hasRemoteVideo || isEnding) {
+        return;
+      }
+
+      setState(() {
+        statusText = 'Conectando participantes...';
+      });
+    };
+
+    peerConnection?.onIceConnectionState = (state) {
+      if (!mounted || hasRemoteVideo || isEnding) {
+        return;
+      }
+
+      final String stateText = state.toString().toLowerCase();
+
+      if (stateText.contains('failed') || stateText.contains('disconnected')) {
+        setState(() {
+          statusText =
+              'A conexão de vídeo ainda não foi concluída. Verificando sinal da reunião...';
+        });
+      }
+    };
 
     peerConnection?.onIceCandidate = (RTCIceCandidate candidate) {
       sendSignal(
@@ -166,21 +322,11 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
       throw Exception('start_failed');
     }
 
-    final RTCSessionDescription offer = await peerConnection!.createOffer({
-      'offerToReceiveAudio': true,
-      'offerToReceiveVideo': true,
-    });
-
-    await peerConnection!.setLocalDescription(offer);
-
-    await sendSignal(
-      signalType: 'offer',
-      receiverType: 'customer',
-      payload: {
-        'type': offer.type,
-        'sdp': offer.sdp,
-      },
-    );
+    if (mounted) {
+      setState(() {
+        statusText = 'Meeting iniciado. Aguardando o outro participante.';
+      });
+    }
   }
 
   Future<void> joinMeetingAsParticipant() async {
@@ -191,6 +337,124 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
 
     if (!responseIsOk(joinResponse)) {
       throw Exception('join_failed');
+    }
+
+    await sendReadySignal(force: true);
+  }
+
+  Future<void> sendReadySignal({bool force = false}) async {
+    if (widget.isHost ||
+        offerReceived ||
+        answerSent ||
+        hasRemoteVideo ||
+        isEnding) {
+      return;
+    }
+
+    final DateTime now = DateTime.now();
+
+    if (!force &&
+        lastReadySignalAt != null &&
+        now.difference(lastReadySignalAt!).inSeconds < 4) {
+      return;
+    }
+
+    lastReadySignalAt = now;
+
+    await sendSignal(
+      signalType: 'renegotiate',
+      receiverType: 'seller',
+      payload: <String, dynamic>{
+        'ready': true,
+        'build': 'lokally_flutter_native_ready_signal_v2',
+        'at': now.toIso8601String(),
+      },
+    );
+  }
+
+  Future<void> createAndSendOffer() async {
+    final RTCPeerConnection? connection = peerConnection;
+
+    if (!widget.isHost ||
+        connection == null ||
+        isEnding ||
+        offerSent ||
+        answerReceived) {
+      return;
+    }
+
+    final RTCSessionDescription offer = await connection.createOffer({
+      'offerToReceiveAudio': true,
+      'offerToReceiveVideo': true,
+    });
+
+    await connection.setLocalDescription(offer);
+
+    offerSent = true;
+
+    await sendSignal(
+      signalType: 'offer',
+      receiverType: 'customer',
+      payload: {
+        'type': offer.type,
+        'sdp': offer.sdp,
+      },
+    );
+
+    if (mounted) {
+      setState(() {
+        statusText = 'Convite de vídeo enviado. Aguardando resposta.';
+      });
+    }
+  }
+
+  Future<void> addRemoteIceCandidate(RTCIceCandidate candidate) async {
+    final RTCPeerConnection? connection = peerConnection;
+
+    if (connection == null || isEnding) {
+      return;
+    }
+
+    final RTCSessionDescription? remoteDescription =
+        await connection.getRemoteDescription();
+
+    if (remoteDescription == null) {
+      pendingRemoteIceCandidates.add(candidate);
+      return;
+    }
+
+    try {
+      await connection.addCandidate(candidate);
+    } catch (_) {
+      // Candidato ICE duplicado/inválido não deve encerrar o Meeting.
+    }
+  }
+
+  Future<void> flushPendingRemoteIceCandidates() async {
+    final RTCPeerConnection? connection = peerConnection;
+
+    if (connection == null || pendingRemoteIceCandidates.isEmpty || isEnding) {
+      return;
+    }
+
+    final RTCSessionDescription? remoteDescription =
+        await connection.getRemoteDescription();
+
+    if (remoteDescription == null) {
+      return;
+    }
+
+    final List<RTCIceCandidate> candidates =
+        List<RTCIceCandidate>.from(pendingRemoteIceCandidates);
+
+    pendingRemoteIceCandidates.clear();
+
+    for (final RTCIceCandidate candidate in candidates) {
+      try {
+        await connection.addCandidate(candidate);
+      } catch (_) {
+        // Ignora candidato que já não seja mais aplicável.
+      }
     }
   }
 
@@ -204,17 +468,28 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
 
   void startSignalPolling() {
     signalTimer?.cancel();
-    signalTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-      readSignals();
+    signalTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      await readSignals();
+
+      if (!widget.isHost && !answerSent && !isEnding) {
+        await sendReadySignal();
+      }
     });
+
     readSignals();
+
+    if (!widget.isHost) {
+      sendReadySignal(force: true);
+    }
   }
 
   Future<void> readSignals() async {
     final RTCPeerConnection? connection = peerConnection;
-    if (connection == null || isEnding) {
+    if (connection == null || isEnding || isReadingSignals) {
       return;
     }
+
+    isReadingSignals = true;
 
     try {
       final Response response = await Get.find<ApiClient>().getData(
@@ -235,13 +510,36 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
       final List<dynamic> signals =
           signalsValue is List ? signalsValue : <dynamic>[];
 
-      for (final dynamic signalValue in signals) {
-        if (signalValue is Map) {
-          await handleSignal(Map<String, dynamic>.from(signalValue));
+      final List<Map<String, dynamic>> parsedSignals = signals
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList()
+        ..sort((a, b) => signalPriority(a).compareTo(signalPriority(b)));
+
+      for (final Map<String, dynamic> signal in parsedSignals) {
+        if (isEnding) {
+          break;
+        }
+
+        try {
+          await handleSignal(signal);
+        } catch (error) {
+          if (mounted) {
+            setState(() {
+              statusText =
+                  'Não foi possível completar a conexão de vídeo. ${shortError(error)}';
+            });
+          }
         }
       }
-    } catch (_) {
-      // Mantém a reunião ativa mesmo se uma leitura pontual falhar.
+    } catch (error) {
+      if (mounted && !hasRemoteVideo && !isEnding) {
+        setState(() {
+          statusText = 'Verificando sinal da reunião... ${shortError(error)}';
+        });
+      }
+    } finally {
+      isReadingSignals = false;
     }
   }
 
@@ -259,22 +557,51 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
             ? decodePayloadString(payloadValue)
             : <String, dynamic>{};
 
-    if (signalType == 'offer' && !widget.isHost) {
-      final String? sdp = payload['sdp']?.toString();
-      final String type = payload['type']?.toString() ?? 'offer';
-
-      if (sdp == null || sdp.isEmpty) {
+    if (signalType == 'renegotiate' && widget.isHost) {
+      await createAndSendOffer();
+    } else if (signalType == 'offer' && !widget.isHost) {
+      if (answerSent) {
         return;
       }
 
-      await connection.setRemoteDescription(RTCSessionDescription(sdp, type));
+      offerReceived = true;
 
-      final RTCSessionDescription answer = await connection.createAnswer({
+      if (mounted) {
+        setState(() {
+          statusText = 'Convite de vídeo recebido. Compatibilizando conexão...';
+        });
+      }
+
+      final String? sdp = payload['sdp']?.toString();
+      final String type = payload['type']?.toString().toLowerCase() ?? 'offer';
+
+      if (sdp == null || sdp.isEmpty) {
+        throw Exception('offer_sdp_empty');
+      }
+
+      final RTCSessionDescription? currentRemote =
+          await connection.getRemoteDescription();
+
+      if (currentRemote == null) {
+        await setRemoteOfferWithFallback(sdp, type);
+      }
+
+      final RTCPeerConnection? activeConnection = peerConnection;
+
+      if (activeConnection == null) {
+        throw Exception('peer_connection_missing_after_offer');
+      }
+
+      await flushPendingRemoteIceCandidates();
+
+      final RTCSessionDescription answer = await activeConnection.createAnswer({
         'offerToReceiveAudio': true,
         'offerToReceiveVideo': true,
       });
 
-      await connection.setLocalDescription(answer);
+      await activeConnection.setLocalDescription(answer);
+
+      answerSent = true;
 
       await sendSignal(
         signalType: 'answer',
@@ -282,15 +609,20 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
         payload: {
           'type': answer.type,
           'sdp': answer.sdp,
+          'build': 'lokally_flutter_native_answer_v5',
         },
       );
 
       if (mounted) {
         setState(() {
-          statusText = 'Respondendo ao convite de vídeo...';
+          statusText = 'Resposta enviada. Conectando participantes...';
         });
       }
     } else if (signalType == 'answer' && widget.isHost) {
+      if (answerReceived) {
+        return;
+      }
+
       final String? sdp = payload['sdp']?.toString();
       final String type = payload['type']?.toString() ?? 'answer';
 
@@ -303,6 +635,15 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
 
       if (currentRemote == null) {
         await connection.setRemoteDescription(RTCSessionDescription(sdp, type));
+        await flushPendingRemoteIceCandidates();
+      }
+
+      answerReceived = true;
+
+      if (mounted) {
+        setState(() {
+          statusText = 'Conectando participantes...';
+        });
       }
     } else if (signalType == 'ice_candidate') {
       final String? candidate = payload['candidate']?.toString();
@@ -311,7 +652,7 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
         return;
       }
 
-      await connection.addCandidate(
+      await addRemoteIceCandidate(
         RTCIceCandidate(
           candidate,
           payload['sdpMid']?.toString(),
@@ -435,6 +776,12 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
     signalTimer?.cancel();
 
     try {
+      pendingRemoteIceCandidates.clear();
+      offerReceived = false;
+      offerSent = false;
+      answerSent = false;
+      answerReceived = false;
+      isReadingSignals = false;
       final List<MediaStreamTrack> tracks = localStream?.getTracks() ?? [];
       for (final MediaStreamTrack track in tracks) {
         await track.stop();

@@ -32,7 +32,7 @@ class _StoreSellerOrderListScreenState
 
   bool isLoading = false;
   bool isLoadingServiceRequests = false;
-  bool isStartingServiceRequest = false;
+  String? startingServiceRequestChannelId;
   String selectedFilter = 'all';
 
   List<StoreSellerOrderItem> orders = <StoreSellerOrderItem>[];
@@ -371,12 +371,12 @@ class _StoreSellerOrderListScreenState
   Future<void> startServiceRequest(
     StoreSellerServiceRequestItem request,
   ) async {
-    if (isStartingServiceRequest) {
+    if (startingServiceRequestChannelId != null) {
       return;
     }
 
     setState(() {
-      isStartingServiceRequest = true;
+      startingServiceRequestChannelId = request.channelId;
     });
 
     final Response response = await Get.find<ApiClient>().postData(
@@ -389,7 +389,7 @@ class _StoreSellerOrderListScreenState
     }
 
     setState(() {
-      isStartingServiceRequest = false;
+      startingServiceRequestChannelId = null;
     });
 
     final dynamic body = response.body;
@@ -977,7 +977,7 @@ class _StoreSellerOrderListScreenState
                     StoreSellerServiceRequestsSection(
                       primaryColor: primaryColor,
                       isLoading: isLoadingServiceRequests,
-                      isStarting: isStartingServiceRequest,
+                      startingChannelId: startingServiceRequestChannelId,
                       requests: serviceRequests,
                       onStartRequest: startServiceRequest,
                     ),
@@ -1031,7 +1031,7 @@ class _StoreSellerOrderListScreenState
 class StoreSellerServiceRequestsSection extends StatelessWidget {
   final Color primaryColor;
   final bool isLoading;
-  final bool isStarting;
+  final String? startingChannelId;
   final List<StoreSellerServiceRequestItem> requests;
   final ValueChanged<StoreSellerServiceRequestItem> onStartRequest;
 
@@ -1039,7 +1039,7 @@ class StoreSellerServiceRequestsSection extends StatelessWidget {
     super.key,
     required this.primaryColor,
     required this.isLoading,
-    required this.isStarting,
+    required this.startingChannelId,
     required this.requests,
     required this.onStartRequest,
   });
@@ -1129,7 +1129,7 @@ class StoreSellerServiceRequestsSection extends StatelessWidget {
                 child: StoreSellerServiceRequestTile(
                   request: request,
                   primaryColor: primaryColor,
-                  isStarting: isStarting,
+                  isStarting: startingChannelId == request.channelId,
                   onStartTap: () => onStartRequest(request),
                 ),
               ),
@@ -5202,15 +5202,17 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
       final List<dynamic> messageList =
           messagesValue is List ? messagesValue : <dynamic>[];
 
+      final List<StoreServiceChatMessageData> parsedMessages = messageList
+          .whereType<Map>()
+          .map((item) => StoreServiceChatMessageData.fromMap(
+                Map<String, dynamic>.from(item),
+              ))
+          .toList();
+
       setState(() {
         thread = StoreServiceChatThreadData.fromMap(threadMap);
         safetyNotice = StoreServiceChatSafetyNotice.fromMap(safetyMap);
-        messages = messageList
-            .whereType<Map>()
-            .map((item) => StoreServiceChatMessageData.fromMap(
-                  Map<String, dynamic>.from(item),
-                ))
-            .toList();
+        messages = normalizeMeetingMessagesForSeller(parsedMessages);
       });
 
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -5230,6 +5232,35 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
         });
       }
     }
+  }
+
+  List<StoreServiceChatMessageData> normalizeMeetingMessagesForSeller(
+    List<StoreServiceChatMessageData> rawMessages,
+  ) {
+    final Set<String> renderedMeetingKeys = <String>{};
+    final List<StoreServiceChatMessageData> normalizedMessages =
+        <StoreServiceChatMessageData>[];
+
+    for (final StoreServiceChatMessageData message in rawMessages) {
+      if (!message.isLokallyMeetingMessage) {
+        normalizedMessages.add(message);
+        continue;
+      }
+
+      final String meetingKey = message.meetingDedupKey;
+
+      if (meetingKey.isNotEmpty && renderedMeetingKeys.contains(meetingKey)) {
+        continue;
+      }
+
+      if (meetingKey.isNotEmpty) {
+        renderedMeetingKeys.add(meetingKey);
+      }
+
+      normalizedMessages.add(message);
+    }
+
+    return normalizedMessages;
   }
 
   Future<void> showSafetyNoticeModal() async {
@@ -6440,6 +6471,14 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
             serviceLabel: widget.order.serviceDeliveryLabel,
             onBackTap: () => Get.back(),
           ),
+          StoreServiceChatOrderSummary(
+            order: widget.order,
+            primaryColor: primaryColor,
+            progress: thread?.serviceProgress ??
+                StoreSellerServiceProgressData.empty(),
+            isUpdatingProgress: isUpdatingProgress,
+            onUpdateProgressTap: showUpdateProgressModal,
+          ),
           Expanded(
             child: isLoading
                 ? Center(
@@ -6450,25 +6489,11 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
                   )
                 : ListView.builder(
                     controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                    itemCount: messages.length + 1,
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
+                    itemCount: messages.length,
                     itemBuilder: (context, index) {
-                      if (index == 0) {
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: StoreServiceChatOrderSummary(
-                            order: widget.order,
-                            primaryColor: primaryColor,
-                            progress: thread?.serviceProgress ??
-                                StoreSellerServiceProgressData.empty(),
-                            isUpdatingProgress: isUpdatingProgress,
-                            onUpdateProgressTap: showUpdateProgressModal,
-                          ),
-                        );
-                      }
-
                       final StoreServiceChatMessageData message =
-                          messages[index - 1];
+                          messages[index];
 
                       return StoreServiceChatBubble(
                         message: message,
@@ -6640,75 +6665,67 @@ class StoreServiceChatOrderSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String serviceName = order.items.isNotEmpty
+        ? order.items.first.productName
+        : order.orderNumber;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(13),
-      decoration: const BoxDecoration(color: Colors.transparent),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          bottom: BorderSide(color: Colors.grey.shade200),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            order.orderNumber,
+            serviceName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: textBold.copyWith(
               color: Colors.black87,
-              fontSize: 14.5,
+              fontSize: 13.4,
             ),
           ),
-          const SizedBox(height: 5),
-          Text(
-            order.serviceDeliveryDescription.isEmpty
-                ? 'Serviço contratado pelo Marketplace Lokally.'
-                : order.serviceDeliveryDescription,
-            style: textRegular.copyWith(
-              color: Colors.grey.shade700,
-              fontSize: 12.2,
-              height: 1.3,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...order.items.take(2).map(
-                (item) => Text(
-                  '${item.quantity}x ${item.productName}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: textMedium.copyWith(
-                    color: Colors.black87,
-                    fontSize: 12.2,
-                  ),
-                ),
-              ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 7),
           StoreServiceProgressMiniBar(
             progress: progress,
             primaryColor: primaryColor,
           ),
-          const SizedBox(height: 12),
-          Material(
-            color: primaryColor,
-            borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              onTap: isUpdatingProgress ? null : onUpdateProgressTap,
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                height: 42,
-                width: double.infinity,
-                alignment: Alignment.center,
-                child: isUpdatingProgress
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          color: Colors.white,
-                          strokeWidth: 2,
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Material(
+              color: primaryColor,
+              borderRadius: BorderRadius.circular(15),
+              child: InkWell(
+                onTap: isUpdatingProgress ? null : onUpdateProgressTap,
+                borderRadius: BorderRadius.circular(15),
+                child: Container(
+                  height: 36,
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  alignment: Alignment.center,
+                  child: isUpdatingProgress
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : Text(
+                          'Atualizar status',
+                          style: textBold.copyWith(
+                            color: Colors.white,
+                            fontSize: 12.3,
+                          ),
                         ),
-                      )
-                    : Text(
-                        'Atualizar status',
-                        style: textBold.copyWith(
-                          color: Colors.white,
-                          fontSize: 12.8,
-                        ),
-                      ),
+                ),
               ),
             ),
           ),
@@ -7548,6 +7565,20 @@ class StoreServiceChatMessageData {
 
   bool get isLokallyMeetingMessage {
     return messageType.startsWith('lokally_meeting');
+  }
+
+  String get meetingDedupKey {
+    final String meetingObjectId = meeting?.id.trim() ?? '';
+
+    if (meetingObjectId.isNotEmpty) {
+      return meetingObjectId;
+    }
+
+    if (meetingId.trim().isNotEmpty) {
+      return meetingId.trim();
+    }
+
+    return '';
   }
 
   String get fileDisplayName {
