@@ -211,6 +211,66 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
     }
   }
 
+  String normalizeRemoteAnswerSdp(String value) {
+    String sdp = value.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+    final List<String> lines = sdp
+        .split('\n')
+        .map((line) => line.trimRight())
+        .where((line) => line.trim().isNotEmpty)
+        .where((line) => line.trim() != 'a=extmap-allow-mixed')
+        .toList();
+
+    sdp = lines.join('\r\n');
+
+    if (!sdp.endsWith('\r\n')) {
+      sdp = '$sdp\r\n';
+    }
+
+    return sdp;
+  }
+
+  Future<void> setRemoteAnswerWithFallback(String sdp, String type) async {
+    final RTCPeerConnection? connection = peerConnection;
+
+    if (connection == null) {
+      throw Exception('peer_connection_unavailable_for_answer');
+    }
+
+    final RTCSessionDescription? localDescription =
+        await connection.getLocalDescription();
+
+    if (localDescription == null ||
+        (localDescription.sdp ?? '').trim().isEmpty) {
+      throw Exception('local_description_missing_before_answer');
+    }
+
+    final String normalizedType =
+        type.trim().isEmpty ? 'answer' : type.trim().toLowerCase();
+    final String normalizedSdp = normalizeRemoteAnswerSdp(sdp);
+    Object? firstError;
+
+    try {
+      await connection.setRemoteDescription(
+        RTCSessionDescription(sdp, normalizedType),
+      );
+      return;
+    } catch (error) {
+      firstError = error;
+    }
+
+    try {
+      await connection.setRemoteDescription(
+        RTCSessionDescription(normalizedSdp, normalizedType),
+      );
+      return;
+    } catch (secondError) {
+      throw Exception(
+        'set_remote_answer_failed type=$normalizedType sdp=${sdp.length} normalized=${normalizedSdp.length} first=${shortError(firstError ?? '')} second=${shortError(secondError)}',
+      );
+    }
+  }
+
   int signalPriority(Map<String, dynamic> signal) {
     final String type = '${signal['signal_type'] ?? ''}';
 
@@ -609,7 +669,7 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
         payload: {
           'type': answer.type,
           'sdp': answer.sdp,
-          'build': 'lokally_flutter_native_answer_v5',
+          'build': 'lokally_flutter_native_answer_v6',
         },
       );
 
@@ -624,17 +684,23 @@ class _LokallyMeetingScreenState extends State<LokallyMeetingScreen> {
       }
 
       final String? sdp = payload['sdp']?.toString();
-      final String type = payload['type']?.toString() ?? 'answer';
+      final String type = payload['type']?.toString().toLowerCase() ?? 'answer';
 
-      if (sdp == null || sdp.isEmpty) {
-        return;
+      if (sdp == null || sdp.trim().isEmpty) {
+        throw Exception('answer_sdp_empty');
       }
 
       final RTCSessionDescription? currentRemote =
           await connection.getRemoteDescription();
 
       if (currentRemote == null) {
-        await connection.setRemoteDescription(RTCSessionDescription(sdp, type));
+        if (mounted) {
+          setState(() {
+            statusText = 'Resposta recebida. Conectando vídeo...';
+          });
+        }
+
+        await setRemoteAnswerWithFallback(sdp, type);
         await flushPendingRemoteIceCandidates();
       }
 
