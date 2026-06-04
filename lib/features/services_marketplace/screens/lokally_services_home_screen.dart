@@ -12,7 +12,10 @@ import 'package:ride_sharing_user_app/helper/login_helper.dart';
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
+import 'package:ride_sharing_user_app/features/store/screens/store_cart_screen.dart';
+import 'package:ride_sharing_user_app/features/store/widgets/store_marketplace_footer.dart';
 import 'lokally_digital_service_details_screen.dart';
+import 'lokally_presential_service_details_screen.dart';
 
 class LokallyServicesHomeScreen extends StatefulWidget {
   const LokallyServicesHomeScreen({super.key});
@@ -32,6 +35,7 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
   final ScrollController scrollController = ScrollController();
   final ScrollController serviceCategoryCarouselController = ScrollController();
   final TextEditingController searchController = TextEditingController();
+  final FocusNode searchFocusNode = FocusNode();
   final PageController serviceBannerPageController = PageController();
   Timer? serviceBannerTimer;
   Timer? serviceCategoryCarouselTimer;
@@ -77,6 +81,7 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
     serviceCategoryCarouselController.dispose();
     serviceBannerPageController.dispose();
     searchController.dispose();
+    searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -106,6 +111,18 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
       duration: const Duration(milliseconds: 420),
       curve: Curves.easeOutCubic,
     );
+  }
+
+  void focusSearchFromFooter() {
+    scrollToTop();
+
+    Future.delayed(const Duration(milliseconds: 460), () {
+      if (!mounted) {
+        return;
+      }
+
+      FocusScope.of(context).requestFocus(searchFocusNode);
+    });
   }
 
   Future<void> loadInitialData() async {
@@ -740,6 +757,10 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
     Get.offAll(() => const DashboardScreen());
   }
 
+  void openCartScreen() {
+    Get.to(() => const StoreCartScreen());
+  }
+
   void openTravelScreen() {
     if (!isCustomerLoggedIn) {
       showLoginRequiredDialog(
@@ -774,6 +795,8 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
     }
 
     final Color primaryColor = Theme.of(context).primaryColor;
+    final Color actionTextColor =
+        primaryColor.computeLuminance() > 0.55 ? Colors.black87 : Colors.white;
 
     Get.dialog(
       Dialog(
@@ -868,7 +891,7 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: primaryColor,
-                          foregroundColor: Colors.white,
+                          foregroundColor: actionTextColor,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16),
@@ -879,7 +902,7 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: textBold.copyWith(
-                            color: Colors.white,
+                            color: actionTextColor,
                             fontSize: 12.5,
                           ),
                         ),
@@ -922,23 +945,26 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
   }
 
   void openServiceDetails(LokallyServiceAdData service) {
-    if (service.isDigital || !service.isPresential) {
+    if (service.isPresential) {
       Get.to(
-        () => LokallyDigitalServiceDetailsScreen(
+        () => LokallyPresentialServiceDetailsScreen(
           service: service.toDigitalDetailsMap(),
         ),
       );
       return;
     }
 
-    showServiceMessage(
-      'A página de serviço presencial será ajustada na próxima etapa.',
+    Get.to(
+      () => LokallyDigitalServiceDetailsScreen(
+        service: service.toDigitalDetailsMap(),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     const Color primaryColor = Color(0xFFFFEE75);
+    const Color footerPrimaryColor = Color(0xFF202020);
     final List<LokallyServiceCategoryData> categories =
         categoriesForSelectedFormat;
     final List<LokallyServiceAdData> servicesForView = filteredServices;
@@ -1006,9 +1032,12 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
                             LokallyServicesSearchField(
                               primaryColor: primaryColor,
                               searchController: searchController,
+                              searchFocusNode: searchFocusNode,
                               onSearchChanged: handleSearchChanged,
                             ),
-                            const SizedBox(height: 14),
+                            const SizedBox(height: 12),
+                            const LokallyServicesFormatIntroText(),
+                            const SizedBox(height: 12),
                             LokallyServicesFormatSelector(
                               selectedFormat: selectedFormat,
                               primaryColor: primaryColor,
@@ -1088,10 +1117,20 @@ class _LokallyServicesHomeScreenState extends State<LokallyServicesHomeScreen> {
               ),
             ],
           ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: StoreMarketplaceBottomSearchCartBar(
+              primaryColor: footerPrimaryColor,
+              onSearchTap: focusSearchFromFooter,
+              onCartTap: openCartScreen,
+            ),
+          ),
           if (showBackToTopButton)
             Positioned(
               right: 16,
-              bottom: 24,
+              bottom: 106,
               child: GestureDetector(
                 onTap: scrollToTop,
                 child: Container(
@@ -1425,12 +1464,14 @@ class LokallyServicesBannerLoading extends StatelessWidget {
 class LokallyServicesSearchField extends StatelessWidget {
   final Color primaryColor;
   final TextEditingController searchController;
+  final FocusNode searchFocusNode;
   final ValueChanged<String> onSearchChanged;
 
   const LokallyServicesSearchField({
     super.key,
     required this.primaryColor,
     required this.searchController,
+    required this.searchFocusNode,
     required this.onSearchChanged,
   });
 
@@ -1453,6 +1494,7 @@ class LokallyServicesSearchField extends StatelessWidget {
       ),
       child: TextField(
         controller: searchController,
+        focusNode: searchFocusNode,
         onChanged: onSearchChanged,
         textInputAction: TextInputAction.search,
         style: textRegular.copyWith(
@@ -1574,6 +1616,29 @@ class LokallyServicesHero extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class LokallyServicesFormatIntroText extends StatelessWidget {
+  const LokallyServicesFormatIntroText({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(
+          'Escolha abaixo, Digitais ou Presenciais para listar os serviços disponíveis.',
+          textAlign: TextAlign.center,
+          style: textBold.copyWith(
+            color: Colors.black87,
+            fontSize: 12.2,
+            height: 1.22,
+          ),
+        ),
       ),
     );
   }

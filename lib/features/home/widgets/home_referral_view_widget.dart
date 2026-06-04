@@ -5,7 +5,6 @@ import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/common_widgets/button_widget.dart';
 import 'package:ride_sharing_user_app/features/refer_and_earn/controllers/refer_and_earn_controller.dart';
 import 'package:ride_sharing_user_app/helper/display_helper.dart';
-import 'package:ride_sharing_user_app/helper/price_converter.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/images.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -36,7 +35,7 @@ class HomeReferralViewWidget extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'invite&getRewards'.tr,
+                  'Convide e ganhe pontos',
                   style: textSemiBold.copyWith(
                     color: Get.isDarkMode
                         ? Theme.of(context)
@@ -49,7 +48,7 @@ class HomeReferralViewWidget extends StatelessWidget {
                 ),
                 const SizedBox(height: Dimensions.paddingSizeSmall),
                 Text(
-                  'share_code_with_your_friends'.tr,
+                  'Compartilhe seu código e participe do Clube de Pontos Lokally.',
                   style: textRegular.copyWith(
                     fontSize: Dimensions.fontSizeExtraSmall,
                     color: Get.isDarkMode
@@ -181,7 +180,7 @@ class ReferralViewBottomSheetWidget extends StatelessWidget {
                   ),
                   const SizedBox(height: Dimensions.paddingSizeSmall),
                   Text(
-                    'invite&getRewards'.tr,
+                    'Convide e ganhe pontos',
                     style: textBold.copyWith(
                       fontSize: Dimensions.fontSizeLarge,
                     ),
@@ -191,28 +190,15 @@ class ReferralViewBottomSheetWidget extends StatelessWidget {
                     padding: const EdgeInsets.symmetric(
                       horizontal: Dimensions.paddingSizeSignUp,
                     ),
-                    child: RichText(
-                      text: TextSpan(
-                        text: 'referral_bottom_sheet_note'.tr,
-                        style: textRegular.copyWith(
-                          color:
-                              Theme.of(context).colorScheme.secondaryFixedDim,
-                          fontSize: Dimensions.fontSizeSmall,
-                        ),
-                        children: [
-                          TextSpan(
-                            text:
-                                '  ${PriceConverter.convertPrice(referAndEarnController.referralDetails?.data?.shareCodeEarning ?? 0)}',
-                            style: textRobotoBold.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .secondaryFixedDim,
-                              fontSize: Dimensions.fontSizeSmall,
-                            ),
-                          ),
-                        ],
-                      ),
+                    child: Text(
+                      'Compartilhe seu código de indicação com amigos e familiares. '
+                      'Quando seu indicado se cadastrar e concluir corridas elegíveis, '
+                      'vocês poderão ganhar pontos no Clube de Pontos Lokally.',
                       textAlign: TextAlign.center,
+                      style: textRegular.copyWith(
+                        color: Theme.of(context).colorScheme.secondaryFixedDim,
+                        fontSize: Dimensions.fontSizeSmall,
+                      ),
                     ),
                   ),
                   const SizedBox(height: Dimensions.paddingSizeLarge),
@@ -252,7 +238,7 @@ class ReferralViewBottomSheetWidget extends StatelessWidget {
                               ),
                             ).then((_) {
                               showCustomSnackBar(
-                                'Link copiado com sucesso.',
+                                'Código copiado com sucesso.',
                                 isError: false,
                               );
                             });

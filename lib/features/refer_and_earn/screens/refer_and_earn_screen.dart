@@ -22,8 +22,8 @@ class ReferAndEarnScreen extends StatefulWidget {
 class _ReferAndEarnScreenState extends State<ReferAndEarnScreen> {
   @override
   void initState() {
-    Get.find<ReferAndEarnController>().getEarningHistoryList(1);
     Get.find<ReferAndEarnController>().getReferralDetails();
+    Get.find<ReferAndEarnController>().getPointsClubReferrals(0);
     Get.find<ReferAndEarnController>().updateCurrentTabIndex(0);
     Get.find<ProfileController>().getProfileInfo();
     super.initState();
@@ -32,6 +32,10 @@ class _ReferAndEarnScreenState extends State<ReferAndEarnScreen> {
   String _tabLabel(List<String> labels, int index) {
     if (index == 0) {
       return 'Detalhes';
+    }
+
+    if (index == 1) {
+      return 'Indicações';
     }
 
     if (index < labels.length) {

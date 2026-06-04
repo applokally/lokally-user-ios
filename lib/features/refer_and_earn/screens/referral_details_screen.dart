@@ -6,7 +6,6 @@ import 'package:ride_sharing_user_app/features/refer_and_earn/controllers/refer_
 import 'package:ride_sharing_user_app/features/refer_and_earn/widgets/referral_earn_bottomsheet_widget.dart';
 import 'package:ride_sharing_user_app/features/splash/controllers/config_controller.dart';
 import 'package:ride_sharing_user_app/helper/display_helper.dart';
-import 'package:ride_sharing_user_app/helper/price_converter.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/images.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
@@ -33,7 +32,7 @@ class ReferralDetailsScreen extends StatelessWidget {
                       ),
                       const SizedBox(height: Dimensions.paddingSizeSmall),
                       Text(
-                        'invite_friend_getRewards'.tr,
+                        'Convide e ganhe pontos',
                         style: textSemiBold.copyWith(
                           color: Get.isDarkMode
                               ? Theme.of(context)
@@ -49,38 +48,16 @@ class ReferralDetailsScreen extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                           horizontal: Dimensions.paddingSizeSignUp,
                         ),
-                        child: RichText(
-                          text: TextSpan(
-                            text: 'referral_bottom_sheet_note'.tr,
-                            style: textRegular.copyWith(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .secondaryFixedDim,
-                              fontSize: Dimensions.fontSizeSmall,
-                            ),
-                            children: [
-                              TextSpan(
-                                text:
-                                    '  ${PriceConverter.convertPrice(referAndEarnController.referralDetails?.data?.shareCodeEarning ?? 0)}  ',
-                                style: textRobotoBold.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .secondaryFixedDim,
-                                  fontSize: Dimensions.fontSizeSmall,
-                                ),
-                              ),
-                              TextSpan(
-                                text: 'wallet_balance'.tr,
-                                style: textRegular.copyWith(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .secondaryFixedDim,
-                                  fontSize: Dimensions.fontSizeSmall,
-                                ),
-                              ),
-                            ],
-                          ),
+                        child: Text(
+                          'Compartilhe seu código de indicação com amigos e familiares. '
+                          'Quando seu indicado se cadastrar e concluir corridas elegíveis, '
+                          'vocês poderão ganhar pontos no Clube de Pontos Lokally.',
                           textAlign: TextAlign.center,
+                          style: textRegular.copyWith(
+                            color:
+                                Theme.of(context).colorScheme.secondaryFixedDim,
+                            fontSize: Dimensions.fontSizeSmall,
+                          ),
                         ),
                       ),
                       const SizedBox(
@@ -136,7 +113,7 @@ class ReferralDetailsScreen extends StatelessWidget {
                                     height: Dimensions.paddingSizeSmall,
                                   ),
                                   Text(
-                                    'Compartilhe seu link',
+                                    'Compartilhe seu código',
                                     textAlign: TextAlign.center,
                                     style: textRegular.copyWith(
                                       fontSize: Dimensions.fontSizeExtraSmall,
@@ -252,7 +229,7 @@ class ReferralDetailsScreen extends StatelessWidget {
                                     height: Dimensions.paddingSizeSmall,
                                   ),
                                   Text(
-                                    'Vocês ganham recompensas',
+                                    'Ganhem pontos no Clube',
                                     textAlign: TextAlign.center,
                                     style: textRegular.copyWith(
                                       fontSize: Dimensions.fontSizeExtraSmall,
@@ -305,7 +282,7 @@ class ReferralDetailsScreen extends StatelessWidget {
                                   ),
                                 ).then((_) {
                                   showCustomSnackBar(
-                                    'Link copiado com sucesso.',
+                                    'Código copiado com sucesso.',
                                     isError: false,
                                   );
                                 });

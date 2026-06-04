@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,6 +7,117 @@ import 'package:image_picker/image_picker.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
+
+bool _isLokallyServiceRealImageUrl(dynamic rawValue) {
+  final String original = '${rawValue ?? ''}'.trim();
+
+  if (original.isEmpty ||
+      original == 'null' ||
+      original == '[]' ||
+      original == '{}') {
+    return false;
+  }
+
+  String decoded = original;
+
+  try {
+    decoded = Uri.decodeFull(original);
+  } catch (_) {}
+
+  final String lower = decoded.trim().toLowerCase();
+
+  if (lower.isEmpty || lower == 'null' || lower == '[]' || lower == '{}') {
+    return false;
+  }
+
+  if (lower.startsWith('asset:') ||
+      lower.startsWith('assets/') ||
+      lower.startsWith('/assets/') ||
+      lower.startsWith('file://') ||
+      lower.startsWith('data:image') ||
+      lower.contains('flutter_assets') ||
+      lower.contains('/assets/image/') ||
+      lower.contains('/assets/images/')) {
+    return false;
+  }
+
+  const List<String> blockedMarkers = <String>[
+    'placeholder',
+    'mock',
+    'dummy',
+    'sample-image',
+    'sample_image',
+    'demo-image',
+    'demo_image',
+    'default-image',
+    'default_image',
+    'default-service',
+    'default_service',
+    'service-default',
+    'service_default',
+    'default-product',
+    'default_product',
+    'product-default',
+    'product_default',
+    'no-image',
+    'no_image',
+    'noimage',
+    'image-not-found',
+    'image_not_found',
+    'image-not-available',
+    'image_not_available',
+    'not-available',
+    'not_available',
+    'add-image',
+    'add_image',
+    'add-photo',
+    'add_photo',
+    'add-picture',
+    'add_picture',
+    'upload-img',
+    'upload_img',
+    'upload-image',
+    'upload_image',
+    'choose-image',
+    'choose_image',
+    'select-image',
+    'select_image',
+    'blank-image',
+    'blank_image',
+    'transparent.png',
+    'transparent.webp',
+    'default.png',
+    'default.jpg',
+    'default.jpeg',
+    'default.webp',
+  ];
+
+  for (final String marker in blockedMarkers) {
+    if (lower.contains(marker)) {
+      return false;
+    }
+  }
+
+  final bool looksLikeImage = lower.endsWith('.jpg') ||
+      lower.endsWith('.jpeg') ||
+      lower.endsWith('.png') ||
+      lower.endsWith('.webp') ||
+      lower.endsWith('.gif') ||
+      lower.contains('.jpg?') ||
+      lower.contains('.jpeg?') ||
+      lower.contains('.png?') ||
+      lower.contains('.webp?') ||
+      lower.contains('.gif?') ||
+      lower.contains('/storage/') ||
+      lower.contains('/uploads/') ||
+      lower.contains('/upload/') ||
+      lower.contains('/media/') ||
+      lower.startsWith('http://') ||
+      lower.startsWith('https://') ||
+      lower.startsWith('/');
+
+  return looksLikeImage;
+}
 
 class StoreSellerServiceFormScreen extends StatefulWidget {
   final Map<String, dynamic>? initialService;
@@ -50,6 +162,13 @@ class _StoreSellerServiceFormScreenState
       TextEditingController();
   final TextEditingController categoryRequestDescriptionController =
       TextEditingController();
+  final TextEditingController priceLabelController = TextEditingController();
+  final TextEditingController serviceRadiusController = TextEditingController();
+  final TextEditingController scheduleDaysController = TextEditingController();
+  final TextEditingController scheduleHoursController = TextEditingController();
+  final TextEditingController minimumNoticeController = TextEditingController();
+  final TextEditingController estimatedDurationController =
+      TextEditingController();
 
   bool isLoadingCategories = false;
   bool isLoadingAdPlans = false;
@@ -57,6 +176,16 @@ class _StoreSellerServiceFormScreenState
   bool needsScheduling = false;
   bool acceptedTerms = false;
   bool requestNewCategory = false;
+  bool acceptsQuote = true;
+  bool acceptsImmediateRequest = false;
+  bool acceptsLokallyMeeting = true;
+  bool allowsTracking = false;
+  bool allowsRecurring = false;
+  bool customerAddressRequired = true;
+  bool providerAddressEnabled = false;
+
+  String selectedPriceDisplayType = 'quote';
+  String selectedRequestButtonType = 'quote';
 
   static const int maxServiceImages = 5;
   static const int maxServiceImageBytes = 15 * 1024 * 1024;
@@ -74,10 +203,14 @@ class _StoreSellerServiceFormScreenState
   List<StoreServiceCategoryOption> categories = [];
   List<StoreServiceAdPlanOption> serviceAdPlans = <StoreServiceAdPlanOption>[];
 
+  List<String> get validExistingImageUrls => existingImageUrls
+      .where(_isLokallyServiceRealImageUrl)
+      .toList(growable: false);
+
   bool get hasServiceImages =>
-      selectedImages.isNotEmpty || existingImageUrls.isNotEmpty;
+      selectedImages.isNotEmpty || validExistingImageUrls.isNotEmpty;
   int get serviceImagesCount =>
-      selectedImages.length + existingImageUrls.length;
+      selectedImages.length + validExistingImageUrls.length;
 
   bool get isEditMode =>
       '${widget.initialService?['id'] ?? ''}'.trim().isNotEmpty;
@@ -111,6 +244,12 @@ class _StoreSellerServiceFormScreenState
     deliverableController.dispose();
     categoryRequestNameController.dispose();
     categoryRequestDescriptionController.dispose();
+    priceLabelController.dispose();
+    serviceRadiusController.dispose();
+    scheduleDaysController.dispose();
+    scheduleHoursController.dispose();
+    minimumNoticeController.dispose();
+    estimatedDurationController.dispose();
     super.dispose();
   }
 
@@ -157,7 +296,41 @@ class _StoreSellerServiceFormScreenState
             ? delivery
             : 'client_location');
 
-    needsScheduling = parseBool(service['needs_scheduling']);
+    final Map<String, dynamic> extraData =
+        serviceExtraDataMap(service['extra_data']);
+
+    selectedPriceDisplayType = cleanExtraString(
+      extraData['price_display_type'],
+      fallback: selectedFormat == 'presential' ? 'quote' : 'starting_from',
+    );
+    selectedRequestButtonType = cleanExtraString(
+      extraData['request_button_type'],
+      fallback: selectedFormat == 'presential' ? 'quote' : 'hire_now',
+    );
+    priceLabelController.text = cleanExtraString(extraData['price_label']);
+    serviceRadiusController.text =
+        cleanExtraString(extraData['service_radius_km']);
+    scheduleDaysController.text = cleanExtraString(extraData['schedule_days']);
+    scheduleHoursController.text =
+        cleanExtraString(extraData['schedule_hours']);
+    minimumNoticeController.text =
+        cleanExtraString(extraData['minimum_notice_hours']);
+    estimatedDurationController.text =
+        cleanExtraString(extraData['estimated_duration']);
+
+    needsScheduling = parseBool(
+      service['needs_scheduling'],
+      fallback: parseBool(extraData['accepts_schedule']),
+    );
+    acceptsQuote = parseBool(extraData['accepts_quote'], fallback: true);
+    acceptsImmediateRequest = parseBool(extraData['accepts_immediate_request']);
+    acceptsLokallyMeeting =
+        parseBool(extraData['accepts_lokally_meeting'], fallback: true);
+    allowsTracking = parseBool(extraData['allows_tracking']);
+    allowsRecurring = parseBool(extraData['allows_recurring']);
+    customerAddressRequired =
+        parseBool(extraData['customer_address_required'], fallback: true);
+    providerAddressEnabled = parseBool(extraData['provider_address_enabled']);
     acceptedTerms = true;
     requestNewCategory = categoryRequestNameController.text.trim().isNotEmpty;
     editingCategoryId = '${service['category_id'] ?? ''}'.trim().isEmpty
@@ -192,12 +365,42 @@ class _StoreSellerServiceFormScreenState
     existingImageUrls = extractExistingServiceImageUrls(service);
   }
 
+  Map<String, dynamic> serviceExtraDataMap(dynamic value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+
+    final String raw = '${value ?? ''}'.trim();
+    if (raw.isEmpty || raw == 'null') {
+      return <String, dynamic>{};
+    }
+
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return Map<String, dynamic>.from(decoded);
+      }
+    } catch (_) {}
+
+    return <String, dynamic>{};
+  }
+
+  String cleanExtraString(dynamic value, {String fallback = ''}) {
+    final String text = '${value ?? ''}'.trim();
+    if (text.isEmpty || text == 'null') {
+      return fallback;
+    }
+
+    return text;
+  }
+
   List<String> extractExistingServiceImageUrls(Map<String, dynamic> service) {
     final List<String> urls = <String>[];
 
     void addUrl(dynamic value) {
       final String url = '$value'.trim();
-      if (url.isEmpty || url == 'null' || urls.contains(url)) {
+
+      if (!_isLokallyServiceRealImageUrl(url) || urls.contains(url)) {
         return;
       }
 
@@ -970,6 +1173,17 @@ class _StoreSellerServiceFormScreenState
     setState(() {
       selectedFormat = value;
       selectedDeliveryType = value == 'digital' ? 'online' : 'client_location';
+      if (value == 'presential') {
+        selectedPriceDisplayType = 'quote';
+        selectedRequestButtonType = 'quote';
+        acceptsQuote = true;
+        acceptsImmediateRequest = false;
+        acceptsLokallyMeeting = true;
+        allowsTracking = false;
+        allowsRecurring = false;
+        customerAddressRequired = true;
+        providerAddressEnabled = false;
+      }
       selectedCategory = null;
       editingCategoryId = null;
       categories = <StoreServiceCategoryOption>[];
@@ -1343,6 +1557,36 @@ class _StoreSellerServiceFormScreenState
     return true;
   }
 
+  Map<String, dynamic> buildPresentialExtraData() {
+    return <String, dynamic>{
+      'source': 'seller_service_form',
+      'version': 1,
+      'service_format': 'presential',
+      'price_display_type': selectedPriceDisplayType,
+      if (priceLabelController.text.trim().isNotEmpty)
+        'price_label': priceLabelController.text.trim(),
+      'request_button_type': selectedRequestButtonType,
+      'accepts_quote': acceptsQuote,
+      'accepts_schedule': needsScheduling,
+      'accepts_immediate_request': acceptsImmediateRequest,
+      'accepts_lokally_meeting': acceptsLokallyMeeting,
+      'allows_tracking': allowsTracking,
+      'allows_recurring': allowsRecurring,
+      'customer_address_required': customerAddressRequired,
+      'provider_address_enabled': providerAddressEnabled,
+      if (serviceRadiusController.text.trim().isNotEmpty)
+        'service_radius_km': serviceRadiusController.text.trim(),
+      if (scheduleDaysController.text.trim().isNotEmpty)
+        'schedule_days': scheduleDaysController.text.trim(),
+      if (scheduleHoursController.text.trim().isNotEmpty)
+        'schedule_hours': scheduleHoursController.text.trim(),
+      if (minimumNoticeController.text.trim().isNotEmpty)
+        'minimum_notice_hours': minimumNoticeController.text.trim(),
+      if (estimatedDurationController.text.trim().isNotEmpty)
+        'estimated_duration': estimatedDurationController.text.trim(),
+    };
+  }
+
   Future<void> submitService() async {
     if (isSubmitting) return;
     if (!(formKey.currentState?.validate() ?? false)) return;
@@ -1402,6 +1646,46 @@ class _StoreSellerServiceFormScreenState
       'description': descriptionController.text.trim(),
       'service_format': selectedFormat,
       'service_delivery_type': selectedDeliveryType,
+      if (selectedFormat == 'presential')
+        'presential_extra_data': jsonEncode(buildPresentialExtraData()),
+      if (selectedFormat == 'presential')
+        'price_display_type': selectedPriceDisplayType,
+      if (selectedFormat == 'presential' &&
+          priceLabelController.text.trim().isNotEmpty)
+        'price_label': priceLabelController.text.trim(),
+      if (selectedFormat == 'presential')
+        'request_button_type': selectedRequestButtonType,
+      if (selectedFormat == 'presential')
+        'accepts_quote': acceptsQuote ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'accepts_schedule': needsScheduling ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'accepts_immediate_request': acceptsImmediateRequest ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'accepts_lokally_meeting': acceptsLokallyMeeting ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'allows_tracking': allowsTracking ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'allows_recurring': allowsRecurring ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'customer_address_required': customerAddressRequired ? '1' : '0',
+      if (selectedFormat == 'presential')
+        'provider_address_enabled': providerAddressEnabled ? '1' : '0',
+      if (selectedFormat == 'presential' &&
+          serviceRadiusController.text.trim().isNotEmpty)
+        'service_radius_km': serviceRadiusController.text.trim(),
+      if (selectedFormat == 'presential' &&
+          scheduleDaysController.text.trim().isNotEmpty)
+        'schedule_days': scheduleDaysController.text.trim(),
+      if (selectedFormat == 'presential' &&
+          scheduleHoursController.text.trim().isNotEmpty)
+        'schedule_hours': scheduleHoursController.text.trim(),
+      if (selectedFormat == 'presential' &&
+          minimumNoticeController.text.trim().isNotEmpty)
+        'minimum_notice_hours': minimumNoticeController.text.trim(),
+      if (selectedFormat == 'presential' &&
+          estimatedDurationController.text.trim().isNotEmpty)
+        'estimated_duration': estimatedDurationController.text.trim(),
       if (attendanceLocationController.text.trim().isNotEmpty)
         'attendance_location': attendanceLocationController.text.trim(),
       if (serviceAreaController.text.trim().isNotEmpty)
@@ -1430,7 +1714,7 @@ class _StoreSellerServiceFormScreenState
       if (selectedImages.isEmpty) {
         response = await Get.find<ApiClient>().postData(uri, fields);
       } else {
-        final bool shouldUploadNewCover = existingImageUrls.isEmpty;
+        final bool shouldUploadNewCover = validExistingImageUrls.isEmpty;
         final MultipartBody primaryImage = MultipartBody(
           shouldUploadNewCover ? 'main_image' : 'images[]',
           selectedImages.first,
@@ -1508,6 +1792,12 @@ class _StoreSellerServiceFormScreenState
     deliverableController.clear();
     categoryRequestNameController.clear();
     categoryRequestDescriptionController.clear();
+    priceLabelController.clear();
+    serviceRadiusController.clear();
+    scheduleDaysController.clear();
+    scheduleHoursController.clear();
+    minimumNoticeController.clear();
+    estimatedDurationController.clear();
     setState(() {
       selectedCategory = null;
       selectedImages = <XFile>[];
@@ -1517,6 +1807,15 @@ class _StoreSellerServiceFormScreenState
       selectedFormat = 'digital';
       selectedDeliveryType = 'online';
       needsScheduling = false;
+      acceptsQuote = true;
+      acceptsImmediateRequest = false;
+      acceptsLokallyMeeting = true;
+      allowsTracking = false;
+      allowsRecurring = false;
+      customerAddressRequired = true;
+      providerAddressEnabled = false;
+      selectedPriceDisplayType = 'quote';
+      selectedRequestButtonType = 'quote';
       acceptedTerms = false;
       categories = <StoreServiceCategoryOption>[];
       selectedAdPlanSlug = '';
@@ -1640,6 +1939,337 @@ class _StoreSellerServiceFormScreenState
     );
   }
 
+  String priceDisplayLabel(String value) {
+    switch (value) {
+      case 'starting_from':
+        return 'A partir de';
+      case 'hourly':
+        return 'Por hora';
+      case 'visit':
+        return 'Por visita';
+      case 'daily':
+        return 'Por diária';
+      case 'chat':
+        return 'Combinar no chat';
+      case 'quote':
+      default:
+        return 'Sob orçamento';
+    }
+  }
+
+  String requestButtonLabel(String value) {
+    switch (value) {
+      case 'schedule':
+        return 'Agendar serviço';
+      case 'immediate':
+        return 'Chamar prestador';
+      case 'chat':
+        return 'Falar com prestador';
+      case 'quote':
+      default:
+        return 'Solicitar orçamento';
+    }
+  }
+
+  String get presentialSettingsSummary {
+    final List<String> items = <String>[
+      requestButtonLabel(selectedRequestButtonType),
+      priceDisplayLabel(selectedPriceDisplayType),
+      if (needsScheduling) 'com agenda',
+      if (allowsTracking) 'com acompanhamento',
+    ];
+
+    return items.join(' • ');
+  }
+
+  Widget buildChoiceChips({
+    required List<_PresentialChoice> choices,
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+  }) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: choices.map((choice) {
+        final bool selected = selectedValue == choice.value;
+        return ChoiceChip(
+          selected: selected,
+          label: Text(choice.label),
+          avatar: Icon(
+            choice.icon,
+            size: 16,
+            color: selected ? Colors.white : Theme.of(context).primaryColor,
+          ),
+          selectedColor: Theme.of(context).primaryColor,
+          backgroundColor: Colors.grey.shade50,
+          side: BorderSide(
+            color: selected
+                ? Theme.of(context).primaryColor
+                : Colors.grey.shade200,
+          ),
+          labelStyle: textBold.copyWith(
+            color: selected ? Colors.white : Colors.black87,
+            fontSize: 11.7,
+          ),
+          onSelected: (_) => setState(() => onSelected(choice.value)),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget buildPresentialSwitch({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: primaryColor, size: 21),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: textBold.copyWith(
+                        color: Colors.black87, fontSize: 12.8)),
+                const SizedBox(height: 3),
+                Text(subtitle,
+                    style: textRegular.copyWith(
+                        color: Colors.grey.shade600,
+                        fontSize: 11.4,
+                        height: 1.2)),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            activeColor: primaryColor,
+            onChanged: (selected) => setState(() => onChanged(selected)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget buildPresentialSettingsCard(Color primaryColor) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 13, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(13, 0, 13, 13),
+          initiallyExpanded: false,
+          leading: Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: primaryColor.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Icon(Icons.tune_rounded, color: primaryColor, size: 22),
+          ),
+          title: Text(
+            'Condições do atendimento presencial',
+            style: textBold.copyWith(color: Colors.black87, fontSize: 13.8),
+          ),
+          subtitle: Text(
+            presentialSettingsSummary,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: textRegular.copyWith(
+              color: Colors.grey.shade600,
+              fontSize: 11.8,
+              height: 1.22,
+            ),
+          ),
+          children: [
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Como o cliente deve chamar?',
+                  style:
+                      textBold.copyWith(color: Colors.black87, fontSize: 12.7)),
+            ),
+            const SizedBox(height: 8),
+            buildChoiceChips(
+              selectedValue: selectedRequestButtonType,
+              onSelected: (value) => selectedRequestButtonType = value,
+              choices: const <_PresentialChoice>[
+                _PresentialChoice(
+                    'quote', 'Orçamento', Icons.request_quote_outlined),
+                _PresentialChoice(
+                    'schedule', 'Agendar', Icons.event_available_outlined),
+                _PresentialChoice(
+                    'chat', 'Chat', Icons.chat_bubble_outline_rounded),
+                _PresentialChoice(
+                    'immediate', 'Chamar agora', Icons.flash_on_outlined),
+              ],
+            ),
+            const SizedBox(height: 15),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Preço exibido para o cliente',
+                  style:
+                      textBold.copyWith(color: Colors.black87, fontSize: 12.7)),
+            ),
+            const SizedBox(height: 8),
+            buildChoiceChips(
+              selectedValue: selectedPriceDisplayType,
+              onSelected: (value) => selectedPriceDisplayType = value,
+              choices: const <_PresentialChoice>[
+                _PresentialChoice(
+                    'quote', 'Sob orçamento', Icons.edit_note_rounded),
+                _PresentialChoice(
+                    'starting_from', 'A partir de', Icons.local_offer_outlined),
+                _PresentialChoice('hourly', 'Por hora', Icons.schedule_rounded),
+                _PresentialChoice(
+                    'visit', 'Por visita', Icons.home_repair_service_outlined),
+                _PresentialChoice(
+                    'daily', 'Por diária', Icons.calendar_today_outlined),
+                _PresentialChoice('chat', 'Combinar', Icons.chat_outlined),
+              ],
+            ),
+            const SizedBox(height: 12),
+            _Input(
+              label: 'Texto complementar do preço',
+              hint:
+                  'Ex: visita técnica, mão de obra ou orçamento após avaliação',
+              controller: priceLabelController,
+              maxLines: 2,
+            ),
+            const SizedBox(height: 12),
+            buildPresentialSwitch(
+              title: 'Aceito orçamento pelo chat',
+              subtitle:
+                  'O cliente pode solicitar orçamento antes de fechar com você.',
+              icon: Icons.receipt_long_outlined,
+              value: acceptsQuote,
+              onChanged: (value) => acceptsQuote = value,
+            ),
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Aceito agendamento',
+              subtitle: 'Permite o cliente informar dia e horário desejados.',
+              icon: Icons.event_available_outlined,
+              value: needsScheduling,
+              onChanged: (value) => needsScheduling = value,
+            ),
+            if (needsScheduling) ...[
+              const SizedBox(height: 12),
+              _Input(
+                label: 'Dias de atendimento',
+                hint: 'Ex: segunda a sexta, sábado pela manhã',
+                controller: scheduleDaysController,
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _Input(
+                      label: 'Horários',
+                      hint: 'Ex: 09h às 18h',
+                      controller: scheduleHoursController,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _Input(
+                      label: 'Antecedência',
+                      hint: 'Horas mínimas',
+                      controller: minimumNoticeController,
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _Input(
+                label: 'Duração média',
+                hint: 'Ex: 1 hora, meio período, 2 dias',
+                controller: estimatedDurationController,
+              ),
+            ],
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Atendimento imediato/sob disponibilidade',
+              subtitle: 'Mostra ao cliente que você aceita chamados rápidos.',
+              icon: Icons.flash_on_outlined,
+              value: acceptsImmediateRequest,
+              onChanged: (value) => acceptsImmediateRequest = value,
+            ),
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Permitir Lokally Meeting',
+              subtitle: 'Permite alinhamento por vídeo antes do atendimento.',
+              icon: Icons.video_call_outlined,
+              value: acceptsLokallyMeeting,
+              onChanged: (value) => acceptsLokallyMeeting = value,
+            ),
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Permitir acompanhamento do deslocamento',
+              subtitle: 'Habilite apenas se você vai até o cliente.',
+              icon: Icons.location_searching_rounded,
+              value: allowsTracking,
+              onChanged: (value) => allowsTracking = value,
+            ),
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Serviço recorrente',
+              subtitle:
+                  'Útil para aulas, limpeza, manutenção e atendimentos frequentes.',
+              icon: Icons.repeat_rounded,
+              value: allowsRecurring,
+              onChanged: (value) => allowsRecurring = value,
+            ),
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Exigir endereço do cliente',
+              subtitle: 'Use quando o atendimento depende do local do cliente.',
+              icon: Icons.home_outlined,
+              value: customerAddressRequired,
+              onChanged: (value) => customerAddressRequired = value,
+            ),
+            const SizedBox(height: 9),
+            buildPresentialSwitch(
+              title: 'Também atendo no meu endereço/local',
+              subtitle: 'Use para oficina, estúdio, consultório ou loja.',
+              icon: Icons.storefront_outlined,
+              value: providerAddressEnabled,
+              onChanged: (value) => providerAddressEnabled = value,
+            ),
+            const SizedBox(height: 12),
+            _Input(
+              label: 'Raio de atendimento (km)',
+              hint: 'Ex: 10, deixe vazio para combinar pelo chat',
+              controller: serviceRadiusController,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final Color primaryColor = Theme.of(context).primaryColor;
@@ -1668,7 +2298,7 @@ class _StoreSellerServiceFormScreenState
                     _ImagePickerCard(
                         primaryColor: primaryColor,
                         selectedImages: selectedImages,
-                        existingImageUrls: existingImageUrls,
+                        existingImageUrls: validExistingImageUrls,
                         maxImages: maxServiceImages,
                         onAddTap: pickImages,
                         onRemoveExistingImage: removeExistingImage,
@@ -1821,16 +2451,16 @@ class _StoreSellerServiceFormScreenState
                                 hint: 'store_service_execution_time_hint'.tr,
                                 controller: executionTimeController),
                             const SizedBox(height: 12),
-                            _SwitchLine(
-                                primaryColor: primaryColor,
-                                value: needsScheduling,
-                                onChanged: (value) =>
-                                    setState(() => needsScheduling = value)),
+                            buildPresentialSettingsCard(primaryColor),
                           ],
                           const SizedBox(height: 12),
                           _Input(
-                              label: 'store_instructions_after_payment'.tr,
-                              hint: 'store_instructions_after_payment_hint'.tr,
+                              label: selectedFormat == 'digital'
+                                  ? 'store_instructions_after_payment'.tr
+                                  : 'Orientações para o cliente',
+                              hint: selectedFormat == 'digital'
+                                  ? 'store_instructions_after_payment_hint'.tr
+                                  : 'Ex: envie fotos, descreva o problema, informe melhor horário ou combine detalhes pelo chat.',
                               controller: instructionsController,
                               maxLines: 4),
                         ]),
@@ -2059,9 +2689,13 @@ class _ImagePickerCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final List<String> displayExistingImageUrls = existingImageUrls
+        .where(_isLokallyServiceRealImageUrl)
+        .toList(growable: false);
+
     final List<_ServiceImagePreviewItem> previewItems =
         <_ServiceImagePreviewItem>[
-      ...existingImageUrls.asMap().entries.map(
+      ...displayExistingImageUrls.asMap().entries.map(
             (entry) => _ServiceImagePreviewItem.existing(
               index: entry.key,
               imageUrl: entry.value,
@@ -3457,6 +4091,14 @@ class _CategoryStackEntry {
     required this.parentId,
     required this.items,
   });
+}
+
+class _PresentialChoice {
+  final String value;
+  final String label;
+  final IconData icon;
+
+  const _PresentialChoice(this.value, this.label, this.icon);
 }
 
 class _DeliveryOption {

@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:ride_sharing_user_app/common_widgets/app_bar_widget.dart';
@@ -627,8 +629,13 @@ class _StoreCustomerOrderDetailsScreenState
   late StoreCustomerOrderItem order;
   bool isCreatingMercadoPagoPayment = false;
   bool isLoadingServiceProgress = false;
+  bool isSilentServiceProgressRefreshing = false;
+  Timer? serviceProgressRefreshTimer;
   StoreCustomerServiceProgressData serviceProgress =
       StoreCustomerServiceProgressData.empty();
+  StoreCustomerServiceTrackingData serviceTracking =
+      StoreCustomerServiceTrackingData.empty();
+  bool isSilentServiceTrackingRefreshing = false;
 
   @override
   void initState() {
@@ -637,17 +644,59 @@ class _StoreCustomerOrderDetailsScreenState
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadServiceProgress();
+      loadServiceTracking();
+      startServiceProgressAutoRefresh();
     });
   }
 
-  Future<void> loadServiceProgress() async {
-    if (!order.isServiceOrder || isLoadingServiceProgress) {
+  @override
+  void dispose() {
+    serviceProgressRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void startServiceProgressAutoRefresh() {
+    serviceProgressRefreshTimer?.cancel();
+
+    if (!order.isServiceOrder) {
       return;
     }
 
-    setState(() {
-      isLoadingServiceProgress = true;
-    });
+    serviceProgressRefreshTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) async {
+        await loadServiceProgress(silent: true);
+        await loadServiceTracking(silent: true);
+      },
+    );
+  }
+
+  String serviceProgressSignature(StoreCustomerServiceProgressData progress) {
+    return [
+      progress.percent,
+      progress.statusLabel,
+      progress.completed,
+      progress.steps.join('|'),
+    ].join('::');
+  }
+
+  Future<void> loadServiceProgress({bool silent = false}) async {
+    if (!order.isServiceOrder) {
+      return;
+    }
+
+    if ((!silent && isLoadingServiceProgress) ||
+        (silent && isSilentServiceProgressRefreshing)) {
+      return;
+    }
+
+    if (silent) {
+      isSilentServiceProgressRefreshing = true;
+    } else {
+      setState(() {
+        isLoadingServiceProgress = true;
+      });
+    }
 
     try {
       final Response response = await Get.find<ApiClient>().getData(
@@ -671,22 +720,100 @@ class _StoreCustomerOrderDetailsScreenState
           final Map<String, dynamic> threadMap = Map<String, dynamic>.from(
             threadValue,
           );
+          final StoreCustomerServiceProgressData nextProgress =
+              StoreCustomerServiceProgressData.fromMap(
+            threadMap['service_progress'] is Map
+                ? Map<String, dynamic>.from(threadMap['service_progress'])
+                : <String, dynamic>{},
+          );
+
+          if (serviceProgressSignature(nextProgress) !=
+              serviceProgressSignature(serviceProgress)) {
+            setState(() {
+              serviceProgress = nextProgress;
+            });
+          }
+        }
+      }
+    } catch (_) {
+      // Mantém o progresso atual caso a atualização silenciosa falhe.
+    } finally {
+      if (mounted) {
+        if (silent) {
+          isSilentServiceProgressRefreshing = false;
+        } else {
           setState(() {
-            serviceProgress = StoreCustomerServiceProgressData.fromMap(
-              threadMap['service_progress'] is Map
-                  ? Map<String, dynamic>.from(threadMap['service_progress'])
-                  : <String, dynamic>{},
-            );
+            isLoadingServiceProgress = false;
+          });
+        }
+      }
+    }
+  }
+
+  String serviceTrackingSignature(StoreCustomerServiceTrackingData tracking) {
+    return [
+      tracking.id,
+      tracking.status,
+      tracking.currentLatitude,
+      tracking.currentLongitude,
+      tracking.lastLocationAt,
+      tracking.otpRequired,
+      tracking.otpCode,
+      tracking.otpValidatedAt,
+      tracking.otpLockedAt,
+    ].join('::');
+  }
+
+  Future<void> loadServiceTracking({bool silent = false}) async {
+    if (!order.isServiceOrder) {
+      return;
+    }
+
+    if (silent && isSilentServiceTrackingRefreshing) {
+      return;
+    }
+
+    if (silent) {
+      isSilentServiceTrackingRefreshing = true;
+    }
+
+    try {
+      final Response response = await Get.find<ApiClient>().getData(
+        '/api/customer/store/service-chat/order/${order.id}/tracking',
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if (response.statusCode == 200 && body is Map && body['status'] == true) {
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+        final dynamic trackingValue = data['tracking'];
+
+        final StoreCustomerServiceTrackingData nextTracking =
+            trackingValue is Map
+                ? StoreCustomerServiceTrackingData.fromMap(
+                    Map<String, dynamic>.from(trackingValue),
+                  )
+                : StoreCustomerServiceTrackingData.empty();
+
+        if (serviceTrackingSignature(nextTracking) !=
+            serviceTrackingSignature(serviceTracking)) {
+          setState(() {
+            serviceTracking = nextTracking;
           });
         }
       }
     } catch (_) {
-      // Mantém progresso 0% caso o chat ainda não esteja disponível.
+      // Mantém o rastreio atual caso a atualização silenciosa falhe.
     } finally {
-      if (mounted) {
-        setState(() {
-          isLoadingServiceProgress = false;
-        });
+      if (mounted && silent) {
+        isSilentServiceTrackingRefreshing = false;
       }
     }
   }
@@ -746,7 +873,7 @@ class _StoreCustomerOrderDetailsScreenState
     await Get.to(() => StoreCustomerServiceChatScreen(order: order));
 
     if (mounted) {
-      await loadServiceProgress();
+      await loadServiceProgress(silent: true);
     }
   }
 
@@ -775,6 +902,10 @@ class _StoreCustomerOrderDetailsScreenState
   }
 
   bool get canPayWithMercadoPago {
+    if (order.isServiceRequestOrder) {
+      return false;
+    }
+
     final String method = order.paymentMethod.toLowerCase().trim();
     final String status = order.paymentStatus.toLowerCase().trim();
     final String orderStatus = order.orderStatus.toLowerCase().trim();
@@ -1336,15 +1467,22 @@ class _StoreCustomerOrderDetailsScreenState
                 ),
               ),
               const SizedBox(height: 14),
-              if (order.shouldShowServiceChatBlock)
+              if (order.shouldShowServiceChatBlock) ...[
                 StoreCustomerServiceOrderDetails(
                   order: order,
                   primaryColor: primaryColor,
                   progress: serviceProgress,
                   onOpenChatTap: openServiceChat,
                   onEvaluateTap: showServiceEvaluationMessage,
-                )
-              else if (!order.isServiceOrder && isPickup)
+                ),
+                if (serviceTracking.hasData) ...[
+                  const SizedBox(height: 14),
+                  StoreCustomerServiceTrackingBlock(
+                    tracking: serviceTracking,
+                    primaryColor: primaryColor,
+                  ),
+                ],
+              ] else if (!order.isServiceOrder && isPickup)
                 StoreCustomerPickupDetails(
                   order: order,
                   primaryColor: primaryColor,
@@ -1726,6 +1864,397 @@ class StoreCustomerServiceProgressMiniBar extends StatelessWidget {
   }
 }
 
+class StoreCustomerServiceTrackingData {
+  final String id;
+  final String storeOrderId;
+  final String status;
+  final String statusLabel;
+  final double? currentLatitude;
+  final double? currentLongitude;
+  final double? currentAccuracy;
+  final String lastLocationAt;
+  final String startedAt;
+  final String arrivedAt;
+  final String endedAt;
+  final bool otpRequired;
+  final String otpCode;
+  final String otpGeneratedAt;
+  final String otpExpiresAt;
+  final String otpValidatedAt;
+  final int otpFailedAttempts;
+  final String otpLockedAt;
+
+  const StoreCustomerServiceTrackingData({
+    required this.id,
+    required this.storeOrderId,
+    required this.status,
+    required this.statusLabel,
+    required this.currentLatitude,
+    required this.currentLongitude,
+    required this.currentAccuracy,
+    required this.lastLocationAt,
+    required this.startedAt,
+    required this.arrivedAt,
+    required this.endedAt,
+    required this.otpRequired,
+    required this.otpCode,
+    required this.otpGeneratedAt,
+    required this.otpExpiresAt,
+    required this.otpValidatedAt,
+    required this.otpFailedAttempts,
+    required this.otpLockedAt,
+  });
+
+  factory StoreCustomerServiceTrackingData.empty() {
+    return const StoreCustomerServiceTrackingData(
+      id: '',
+      storeOrderId: '',
+      status: '',
+      statusLabel: '',
+      currentLatitude: null,
+      currentLongitude: null,
+      currentAccuracy: null,
+      lastLocationAt: '',
+      startedAt: '',
+      arrivedAt: '',
+      endedAt: '',
+      otpRequired: false,
+      otpCode: '',
+      otpGeneratedAt: '',
+      otpExpiresAt: '',
+      otpValidatedAt: '',
+      otpFailedAttempts: 0,
+      otpLockedAt: '',
+    );
+  }
+
+  factory StoreCustomerServiceTrackingData.fromMap(Map<String, dynamic> map) {
+    return StoreCustomerServiceTrackingData(
+      id: '${map['id'] ?? ''}',
+      storeOrderId: '${map['store_order_id'] ?? ''}',
+      status: '${map['status'] ?? ''}',
+      statusLabel: '${map['status_label'] ?? ''}',
+      currentLatitude: StoreCustomerOrderCurrency.parseNullableDouble(
+        map['current_latitude'],
+      ),
+      currentLongitude: StoreCustomerOrderCurrency.parseNullableDouble(
+        map['current_longitude'],
+      ),
+      currentAccuracy: StoreCustomerOrderCurrency.parseNullableDouble(
+        map['current_accuracy'],
+      ),
+      lastLocationAt: '${map['last_location_at'] ?? ''}',
+      startedAt: '${map['started_at'] ?? ''}',
+      arrivedAt: '${map['arrived_at'] ?? ''}',
+      endedAt: '${map['ended_at'] ?? ''}',
+      otpRequired: StoreCustomerOrderCurrency.parseBool(map['otp_required']),
+      otpCode: '${map['otp_code'] ?? ''}',
+      otpGeneratedAt: '${map['otp_generated_at'] ?? ''}',
+      otpExpiresAt: '${map['otp_expires_at'] ?? ''}',
+      otpValidatedAt: '${map['otp_validated_at'] ?? ''}',
+      otpFailedAttempts: StoreCustomerServiceProgressData.parseInt(
+        map['otp_failed_attempts'],
+      ),
+      otpLockedAt: '${map['otp_locked_at'] ?? ''}',
+    );
+  }
+
+  bool get hasData => id.isNotEmpty;
+  bool get hasPosition => currentLatitude != null && currentLongitude != null;
+  bool get isOnTheWay => status == 'on_the_way';
+  bool get isArrived => status == 'arrived';
+  bool get isValidated => status == 'validated';
+  bool get isOtpLocked => otpLockedAt.trim().isNotEmpty;
+}
+
+class StoreCustomerServiceTrackingBlock extends StatelessWidget {
+  final StoreCustomerServiceTrackingData tracking;
+  final Color primaryColor;
+
+  const StoreCustomerServiceTrackingBlock({
+    super.key,
+    required this.tracking,
+    required this.primaryColor,
+  });
+
+  String get updatedAtLabel {
+    final String value = tracking.lastLocationAt.isNotEmpty
+        ? tracking.lastLocationAt
+        : tracking.arrivedAt.isNotEmpty
+            ? tracking.arrivedAt
+            : tracking.startedAt;
+
+    return StoreCustomerServiceToolFormatters.dateTime(value);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!tracking.hasData) {
+      return const SizedBox.shrink();
+    }
+
+    return StoreCustomerSurface(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Icon(
+                  tracking.isOnTheWay
+                      ? Icons.route_outlined
+                      : tracking.isValidated
+                          ? Icons.verified_user_outlined
+                          : Icons.pin_drop_outlined,
+                  color: primaryColor,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      tracking.isOnTheWay
+                          ? 'Prestador a caminho'
+                          : tracking.isValidated
+                              ? 'Chegada confirmada'
+                              : 'Prestador chegou ao local',
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 16,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      tracking.isOnTheWay
+                          ? 'Acompanhe a localização do prestador enquanto ele se desloca até o local combinado.'
+                          : tracking.isValidated
+                              ? 'O código de segurança foi confirmado e o atendimento pode continuar no local.'
+                              : 'Confira se reconhece o atendimento antes de informar o código de segurança ao prestador.',
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.3,
+                        height: 1.34,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (tracking.isOnTheWay && tracking.hasPosition) ...[
+            const SizedBox(height: 13),
+            StoreCustomerServiceLiveTrackingMap(
+              latitude: tracking.currentLatitude!,
+              longitude: tracking.currentLongitude!,
+              primaryColor: primaryColor,
+            ),
+          ] else if (tracking.isArrived) ...[
+            const SizedBox(height: 13),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: primaryColor.withValues(alpha: 0.20)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Código de segurança',
+                    style: textBold.copyWith(
+                      color: Colors.black87,
+                      fontSize: 13.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (tracking.otpCode.isNotEmpty && !tracking.isOtpLocked)
+                    SelectableText(
+                      tracking.otpCode,
+                      textAlign: TextAlign.center,
+                      style: textBold.copyWith(
+                        color: primaryColor,
+                        fontSize: 30,
+                        letterSpacing: 5,
+                      ),
+                    )
+                  else
+                    Text(
+                      tracking.isOtpLocked
+                          ? 'Código bloqueado. Chame o suporte Lokally pelo chat para continuar com segurança.'
+                          : 'Código indisponível. Atualize a tela ou aguarde alguns segundos.',
+                      style: textMedium.copyWith(
+                        color: tracking.isOtpLocked
+                            ? Colors.redAccent
+                            : Colors.orange.shade800,
+                        fontSize: 12.2,
+                        height: 1.32,
+                      ),
+                    ),
+                  const SizedBox(height: 9),
+                  Text(
+                    'Informe este código ao prestador somente se você reconhecer o atendimento e ele estiver no local combinado.',
+                    style: textRegular.copyWith(
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      height: 1.32,
+                    ),
+                  ),
+                  if (tracking.otpExpiresAt.isNotEmpty) ...[
+                    const SizedBox(height: 7),
+                    Text(
+                      'Válido até ${StoreCustomerServiceToolFormatters.dateTime(tracking.otpExpiresAt)}.',
+                      style: textMedium.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 11.6,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ] else if (tracking.isValidated) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(13),
+              decoration: BoxDecoration(
+                color: primaryColor.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(color: primaryColor.withValues(alpha: 0.18)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.verified_rounded, color: primaryColor, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Chegada confirmada com segurança.',
+                      style: textBold.copyWith(
+                        color: primaryColor,
+                        fontSize: 12.6,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class StoreCustomerServiceLiveTrackingMap extends StatefulWidget {
+  final double latitude;
+  final double longitude;
+  final Color primaryColor;
+
+  const StoreCustomerServiceLiveTrackingMap({
+    super.key,
+    required this.latitude,
+    required this.longitude,
+    required this.primaryColor,
+  });
+
+  @override
+  State<StoreCustomerServiceLiveTrackingMap> createState() =>
+      _StoreCustomerServiceLiveTrackingMapState();
+}
+
+class _StoreCustomerServiceLiveTrackingMapState
+    extends State<StoreCustomerServiceLiveTrackingMap> {
+  GoogleMapController? mapController;
+  late LatLng providerPosition;
+
+  @override
+  void initState() {
+    super.initState();
+    providerPosition = LatLng(widget.latitude, widget.longitude);
+  }
+
+  @override
+  void didUpdateWidget(
+      covariant StoreCustomerServiceLiveTrackingMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final LatLng nextPosition = LatLng(widget.latitude, widget.longitude);
+
+    if (nextPosition.latitude == providerPosition.latitude &&
+        nextPosition.longitude == providerPosition.longitude) {
+      return;
+    }
+
+    setState(() {
+      providerPosition = nextPosition;
+    });
+
+    final GoogleMapController? controller = mapController;
+
+    if (controller != null) {
+      controller.animateCamera(
+        CameraUpdate.newLatLng(nextPosition),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    mapController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        height: 210,
+        width: double.infinity,
+        child: GoogleMap(
+          initialCameraPosition: CameraPosition(
+            target: providerPosition,
+            zoom: 16,
+          ),
+          onMapCreated: (GoogleMapController controller) {
+            mapController = controller;
+          },
+          markers: {
+            Marker(
+              markerId: const MarkerId('service_provider_position'),
+              position: providerPosition,
+              infoWindow: const InfoWindow(
+                title: 'Prestador',
+                snippet: 'A caminho do atendimento',
+              ),
+            ),
+          },
+          myLocationEnabled: false,
+          myLocationButtonEnabled: false,
+          zoomControlsEnabled: false,
+          scrollGesturesEnabled: false,
+          zoomGesturesEnabled: false,
+          rotateGesturesEnabled: false,
+          tiltGesturesEnabled: false,
+          mapToolbarEnabled: false,
+        ),
+      ),
+    );
+  }
+}
+
 class StoreCustomerServiceOrderDetails extends StatelessWidget {
   final StoreCustomerOrderItem order;
   final Color primaryColor;
@@ -1764,9 +2293,7 @@ class StoreCustomerServiceOrderDetails extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           Text(
-            order.serviceDeliveryDescription.isEmpty
-                ? 'Acompanhe sua solicitação, alinhe os detalhes com o prestador e mantenha todo o histórico pelo chat seguro da Lokally.'
-                : order.serviceDeliveryDescription,
+            order.publicServiceDescription,
             style: textRegular.copyWith(
               color: Colors.grey.shade700,
               fontSize: 12.5,
@@ -1903,10 +2430,12 @@ class _StoreCustomerServiceChatScreenState
 
   final TextEditingController messageController = TextEditingController();
   final ScrollController scrollController = ScrollController();
+  Timer? chatRefreshTimer;
 
   bool isLoading = false;
   bool isSending = false;
   bool isMeetingResponding = false;
+  bool isSilentRefreshingChat = false;
   bool noticeModalShown = false;
   late String customerEmail;
 
@@ -1924,44 +2453,139 @@ class _StoreCustomerServiceChatScreenState
     customerEmail = widget.order.customerEmail.trim();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      loadChat();
+      loadChat(forceScroll: true);
+      startChatAutoRefresh();
     });
   }
 
   @override
   void dispose() {
+    chatRefreshTimer?.cancel();
     messageController.dispose();
     scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> loadChat() async {
-    if (isLoading) {
+  void startChatAutoRefresh() {
+    chatRefreshTimer?.cancel();
+    chatRefreshTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+      loadChat(silent: true);
+    });
+  }
+
+  bool get canRunSilentChatRefresh {
+    return mounted &&
+        !isLoading &&
+        !isSending &&
+        !isMeetingResponding &&
+        !isSilentRefreshingChat;
+  }
+
+  bool get isNearChatBottom {
+    if (!scrollController.hasClients) {
+      return true;
+    }
+
+    final double distanceFromBottom =
+        scrollController.position.maxScrollExtent -
+            scrollController.position.pixels;
+
+    return distanceFromBottom <= 140;
+  }
+
+  String chatMessagesSignature(List<StoreCustomerServiceChatMessage> list) {
+    if (list.isEmpty) {
+      return 'empty';
+    }
+
+    final StoreCustomerServiceChatMessage last = list.last;
+
+    return '${list.length}::${last.id}::${last.messageType}::${last.createdAt}::${last.meeting?.status ?? ''}';
+  }
+
+  String chatThreadSignature(StoreCustomerServiceChatThread? value) {
+    if (value == null) {
+      return 'null';
+    }
+
+    return [
+      value.id,
+      value.status,
+      value.safetyNoticeAccepted,
+      value.serviceProgress.percent,
+      value.serviceProgress.statusLabel,
+      value.serviceProgress.completed,
+      value.serviceProgress.steps.join('|'),
+    ].join('::');
+  }
+
+  Future<void> loadChat({
+    bool silent = false,
+    bool forceScroll = false,
+  }) async {
+    if (silent && !canRunSilentChatRefresh) {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    if (!silent && isLoading) {
+      return;
+    }
 
-    final Response response = await Get.find<ApiClient>().getData(chatUri);
+    final bool wasNearBottom = isNearChatBottom;
+    final String oldMessagesSignature = chatMessagesSignature(messages);
+    final String oldThreadSignature = chatThreadSignature(thread);
+
+    if (silent) {
+      isSilentRefreshingChat = true;
+    } else {
+      setState(() {
+        isLoading = true;
+      });
+    }
+
+    Response response;
+
+    try {
+      response = await Get.find<ApiClient>().getData(chatUri);
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+
+      if (silent) {
+        isSilentRefreshingChat = false;
+      } else {
+        setState(() {
+          isLoading = false;
+        });
+        showChatMessage('store_chat_open_error'.tr);
+      }
+
+      return;
+    }
 
     if (!mounted) {
       return;
     }
 
-    setState(() {
-      isLoading = false;
-    });
+    if (!silent) {
+      setState(() {
+        isLoading = false;
+      });
+    }
 
     final dynamic body = response.body;
 
     if (response.statusCode != 200 || body is! Map || body['status'] != true) {
-      showChatMessage(
-        body is Map && body['message'] != null
-            ? body['message'].toString()
-            : 'store_chat_open_error'.tr,
-      );
+      if (!silent) {
+        showChatMessage(
+          body is Map && body['message'] != null
+              ? body['message'].toString()
+              : 'store_chat_open_error'.tr,
+        );
+      }
+
+      isSilentRefreshingChat = false;
       return;
     }
 
@@ -1974,32 +2598,54 @@ class _StoreCustomerServiceChatScreenState
     final dynamic noticeValue = data['safety_notice'];
     final dynamic messagesValue = data['messages'];
 
-    setState(() {
-      thread = threadValue is Map
-          ? StoreCustomerServiceChatThread.fromMap(
-              Map<String, dynamic>.from(threadValue),
-            )
-          : null;
-      safetyNotice = noticeValue is Map
-          ? StoreCustomerServiceChatSafetyNotice.fromMap(
-              Map<String, dynamic>.from(noticeValue),
-            )
-          : null;
-      messages = messagesValue is List
-          ? messagesValue
-              .whereType<Map>()
-              .map(
-                (item) => StoreCustomerServiceChatMessage.fromMap(
-                  Map<String, dynamic>.from(item),
-                ),
+    final StoreCustomerServiceChatThread? nextThread = threadValue is Map
+        ? StoreCustomerServiceChatThread.fromMap(
+            Map<String, dynamic>.from(threadValue),
+          )
+        : null;
+    final StoreCustomerServiceChatSafetyNotice? nextSafetyNotice =
+        noticeValue is Map
+            ? StoreCustomerServiceChatSafetyNotice.fromMap(
+                Map<String, dynamic>.from(noticeValue),
               )
-              .toList()
-          : <StoreCustomerServiceChatMessage>[];
+            : null;
+    final List<StoreCustomerServiceChatMessage> nextMessages =
+        messagesValue is List
+            ? messagesValue
+                .whereType<Map>()
+                .map(
+                  (item) => StoreCustomerServiceChatMessage.fromMap(
+                    Map<String, dynamic>.from(item),
+                  ),
+                )
+                .toList()
+            : <StoreCustomerServiceChatMessage>[];
+
+    final String newMessagesSignature = chatMessagesSignature(nextMessages);
+    final String newThreadSignature = chatThreadSignature(nextThread);
+    final bool hasChanges = newMessagesSignature != oldMessagesSignature ||
+        newThreadSignature != oldThreadSignature;
+
+    if (!hasChanges && silent) {
+      isSilentRefreshingChat = false;
+      return;
+    }
+
+    setState(() {
+      thread = nextThread;
+      safetyNotice = nextSafetyNotice;
+      messages = nextMessages;
     });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      scrollToEnd();
-    });
+    isSilentRefreshingChat = false;
+
+    if (forceScroll ||
+        !silent ||
+        (newMessagesSignature != oldMessagesSignature && wasNearBottom)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        scrollToEnd();
+      });
+    }
   }
 
   Future<void> acceptSafetyNotice() async {
@@ -2507,7 +3153,7 @@ class _StoreCustomerServiceChatScreenState
           body['status'] == true) {
         customerEmail = email.trim();
         showChatMessage('Lokally Meeting aceito com sucesso.');
-        await loadChat();
+        await loadChat(silent: true, forceScroll: true);
         return;
       }
 
@@ -2785,7 +3431,7 @@ class _StoreCustomerServiceChatScreenState
         }
 
         showChatMessage('Lokally Meeting recusado com sucesso.');
-        await loadChat();
+        await loadChat(silent: true, forceScroll: true);
         return;
       }
 
@@ -2826,7 +3472,7 @@ class _StoreCustomerServiceChatScreenState
     );
 
     if (mounted) {
-      await loadChat();
+      await loadChat(silent: true, forceScroll: true);
     }
   }
 
@@ -3056,7 +3702,7 @@ class _StoreCustomerServiceChatScreenState
   }
 
   void scrollToEnd() {
-    if (!scrollController.hasClients) {
+    if (!mounted || !scrollController.hasClients) {
       return;
     }
 
@@ -3418,6 +4064,14 @@ class StoreCustomerServiceChatBubble extends StatelessWidget {
       );
     }
 
+    if (message.isServiceTool) {
+      return StoreCustomerServiceToolChatCard(
+        message: message,
+        primaryColor: primaryColor,
+        isMine: isMine,
+      );
+    }
+
     return Align(
       alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
       child: Container(
@@ -3462,6 +4116,325 @@ class StoreCustomerServiceChatBubble extends StatelessWidget {
       ),
     );
   }
+}
+
+class StoreCustomerServiceToolChatCard extends StatelessWidget {
+  final StoreCustomerServiceChatMessage message;
+  final Color primaryColor;
+  final bool isMine;
+
+  const StoreCustomerServiceToolChatCard({
+    super.key,
+    required this.message,
+    required this.primaryColor,
+    required this.isMine,
+  });
+
+  IconData get icon {
+    switch (message.serviceToolType) {
+      case 'quote':
+        return Icons.request_quote_outlined;
+      case 'schedule':
+        return Icons.event_available_outlined;
+      case 'recurrence':
+        return Icons.repeat_rounded;
+      case 'tracking':
+        return Icons.my_location_rounded;
+      default:
+        return Icons.task_alt_outlined;
+    }
+  }
+
+  String get title {
+    final String metaTitle = message.metaText('title');
+
+    if (metaTitle.isNotEmpty) {
+      return metaTitle;
+    }
+
+    switch (message.serviceToolType) {
+      case 'quote':
+        return 'Orçamento enviado';
+      case 'schedule':
+        return 'Agendamento proposto';
+      case 'recurrence':
+        return 'Recorrência proposta';
+      case 'tracking':
+        return 'Acompanhamento atualizado';
+      default:
+        return 'Atualização do serviço';
+    }
+  }
+
+  String get subtitle {
+    switch (message.serviceToolType) {
+      case 'quote':
+        return 'O prestador enviou uma proposta para este atendimento.';
+      case 'schedule':
+        return 'O prestador sugeriu uma data e horário para o atendimento.';
+      case 'recurrence':
+        return 'O prestador sugeriu uma frequência para continuar este atendimento.';
+      case 'tracking':
+        return 'Acompanhe a atualização de segurança do atendimento presencial.';
+      default:
+        return 'Confira a atualização enviada pelo prestador.';
+    }
+  }
+
+  List<StoreCustomerServiceToolInfoRow> get rows {
+    switch (message.serviceToolType) {
+      case 'quote':
+        return <StoreCustomerServiceToolInfoRow>[
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.payments_outlined,
+            label: 'Valor',
+            value: message.serviceToolAmountLabel,
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.timer_outlined,
+            label: 'Prazo',
+            value: message.metaText('execution_time'),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.event_outlined,
+            label: 'Validade',
+            value: message.serviceToolDateLabel(
+              valueKey: 'valid_until',
+              labelKey: 'valid_until_label',
+            ),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.notes_outlined,
+            label: 'Observação',
+            value: message.metaText('note'),
+          ),
+        ];
+      case 'schedule':
+        return <StoreCustomerServiceToolInfoRow>[
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.calendar_month_outlined,
+            label: 'Data e horário',
+            value: message.serviceToolDateTimeLabel(
+              valueKey: 'scheduled_at',
+              labelKey: 'scheduled_at_label',
+            ),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.schedule_outlined,
+            label: 'Duração',
+            value: message.metaText('duration'),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.notes_outlined,
+            label: 'Observação',
+            value: message.metaText('note'),
+          ),
+        ];
+      case 'recurrence':
+        return <StoreCustomerServiceToolInfoRow>[
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.repeat_rounded,
+            label: 'Frequência',
+            value: message.metaText('frequency_label'),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.play_circle_outline_rounded,
+            label: 'Início',
+            value: message.serviceToolDateLabel(
+              valueKey: 'start_date',
+              labelKey: 'start_date_label',
+            ),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.flag_outlined,
+            label: 'Término',
+            value: message.serviceToolDateLabel(
+              valueKey: 'end_date',
+              labelKey: 'end_date_label',
+            ),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.notes_outlined,
+            label: 'Observação',
+            value: message.metaText('note'),
+          ),
+        ];
+      case 'tracking':
+        return <StoreCustomerServiceToolInfoRow>[
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.route_outlined,
+            label: 'Status',
+            value: message.metaText('tracking_label'),
+          ),
+          StoreCustomerServiceToolInfoRow(
+            icon: Icons.notes_outlined,
+            label: 'Observação',
+            value: message.metaText('note'),
+          ),
+        ];
+      default:
+        return <StoreCustomerServiceToolInfoRow>[];
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<StoreCustomerServiceToolInfoRow> visibleRows =
+        rows.where((row) => row.value.trim().isNotEmpty).toList();
+
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.88,
+        ),
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.20)),
+          boxShadow: [
+            BoxShadow(
+              offset: const Offset(0, 8),
+              blurRadius: 22,
+              color: Colors.black.withValues(alpha: 0.045),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 43,
+                  height: 43,
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  child: Icon(icon, color: primaryColor, size: 22),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 15.1,
+                          height: 1.18,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade600,
+                          fontSize: 11.6,
+                          height: 1.24,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (visibleRows.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: primaryColor.withValues(alpha: 0.055),
+                  borderRadius: BorderRadius.circular(17),
+                  border: Border.all(
+                    color: primaryColor.withValues(alpha: 0.10),
+                  ),
+                ),
+                child: Column(
+                  children: visibleRows
+                      .map(
+                        (row) => Padding(
+                          padding: EdgeInsets.only(
+                            bottom: row == visibleRows.last ? 0 : 8,
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(row.icon, color: primaryColor, size: 16),
+                              const SizedBox(width: 7),
+                              Expanded(
+                                child: RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: '${row.label}: ',
+                                        style: textBold.copyWith(
+                                          color: Colors.black87,
+                                          fontSize: 12.1,
+                                          height: 1.26,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: row.value,
+                                        style: textRegular.copyWith(
+                                          color: Colors.grey.shade800,
+                                          fontSize: 12.1,
+                                          height: 1.26,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
+              ),
+            ] else if (message.message.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                message.serviceToolPlainText,
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade800,
+                  fontSize: 12.4,
+                  height: 1.32,
+                ),
+              ),
+            ],
+            const SizedBox(height: 10),
+            Text(
+              '${isMine ? 'Você' : 'Prestador'} • ${message.createdAtLabel}',
+              style: textRegular.copyWith(
+                color: Colors.grey.shade500,
+                fontSize: 10.6,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StoreCustomerServiceToolInfoRow {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const StoreCustomerServiceToolInfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
 }
 
 class StoreCustomerLokallyMeetingChatCard extends StatelessWidget {
@@ -5615,6 +6588,78 @@ class StoreCustomerOrderItem {
     return releaseStatus.isNotEmpty || canAuthorizePayout || canOpenDispute;
   }
 
+  String get publicServiceDescription {
+    if (!isServiceRequestOrder) {
+      return serviceDeliveryDescription;
+    }
+
+    final String description = serviceDeliveryDescription.trim();
+    final String normalizedDescription =
+        description.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+    if (description.isEmpty ||
+        normalizedDescription.contains('serviço contratado pelo marketplace') ||
+        normalizedDescription.contains('servico contratado pelo marketplace')) {
+      return 'Serviço anunciado no Marketplace Lokally.';
+    }
+
+    return description;
+  }
+
+  static String serviceFormatLabelFromData({
+    required String rawLabel,
+    required String rawFormat,
+    required String rawDeliveryType,
+    required List<StoreCustomerOrderProductItem> items,
+  }) {
+    final String label = rawLabel.trim();
+    final String normalizedLabel = label.toLowerCase();
+    final String format = rawFormat.trim().toLowerCase();
+    String deliveryType = rawDeliveryType.trim().toLowerCase();
+
+    if (deliveryType.isEmpty) {
+      for (final StoreCustomerOrderProductItem item in items) {
+        final String itemDeliveryType =
+            item.serviceDeliveryType.trim().toLowerCase();
+
+        if (item.isService && itemDeliveryType.isNotEmpty) {
+          deliveryType = itemDeliveryType;
+          break;
+        }
+      }
+    }
+
+    if (format == 'presential' ||
+        format == 'presencial' ||
+        deliveryType == 'client_location' ||
+        deliveryType == 'provider_location' ||
+        deliveryType == 'region') {
+      return 'Serviço Presencial';
+    }
+
+    if (format == 'digital' ||
+        deliveryType == 'online' ||
+        deliveryType == 'download') {
+      return 'Serviço Digital';
+    }
+
+    if (normalizedLabel.contains('presencial')) {
+      return 'Serviço Presencial';
+    }
+
+    if (normalizedLabel.contains('digital')) {
+      return 'Serviço Digital';
+    }
+
+    if (label.isNotEmpty &&
+        normalizedLabel != 'serviço' &&
+        normalizedLabel != 'servico') {
+      return label;
+    }
+
+    return 'Serviço';
+  }
+
   factory StoreCustomerOrderItem.fromMap(Map<String, dynamic> map) {
     final Map<String, dynamic> delivery = map['delivery'] is Map
         ? Map<String, dynamic>.from(map['delivery'])
@@ -5664,10 +6709,29 @@ class StoreCustomerOrderItem {
             parsedOrderStatus == 'service_completed' ||
             (parsedItems.isNotEmpty &&
                 parsedItems.every((item) => item.isService));
-    final String parsedServiceDeliveryLabel =
-        '${map['service_delivery_label'] ?? ''}'.trim().isEmpty
-            ? 'Serviço'
-            : '${map['service_delivery_label'] ?? ''}';
+    String parsedServiceDeliveryType =
+        '${map['service_delivery_type'] ?? ''}'.trim().toLowerCase();
+
+    if (parsedServiceDeliveryType.isEmpty) {
+      for (final StoreCustomerOrderProductItem item in parsedItems) {
+        final String itemDeliveryType =
+            item.serviceDeliveryType.trim().toLowerCase();
+
+        if (item.isService && itemDeliveryType.isNotEmpty) {
+          parsedServiceDeliveryType = itemDeliveryType;
+          break;
+        }
+      }
+    }
+
+    final String parsedServiceDeliveryLabel = parsedIsServiceOrder
+        ? StoreCustomerOrderItem.serviceFormatLabelFromData(
+            rawLabel: '${map['service_delivery_label'] ?? ''}',
+            rawFormat: '${map['service_format'] ?? map['format'] ?? ''}',
+            rawDeliveryType: parsedServiceDeliveryType,
+            items: parsedItems,
+          )
+        : '${map['service_delivery_label'] ?? ''}';
     final String parsedDeliveryTypeLabel = parsedIsServiceOrder
         ? parsedServiceDeliveryLabel
         : '${map['delivery_type_label'] ?? ''}';
@@ -5698,7 +6762,9 @@ class StoreCustomerOrderItem {
       deliveryType: parsedDeliveryType,
       deliveryTypeLabel: parsedDeliveryTypeLabel,
       paymentMethod: parsedPaymentMethod,
-      paymentMethodLabel: '${map['payment_method_label'] ?? ''}',
+      paymentMethodLabel: parsedIsServiceOrder
+          ? 'Direto ao prestador'
+          : '${map['payment_method_label'] ?? ''}',
       paymentStatus: parsedPaymentStatus,
       paymentStatusLabel: parsedPaymentStatusLabel,
       orderStatus: parsedOrderStatus,
@@ -5723,7 +6789,7 @@ class StoreCustomerOrderItem {
       containsPhysicalItems: parsedContainsPhysicalItems,
       isServiceOrder: parsedIsServiceOrder,
       isMixedOrder: StoreCustomerOrderCurrency.parseBool(map['is_mixed_order']),
-      serviceDeliveryType: '${map['service_delivery_type'] ?? ''}',
+      serviceDeliveryType: parsedServiceDeliveryType,
       serviceDeliveryLabel: parsedServiceDeliveryLabel,
       serviceDeliveryDescription:
           '${map['service_delivery_description'] ?? ''}',
@@ -6052,12 +7118,160 @@ class StoreChatFileHelper {
   }
 }
 
+class StoreCustomerServiceToolFormatters {
+  static String twoDigits(int value) {
+    return value.toString().padLeft(2, '0');
+  }
+
+  static String currency(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+
+    if (value is num) {
+      return 'R\$ ${_formatNumber(value.toDouble())}';
+    }
+
+    final String text = '$value'.trim();
+
+    if (text.isEmpty) {
+      return '';
+    }
+
+    if (text.startsWith('R\$')) {
+      return text;
+    }
+
+    final String normalised = text
+        .replaceAll('R\$', '')
+        .replaceAll(' ', '')
+        .replaceAll('.', '')
+        .replaceAll(',', '.');
+
+    final double? parsed = double.tryParse(normalised);
+
+    if (parsed == null) {
+      return text;
+    }
+
+    return 'R\$ ${_formatNumber(parsed)}';
+  }
+
+  static String _formatNumber(double value) {
+    final String fixed = value.toStringAsFixed(2);
+    final List<String> parts = fixed.split('.');
+    String integer = parts.first;
+    final String decimals = parts.length > 1 ? parts.last : '00';
+    final List<String> groups = <String>[];
+
+    while (integer.length > 3) {
+      final String part = integer.substring(integer.length - 3);
+      integer = integer.substring(0, integer.length - 3);
+      groups.insert(0, part);
+    }
+
+    if (integer.isNotEmpty) {
+      groups.insert(0, integer);
+    }
+
+    return '${groups.join('.')},$decimals';
+  }
+
+  static String date(String value) {
+    final String normalized = value.trim();
+
+    if (normalized.isEmpty) {
+      return '';
+    }
+
+    final RegExp brDate = RegExp(r'^\d{2}/\d{2}/\d{4}$');
+    if (brDate.hasMatch(normalized)) {
+      return normalized;
+    }
+
+    try {
+      final DateTime dateTime =
+          DateTime.parse(normalized.replaceFirst(' ', 'T'));
+
+      return '${twoDigits(dateTime.day)}/${twoDigits(dateTime.month)}/${dateTime.year}';
+    } catch (_) {
+      return cleanBrazilianDateLabel(normalized);
+    }
+  }
+
+  static String dateTime(String value) {
+    final String normalized = value.trim();
+
+    if (normalized.isEmpty) {
+      return '';
+    }
+
+    try {
+      final DateTime dateTime =
+          DateTime.parse(normalized.replaceFirst(' ', 'T'));
+
+      return '${twoDigits(dateTime.day)}/${twoDigits(dateTime.month)}/${dateTime.year} às ${twoDigits(dateTime.hour)}:${twoDigits(dateTime.minute)}';
+    } catch (_) {
+      return cleanBrazilianDateTimeLabel(normalized);
+    }
+  }
+
+  static String cleanBrazilianDateLabel(String value) {
+    final String normalized = value.trim();
+    final RegExp isoDate = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$');
+    final RegExpMatch? match = isoDate.firstMatch(normalized);
+
+    if (match != null) {
+      return '${match.group(3)}/${match.group(2)}/${match.group(1)}';
+    }
+
+    return normalized;
+  }
+
+  static String cleanBrazilianDateTimeLabel(String value) {
+    String normalized = value.trim();
+
+    normalized = normalized.replaceAll(' as ', ' às ');
+
+    final RegExp isoDateTime =
+        RegExp(r'^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})');
+    final RegExpMatch? match = isoDateTime.firstMatch(normalized);
+
+    if (match != null) {
+      return '${match.group(3)}/${match.group(2)}/${match.group(1)} às ${match.group(4)}:${match.group(5)}';
+    }
+
+    return cleanBrazilianDateLabel(normalized);
+  }
+
+  static String cleanPlainText(String value) {
+    final List<String> lines = value
+        .split('\n')
+        .map((line) {
+          final String trimmed = line.trim();
+
+          return trimmed
+              .replaceAllMapped(
+                RegExp(r'(\d{4})-(\d{2})-(\d{2})'),
+                (match) =>
+                    '${match.group(3)}/${match.group(2)}/${match.group(1)}',
+              )
+              .replaceAll(' as ', ' às ');
+        })
+        .where((line) => line.isNotEmpty)
+        .toList();
+
+    return lines.join('\n');
+  }
+}
+
 class StoreCustomerServiceChatMessage {
   final String id;
   final String senderType;
   final String messageType;
   final String meetingId;
   final StoreCustomerServiceMeetingData? meeting;
+  final Map<String, dynamic> metaData;
   final String message;
   final String fileUrl;
   final String fileOriginalName;
@@ -6071,6 +7285,7 @@ class StoreCustomerServiceChatMessage {
     required this.messageType,
     required this.meetingId,
     required this.meeting,
+    required this.metaData,
     required this.message,
     required this.fileUrl,
     required this.fileOriginalName,
@@ -6080,6 +7295,95 @@ class StoreCustomerServiceChatMessage {
   });
 
   bool get hasFile => fileUrl.isNotEmpty || fileOriginalName.isNotEmpty;
+
+  bool get isServiceTool {
+    return messageType == 'service_tool_quote' ||
+        messageType == 'service_tool_schedule' ||
+        messageType == 'service_tool_recurrence' ||
+        messageType == 'service_tool_tracking' ||
+        messageType == 'service_tracking_event';
+  }
+
+  String get serviceToolType {
+    final String toolType = metaText('tool_type');
+
+    if (toolType.isNotEmpty) {
+      return toolType;
+    }
+
+    if (messageType.endsWith('_quote')) {
+      return 'quote';
+    }
+
+    if (messageType.endsWith('_schedule')) {
+      return 'schedule';
+    }
+
+    if (messageType.endsWith('_recurrence')) {
+      return 'recurrence';
+    }
+
+    if (messageType.endsWith('_tracking')) {
+      return 'tracking';
+    }
+
+    return '';
+  }
+
+  String metaText(String key) {
+    final dynamic value = metaData[key];
+
+    if (value == null) {
+      return '';
+    }
+
+    return '$value'.trim();
+  }
+
+  String get serviceToolAmountLabel {
+    final String label = metaText('amount_label');
+
+    if (label.isNotEmpty) {
+      return label;
+    }
+
+    return StoreCustomerServiceToolFormatters.currency(metaData['amount']);
+  }
+
+  String serviceToolDateLabel({
+    required String valueKey,
+    required String labelKey,
+  }) {
+    final String label = metaText(labelKey);
+
+    if (label.isNotEmpty) {
+      return StoreCustomerServiceToolFormatters.cleanBrazilianDateLabel(label);
+    }
+
+    return StoreCustomerServiceToolFormatters.date(metaText(valueKey));
+  }
+
+  String serviceToolDateTimeLabel({
+    required String valueKey,
+    required String labelKey,
+  }) {
+    final String label = metaText(labelKey);
+
+    if (label.isNotEmpty) {
+      return StoreCustomerServiceToolFormatters.cleanBrazilianDateTimeLabel(
+          label);
+    }
+
+    return StoreCustomerServiceToolFormatters.dateTime(metaText(valueKey));
+  }
+
+  String get createdAtLabel {
+    return StoreCustomerServiceToolFormatters.dateTime(createdAt);
+  }
+
+  String get serviceToolPlainText {
+    return StoreCustomerServiceToolFormatters.cleanPlainText(message);
+  }
 
   bool get isLokallyMeeting {
     return messageType == 'lokally_meeting_invite' ||
@@ -6097,15 +7401,18 @@ class StoreCustomerServiceChatMessage {
 
   factory StoreCustomerServiceChatMessage.fromMap(Map<String, dynamic> map) {
     Map<String, dynamic> meetingMap = <String, dynamic>{};
+    Map<String, dynamic> metaDataMap = <String, dynamic>{};
+
+    final dynamic metaValue = map['meta_data'];
+    if (metaValue is Map) {
+      metaDataMap = Map<String, dynamic>.from(metaValue);
+    }
 
     final dynamic meetingValue = map['meeting'];
     if (meetingValue is Map) {
       meetingMap = Map<String, dynamic>.from(meetingValue);
-    } else {
-      final dynamic metaValue = map['meta_data'];
-      if (metaValue is Map) {
-        meetingMap = Map<String, dynamic>.from(metaValue);
-      }
+    } else if (metaDataMap.isNotEmpty) {
+      meetingMap = Map<String, dynamic>.from(metaDataMap);
     }
 
     final StoreCustomerServiceMeetingData? parsedMeeting = meetingMap.isNotEmpty
@@ -6118,6 +7425,7 @@ class StoreCustomerServiceChatMessage {
       messageType: '${map['message_type'] ?? ''}',
       meetingId: '${map['meeting_id'] ?? parsedMeeting?.id ?? ''}',
       meeting: parsedMeeting,
+      metaData: metaDataMap,
       message: '${map['message'] ?? ''}',
       fileUrl: '${map['file_url'] ?? ''}',
       fileOriginalName: '${map['file_original_name'] ?? ''}',
@@ -6347,6 +7655,24 @@ class StoreCustomerOrderCurrency {
     }
 
     return double.tryParse('$value') ?? 0;
+  }
+
+  static double? parseNullableDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    final String text = '$value'.trim();
+
+    if (text.isEmpty || text.toLowerCase() == 'null') {
+      return null;
+    }
+
+    return double.tryParse(text.replaceAll(',', '.'));
   }
 
   static bool parseBool(dynamic value) {

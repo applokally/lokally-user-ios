@@ -32,6 +32,8 @@ class StoreProductCategoryScreen extends StatefulWidget {
 
 class _StoreProductCategoryScreenState
     extends State<StoreProductCategoryScreen> {
+  static const Color vehicleMarketplaceColor = Color(0xFF2F343A);
+  static const Color realEstateMarketplaceColor = Color(0xFF1565C0);
   static const String publicCategoriesUri = '/api/store/public-categories';
   static const String publicProductsUri = '/api/store/products';
   static const String publicVehiclesUri = '/api/store/vehicles';
@@ -134,6 +136,18 @@ class _StoreProductCategoryScreenState
   }
 
   bool get isClassifiedFeed => isVehicleFeed || isRealEstateFeed;
+
+  Color get currentFeedPrimaryColor {
+    if (isVehicleFeed) {
+      return vehicleMarketplaceColor;
+    }
+
+    if (isRealEstateFeed) {
+      return realEstateMarketplaceColor;
+    }
+
+    return Theme.of(context).primaryColor;
+  }
 
   String get currentFeedEndpoint {
     if (isVehicleFeed) {
@@ -594,7 +608,18 @@ class _StoreProductCategoryScreenState
   Future<void> loadCategoryBanners() async {
     final _StoreProductCategoryData selected = selectedMainCategory;
 
-    if (selected.isAll || selected.id.isEmpty) {
+    String bannerUri = '';
+
+    if (isVehicleFeed) {
+      bannerUri = '$marketplaceBannersUri?placement=vehicles_home';
+    } else if (isRealEstateFeed) {
+      bannerUri = '$marketplaceBannersUri?placement=real_estate_home';
+    } else if (!selected.isAll && selected.id.isNotEmpty) {
+      bannerUri =
+          '$marketplaceBannersUri?placement=category&category_id=${Uri.encodeComponent(selected.id)}';
+    }
+
+    if (bannerUri.isEmpty) {
       setState(() {
         categoryBanners = <_StoreCategoryBannerData>[];
         isLoadingBanners = false;
@@ -608,7 +633,7 @@ class _StoreProductCategoryScreenState
 
     try {
       final Response response = await Get.find<ApiClient>().getData(
-        '$marketplaceBannersUri?placement=category&category_id=${Uri.encodeComponent(selected.id)}',
+        bannerUri,
       );
 
       final dynamic responseBody = response.body;
@@ -865,7 +890,7 @@ class _StoreProductCategoryScreenState
   }
 
   void showLoginRequiredDialog(String message) {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = currentFeedPrimaryColor;
 
     Get.dialog(
       Dialog(
@@ -937,7 +962,7 @@ class _StoreProductCategoryScreenState
   }
 
   void showStoreMessage(String message) {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = currentFeedPrimaryColor;
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -956,7 +981,7 @@ class _StoreProductCategoryScreenState
   }
 
   void showSearchSheet() {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = currentFeedPrimaryColor;
     final TextEditingController modalController = TextEditingController(
       text: searchQuery,
     );
@@ -1065,7 +1090,7 @@ class _StoreProductCategoryScreenState
 
   @override
   Widget build(BuildContext context) {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = currentFeedPrimaryColor;
     final List<_StoreProductItemData> productsForView = visibleProducts;
 
     return Scaffold(
@@ -1096,8 +1121,10 @@ class _StoreProductCategoryScreenState
                               top: -10,
                               left: -Dimensions.paddingSizeDefault,
                               right: -Dimensions.paddingSizeDefault,
-                              child: StoreMarketplaceHeaderGradient(
+                              child: _ProductCategoryHeaderGradient(
                                 primaryColor: primaryColor,
+                                isVehicleFeed: isVehicleFeed,
+                                isRealEstateFeed: isRealEstateFeed,
                                 height: 315,
                               ),
                             ),
@@ -1260,6 +1287,66 @@ class _StoreProductCategoryScreenState
         primaryColor: primaryColor,
         onSearchTap: showSearchSheet,
         onCartTap: openCartScreen,
+      ),
+    );
+  }
+}
+
+class _ProductCategoryHeaderGradient extends StatelessWidget {
+  final Color primaryColor;
+  final bool isVehicleFeed;
+  final bool isRealEstateFeed;
+  final double height;
+
+  const _ProductCategoryHeaderGradient({
+    required this.primaryColor,
+    required this.isVehicleFeed,
+    required this.isRealEstateFeed,
+    required this.height,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!isVehicleFeed && !isRealEstateFeed) {
+      return StoreMarketplaceHeaderGradient(
+        primaryColor: primaryColor,
+        height: height,
+      );
+    }
+
+    if (isRealEstateFeed) {
+      return Container(
+        height: height,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Color(0xFF1565C0),
+              Color(0xFF2F7FD4),
+              Color(0xFFEAF4FF),
+              Colors.white,
+            ],
+            stops: [0.0, 0.36, 0.76, 1.0],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      height: height,
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF2F343A),
+            Color(0xFF4A525A),
+            Color(0xFFF1F3F5),
+            Colors.white,
+          ],
+          stops: [0.0, 0.36, 0.76, 1.0],
+        ),
       ),
     );
   }
@@ -1660,7 +1747,10 @@ class _ProductCategoryProductCard extends StatelessWidget {
                       ),
                     ] else ...[
                       const SizedBox(height: 5),
-                      _ClassifiedListingInfo(product: product),
+                      _ClassifiedListingInfo(
+                        product: product,
+                        primaryColor: primaryColor,
+                      ),
                     ],
                   ],
                 ),
@@ -1875,9 +1965,11 @@ class _ProductDeliveryInfo extends StatelessWidget {
 
 class _ClassifiedListingInfo extends StatelessWidget {
   final _StoreProductItemData product;
+  final Color primaryColor;
 
   const _ClassifiedListingInfo({
     required this.product,
+    required this.primaryColor,
   });
 
   @override
@@ -1892,7 +1984,7 @@ class _ClassifiedListingInfo extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: textBold.copyWith(
-            color: const Color(0xFF118C7E),
+            color: primaryColor,
             fontSize: 11.2,
             height: 1.05,
           ),

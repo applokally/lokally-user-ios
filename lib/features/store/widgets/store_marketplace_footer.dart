@@ -112,7 +112,7 @@ class StoreMarketplaceBottomSearchCartBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(28),
+          borderRadius: BorderRadius.circular(999),
           border: Border.all(
             color: primaryColor.withValues(alpha: 0.26),
             width: 1,
@@ -155,7 +155,7 @@ class StoreMarketplaceBottomSearchCartBar extends StatelessWidget {
 
                   return _StoreMarketplaceFooterAssetButton(
                     primaryColor: primaryColor,
-                    assetPath: 'assets/image/shopping_footer.webp',
+                    assetPath: 'assets/image/shopping_footer.webp.png',
                     fallbackIcon: Icons.shopping_cart_outlined,
                     label: 'Carrinho',
                     semanticLabel: 'Carrinho',

@@ -6,6 +6,7 @@ import 'package:ride_sharing_user_app/features/auth/controllers/auth_controller.
 import 'package:ride_sharing_user_app/features/auth/domain/enums/verification_from_enum.dart';
 import 'package:ride_sharing_user_app/features/auth/screens/otp_log_in_screen.dart';
 import 'package:ride_sharing_user_app/features/auth/screens/sign_in_screen.dart';
+import 'package:ride_sharing_user_app/features/auth/screens/sign_up_screen.dart';
 import 'package:ride_sharing_user_app/features/dashboard/screens/dashboard_screen.dart';
 import 'package:ride_sharing_user_app/features/location/controllers/location_controller.dart';
 import 'package:ride_sharing_user_app/features/location/view/access_location_screen.dart';
@@ -27,20 +28,34 @@ import 'package:ride_sharing_user_app/localization/localization_controller.dart'
 import 'package:ride_sharing_user_app/util/app_constants.dart';
 
 class LoginHelper {
+  final AppLinks _appLinks = AppLinks();
+  StreamSubscription<Uri>? _appLinkSubscription;
+
   void handleIncomingLinks(Map<String, dynamic>? notificationData) async {
     Get.find<TripController>().getRideCancellationReasonList();
     Get.find<TripController>().getParcelCancellationReasonList();
     Get.find<RefundRequestController>().getParcelRefundReasonList();
     Get.find<PaymentController>().getPaymentGetWayList();
     FirebaseHelper().subscribeFirebaseTopic();
-    String? path = await initDynamicLinks();
+    _listenReferralLinks();
+
+    final LokallyIncomingLink? incomingLink = await initDynamicLinks();
 
     Get.find<ConfigController>().getConfigData().then((value) {
       if (_isForceUpdate(Get.find<ConfigController>().config)) {
         Get.offAll(() => const AppVersionWarningScreen());
       } else {
-        if (path != null) {
-          Get.offAll(() => LiveLocationScreen(trackingUrl: path));
+        if (incomingLink?.referralCode != null &&
+            incomingLink!.referralCode!.isNotEmpty) {
+          _openReferralRegistration(
+            incomingLink.referralCode!,
+            notificationData,
+          );
+        } else if (incomingLink?.trackingPath != null &&
+            incomingLink!.trackingPath!.isNotEmpty) {
+          Get.offAll(
+            () => LiveLocationScreen(trackingUrl: incomingLink.trackingPath!),
+          );
         } else {
           route(notificationData);
         }
@@ -48,16 +63,166 @@ class LoginHelper {
     });
   }
 
-  Future<String?> initDynamicLinks() async {
-    final appLinks = AppLinks();
-    final uri = await appLinks.getInitialLink();
-    String? path;
-    if (uri != null) {
-      path = uri.path;
-    } else {
-      path = null;
+  Future<LokallyIncomingLink?> initDynamicLinks() async {
+    final Uri? uri = await _appLinks.getInitialLink();
+
+    if (uri == null) {
+      return null;
     }
-    return path;
+
+    return _parseIncomingLink(uri);
+  }
+
+  void _listenReferralLinks() {
+    _appLinkSubscription ??= _appLinks.uriLinkStream.listen((Uri uri) {
+      final LokallyIncomingLink? incomingLink = _parseIncomingLink(uri);
+
+      if (incomingLink?.referralCode != null &&
+          incomingLink!.referralCode!.isNotEmpty) {
+        _openReferralRegistration(incomingLink.referralCode!, null);
+      } else if (incomingLink?.trackingPath != null &&
+          incomingLink!.trackingPath!.isNotEmpty) {
+        Get.to(
+          () => LiveLocationScreen(trackingUrl: incomingLink.trackingPath!),
+        );
+      }
+    });
+  }
+
+  LokallyIncomingLink? _parseIncomingLink(Uri uri) {
+    final String? referralCode = _referralCodeFromUri(uri);
+
+    if (referralCode != null && referralCode.isNotEmpty) {
+      return LokallyIncomingLink(referralCode: referralCode);
+    }
+
+    final String trackingPath = uri.path.trim();
+
+    if (trackingPath.isEmpty || trackingPath == '/') {
+      return null;
+    }
+
+    return LokallyIncomingLink(trackingPath: trackingPath);
+  }
+
+  String? _referralCodeFromUri(Uri uri) {
+    for (final String key in <String>[
+      'referral_code',
+      'referralCode',
+      'ref',
+      'code',
+      'invite',
+    ]) {
+      final String? value = uri.queryParameters[key]?.trim();
+
+      if (_isReferralCodeCandidate(value)) {
+        return value;
+      }
+    }
+
+    final List<String> segments = uri.pathSegments
+        .map((segment) => Uri.decodeComponent(segment).trim())
+        .where((segment) => segment.isNotEmpty)
+        .toList();
+
+    if (uri.scheme == 'lokally') {
+      if (_isReferralCodeCandidate(uri.host)) {
+        return uri.host.trim();
+      }
+
+      if ((uri.host == 'r' ||
+              uri.host == 'referral' ||
+              uri.host == 'invite' ||
+              uri.host == 'convite') &&
+          segments.isNotEmpty &&
+          _isReferralCodeCandidate(segments.first)) {
+        return segments.first;
+      }
+    }
+
+    if (segments.length >= 2 &&
+        <String>{'r', 'referral', 'invite', 'convite'}
+            .contains(segments.first.toLowerCase()) &&
+        _isReferralCodeCandidate(segments[1])) {
+      return segments[1];
+    }
+
+    if (segments.length == 1 && _isReferralCodeCandidate(segments.first)) {
+      return segments.first;
+    }
+
+    return null;
+  }
+
+  bool _isReferralCodeCandidate(String? value) {
+    final String code = value?.trim() ?? '';
+
+    if (code.isEmpty) {
+      return false;
+    }
+
+    final String lowerCode = code.toLowerCase();
+
+    if (<String>{
+      'admin',
+      'api',
+      'about-us',
+      'customer-app-download',
+      'driver-app-download',
+      'blog',
+      'privacy-policy',
+      'terms-and-conditions',
+      'contact-us',
+      'storage',
+      'login',
+      'register',
+      'registration',
+      'r',
+      'referral',
+      'invite',
+      'convite',
+    }.contains(lowerCode)) {
+      return false;
+    }
+
+    return RegExp(r'^[A-Za-z0-9_-]{5,40}$').hasMatch(code);
+  }
+
+  void _openReferralRegistration(
+    String referralCode,
+    Map<String, dynamic>? notificationData,
+  ) {
+    Get.find<AuthController>().referralCodeController.text =
+        referralCode.trim();
+
+    if (Get.find<AuthController>().isLoggedIn()) {
+      route(notificationData);
+      return;
+    }
+
+    if (Get.find<ConfigController>().config!.maintenanceMode != null &&
+        Get.find<ConfigController>()
+                .config!
+                .maintenanceMode!
+                .maintenanceStatus ==
+            1 &&
+        Get.find<ConfigController>()
+                .config!
+                .maintenanceMode!
+                .selectedMaintenanceSystem!
+                .userApp ==
+            1) {
+      Get.offAll(() => const MaintenanceScreen());
+      return;
+    }
+
+    if (Get.find<LocalizationController>().haveLocalLanguageCode()) {
+      Get.offAll(() => const SignUpScreen());
+    } else {
+      Get.offAll(
+        () => LanguageSelectionScreen(notificationData: notificationData),
+      );
+    }
   }
 
   bool _isForceUpdate(ConfigModel? config) {
@@ -153,4 +318,14 @@ class LoginHelper {
       Get.offAll(() => const OtpLoginScreen(from: VerificationForm.login));
     }
   }
+}
+
+class LokallyIncomingLink {
+  final String? referralCode;
+  final String? trackingPath;
+
+  const LokallyIncomingLink({
+    this.referralCode,
+    this.trackingPath,
+  });
 }

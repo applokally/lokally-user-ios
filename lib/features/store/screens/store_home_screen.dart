@@ -24,6 +24,30 @@ import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+const Color storeMarketplaceVehicleAccentColor = Color(0xFF111111);
+const Color storeMarketplaceRealEstateAccentColor = Color(0xFF1565C0);
+
+Color storeMarketplaceAccentColorForProduct(
+  StoreProductData product,
+  Color fallbackColor,
+) {
+  if (product.isVehicleAd) {
+    return storeMarketplaceVehicleAccentColor;
+  }
+
+  if (product.isRealEstateAd) {
+    return storeMarketplaceRealEstateAccentColor;
+  }
+
+  return fallbackColor;
+}
+
+Color storeReadableTextColorOn(Color backgroundColor) {
+  return backgroundColor.computeLuminance() > 0.50
+      ? Colors.black87
+      : Colors.white;
+}
+
 class StoreHomeScreen extends StatefulWidget {
   const StoreHomeScreen({super.key});
 
@@ -4499,6 +4523,8 @@ class StoreProductCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color textColor =
         Theme.of(context).textTheme.bodyLarge?.color ?? Colors.black87;
+    final Color productPrimaryColor =
+        storeMarketplaceAccentColorForProduct(product, primaryColor);
 
     return GestureDetector(
       onTap: onTap,
@@ -4526,7 +4552,7 @@ class StoreProductCard extends StatelessWidget {
                     aspectRatio: product.isRealEstateAd ? 1.18 : 1,
                     child: StoreProductHeroImage(
                       imageUrl: product.mainImageUrl,
-                      primaryColor: primaryColor,
+                      primaryColor: productPrimaryColor,
                     ),
                   ),
                   if (product.isClassifiedAd && !product.isRealEstateAd)
@@ -4534,7 +4560,7 @@ class StoreProductCard extends StatelessWidget {
                       left: 8,
                       top: 8,
                       child: StoreVerifiedAdBadge(
-                        primaryColor: primaryColor,
+                        primaryColor: productPrimaryColor,
                       ),
                     ),
                   if (product.hasPromotion && !product.isClassifiedAd)
@@ -4571,24 +4597,24 @@ class StoreProductCard extends StatelessWidget {
                     const SizedBox(height: 5),
                     ProductPriceColumn(
                       product: product,
-                      primaryColor: primaryColor,
+                      primaryColor: productPrimaryColor,
                     ),
                     const SizedBox(height: 5),
                     product.isRealEstateAd
                         ? StoreRealEstateCardInfo(
                             product: product,
-                            primaryColor: primaryColor,
+                            primaryColor: productPrimaryColor,
                           )
                         : StoreDeliveryInfo(
                             product: product,
-                            primaryColor: primaryColor,
+                            primaryColor: productPrimaryColor,
                           ),
                   ],
                 ),
               ),
               const Spacer(),
               StoreBottomActionStrip(
-                primaryColor: primaryColor,
+                primaryColor: productPrimaryColor,
                 label: product.actionLabel,
               ),
             ],
@@ -5111,7 +5137,7 @@ class StoreBottomActionStrip extends StatelessWidget {
           maxLines: 1,
           textAlign: TextAlign.center,
           style: textBold.copyWith(
-            color: Colors.white,
+            color: storeReadableTextColorOn(primaryColor),
             fontSize: 11.8,
             letterSpacing: 0.2,
           ),

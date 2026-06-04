@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -32,6 +34,8 @@ class _StoreSellerOrderListScreenState
 
   bool isLoading = false;
   bool isLoadingServiceRequests = false;
+  bool isBackgroundRefreshing = false;
+  Timer? sellerOrdersRefreshTimer;
   String? startingServiceRequestChannelId;
   String selectedFilter = 'all';
 
@@ -64,10 +68,24 @@ class _StoreSellerOrderListScreenState
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       refreshOrdersAndRequests();
+      startSellerOrdersAutoRefresh();
     });
   }
 
-  Future<void> loadOrders({String? filterKey}) async {
+  @override
+  void dispose() {
+    sellerOrdersRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  void startSellerOrdersAutoRefresh() {
+    sellerOrdersRefreshTimer?.cancel();
+    sellerOrdersRefreshTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      refreshOrdersAndRequests(silent: true);
+    });
+  }
+
+  Future<void> loadOrders({String? filterKey, bool silent = false}) async {
     if (isLoading) {
       return;
     }
@@ -78,10 +96,14 @@ class _StoreSellerOrderListScreenState
       orElse: () => filters.first,
     );
 
-    setState(() {
-      isLoading = true;
+    if (!silent) {
+      setState(() {
+        isLoading = true;
+        selectedFilter = nextFilter;
+      });
+    } else {
       selectedFilter = nextFilter;
-    });
+    }
 
     final String uri = filter.apiFilter == 'all'
         ? storeSellerOrdersUri
@@ -93,14 +115,18 @@ class _StoreSellerOrderListScreenState
       return;
     }
 
-    setState(() {
-      isLoading = false;
-    });
+    if (!silent) {
+      setState(() {
+        isLoading = false;
+      });
+    }
 
     final dynamic body = response.body;
 
     if (response.statusCode != 200 || body is! Map || body['status'] != true) {
-      showStoreMessage('Não foi possível carregar os pedidos.');
+      if (!silent) {
+        showStoreMessage('Não foi possível carregar os pedidos.');
+      }
       return;
     }
 
@@ -131,21 +157,37 @@ class _StoreSellerOrderListScreenState
     });
   }
 
-  Future<void> refreshOrdersAndRequests() async {
-    await Future.wait(<Future<void>>[
-      loadServiceRequests(),
-      loadOrders(),
-    ]);
+  Future<void> refreshOrdersAndRequests({bool silent = false}) async {
+    if (silent && isBackgroundRefreshing) {
+      return;
+    }
+
+    if (silent) {
+      isBackgroundRefreshing = true;
+    }
+
+    try {
+      await Future.wait(<Future<void>>[
+        loadServiceRequests(silent: silent),
+        loadOrders(silent: silent),
+      ]);
+    } finally {
+      if (silent) {
+        isBackgroundRefreshing = false;
+      }
+    }
   }
 
-  Future<void> loadServiceRequests() async {
+  Future<void> loadServiceRequests({bool silent = false}) async {
     if (isLoadingServiceRequests) {
       return;
     }
 
-    setState(() {
-      isLoadingServiceRequests = true;
-    });
+    if (!silent) {
+      setState(() {
+        isLoadingServiceRequests = true;
+      });
+    }
 
     final Response response = await Get.find<ApiClient>().getData(
       '$storeSellerServiceRequestsUri?limit=30&offset=0',
@@ -155,15 +197,19 @@ class _StoreSellerOrderListScreenState
       return;
     }
 
-    setState(() {
-      isLoadingServiceRequests = false;
-    });
+    if (!silent) {
+      setState(() {
+        isLoadingServiceRequests = false;
+      });
+    }
 
     final dynamic body = response.body;
 
     if (response.statusCode != 200 || body is! Map || body['status'] != true) {
-      showStoreMessage(
-          'Não foi possível carregar as solicitações de serviços.');
+      if (!silent) {
+        showStoreMessage(
+            'Não foi possível carregar as solicitações de serviços.');
+      }
       return;
     }
 
@@ -176,19 +222,79 @@ class _StoreSellerOrderListScreenState
     final List<dynamic> requestList =
         requestsValue is List ? requestsValue : <dynamic>[];
 
+    final Map<String, StoreSellerServiceRequestItem> currentRequestsByOrder =
+        <String, StoreSellerServiceRequestItem>{
+      for (final StoreSellerServiceRequestItem request in serviceRequests)
+        if (request.orderId.isNotEmpty) request.orderId: request,
+    };
+
+    final List<StoreSellerServiceRequestItem> parsedRequests = requestList
+        .whereType<Map>()
+        .map(
+          (item) => StoreSellerServiceRequestItem.fromMap(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .where((item) => item.channelId.isNotEmpty)
+        .map((item) {
+      final StoreSellerServiceRequestItem? previous =
+          currentRequestsByOrder[item.orderId];
+
+      if (previous == null) {
+        return item;
+      }
+
+      return item.copyWith(
+        serviceProgress: keepUsefulServiceProgress(
+          previous.serviceProgress,
+          item.serviceProgress,
+        ),
+      );
+    }).toList();
+
     setState(() {
-      serviceRequests = requestList
-          .whereType<Map>()
-          .map(
-            (item) => StoreSellerServiceRequestItem.fromMap(
-              Map<String, dynamic>.from(item),
-            ),
-          )
-          .where((item) => item.channelId.isNotEmpty)
-          .toList();
+      serviceRequests = parsedRequests;
     });
 
     loadServiceRequestProgress();
+  }
+
+  StoreSellerServiceProgressData keepUsefulServiceProgress(
+    StoreSellerServiceProgressData currentProgress,
+    StoreSellerServiceProgressData nextProgress,
+  ) {
+    final bool currentHasProgress = currentProgress.percent > 0 ||
+        currentProgress.steps.isNotEmpty ||
+        currentProgress.statusLabel.trim().toLowerCase() != 'aguardando início';
+    final bool nextHasProgress = nextProgress.percent > 0 ||
+        nextProgress.steps.isNotEmpty ||
+        nextProgress.statusLabel.trim().toLowerCase() != 'aguardando início';
+
+    if (currentHasProgress && !nextHasProgress) {
+      return currentProgress;
+    }
+
+    return nextProgress;
+  }
+
+  bool serviceRequestProgressChanged(
+    StoreSellerServiceProgressData currentProgress,
+    StoreSellerServiceProgressData nextProgress,
+  ) {
+    if (currentProgress.percent != nextProgress.percent ||
+        currentProgress.statusLabel != nextProgress.statusLabel ||
+        currentProgress.completed != nextProgress.completed ||
+        currentProgress.steps.length != nextProgress.steps.length) {
+      return true;
+    }
+
+    for (int index = 0; index < currentProgress.steps.length; index++) {
+      if (currentProgress.steps[index] != nextProgress.steps[index]) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   Future<void> loadServiceRequestProgress() async {
@@ -227,12 +333,18 @@ class _StoreSellerOrderListScreenState
           if (threadValue is Map) {
             final Map<String, dynamic> threadMap =
                 Map<String, dynamic>.from(threadValue);
+            final StoreSellerServiceProgressData nextProgress =
+                StoreSellerServiceProgressData.fromMap(
+              threadMap['service_progress'] is Map
+                  ? Map<String, dynamic>.from(threadMap['service_progress'])
+                  : <String, dynamic>{},
+            );
+
             updatedRequests.add(
               request.copyWith(
-                serviceProgress: StoreSellerServiceProgressData.fromMap(
-                  threadMap['service_progress'] is Map
-                      ? Map<String, dynamic>.from(threadMap['service_progress'])
-                      : <String, dynamic>{},
+                serviceProgress: keepUsefulServiceProgress(
+                  request.serviceProgress,
+                  nextProgress,
                 ),
               ),
             );
@@ -247,6 +359,25 @@ class _StoreSellerOrderListScreenState
     }
 
     if (!mounted) {
+      return;
+    }
+
+    bool hasChanged = serviceRequests.length != updatedRequests.length;
+
+    if (!hasChanged) {
+      for (int index = 0; index < serviceRequests.length; index++) {
+        if (serviceRequests[index].orderId != updatedRequests[index].orderId ||
+            serviceRequestProgressChanged(
+              serviceRequests[index].serviceProgress,
+              updatedRequests[index].serviceProgress,
+            )) {
+          hasChanged = true;
+          break;
+        }
+      }
+    }
+
+    if (!hasChanged) {
       return;
     }
 
@@ -436,7 +567,7 @@ class _StoreSellerOrderListScreenState
   Future<void> openServiceChat(StoreSellerOrderItem order) async {
     if (!order.canOpenServiceChat) {
       showStoreMessage(
-          'O Chat Lokally será liberado após a aprovação do pagamento.');
+          'O Chat Lokally ainda não está disponível para esta solicitação.');
       return;
     }
 
@@ -445,14 +576,14 @@ class _StoreSellerOrderListScreenState
     );
 
     if (mounted) {
-      await loadOrders();
+      await refreshOrdersAndRequests();
     }
   }
 
   Future<void> sendServiceFile(StoreSellerOrderItem order) async {
     if (!order.canOpenServiceChat) {
       showStoreMessage(
-          'O Chat Lokally será liberado após a aprovação do pagamento.');
+          'O Chat Lokally ainda não está disponível para esta solicitação.');
       return;
     }
 
@@ -464,7 +595,7 @@ class _StoreSellerOrderListScreenState
     );
 
     if (mounted) {
-      await loadOrders();
+      await refreshOrdersAndRequests();
     }
   }
 
@@ -1326,41 +1457,41 @@ class StoreSellerOrderListTopBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       color: primaryColor,
-      padding: EdgeInsets.fromLTRB(
-        14,
-        MediaQuery.of(context).padding.top + 12,
-        14,
-        14,
-      ),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: onBackTap,
-            child: Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.16),
-                borderRadius: BorderRadius.circular(14),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+          child: Row(
+            children: [
+              GestureDetector(
+                onTap: onBackTap,
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.16),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.arrow_back_rounded,
+                    color: Colors.white,
+                    size: 24,
+                  ),
+                ),
               ),
-              child: const Icon(
-                Icons.arrow_back_rounded,
-                color: Colors.white,
-                size: 24,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Pedidos da loja',
+                  style: textBold.copyWith(
+                    color: Colors.white,
+                    fontSize: 19,
+                  ),
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              'Pedidos da loja',
-              style: textBold.copyWith(
-                color: Colors.white,
-                fontSize: 19,
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -2151,7 +2282,7 @@ class StoreSellerOrderServiceBlock extends StatelessWidget {
                               order.orderStatus == 'dispute_resolved_seller' ||
                               order.isDisputeFinalized
                           ? 'Chat encerrado após a finalização do pedido pelo lojista.'
-                          : 'O Chat Lokally será liberado após a aprovação do pagamento.',
+                          : 'O Chat Lokally ainda não está disponível para esta solicitação.',
                   style: textMedium.copyWith(
                     color: chatAvailable
                         ? primaryColor
@@ -2812,6 +2943,55 @@ class StoreSellerServiceProgressData {
         completed: false),
   ];
 
+  static const List<StoreSellerServiceProgressStepData> presentialDefinitions =
+      [
+    StoreSellerServiceProgressStepData(
+        key: 'solicitacao_recebida',
+        label: 'Solicitação recebida',
+        actionGroup: 'solicitacao_recebida',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'em_conversa_orcamento',
+        label: 'Em conversa/orçamento',
+        actionGroup: 'em_conversa_orcamento',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'orcamento_enviado',
+        label: 'Orçamento enviado',
+        actionGroup: 'orcamento_enviado',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'agendamento_solicitado',
+        label: 'Agendamento solicitado',
+        actionGroup: 'agendamento_solicitado',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'agendamento_confirmado',
+        label: 'Agendamento confirmado',
+        actionGroup: 'agendamento_confirmado',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'a_caminho',
+        label: 'A caminho',
+        actionGroup: 'a_caminho',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'cheguei_ao_local',
+        label: 'Cheguei ao local',
+        actionGroup: 'cheguei_ao_local',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'servico_iniciado',
+        label: 'Serviço iniciado',
+        actionGroup: 'servico_iniciado',
+        completed: false),
+    StoreSellerServiceProgressStepData(
+        key: 'servico_finalizado',
+        label: 'Serviço finalizado',
+        actionGroup: 'servico_finalizado',
+        completed: false),
+  ];
+
   factory StoreSellerServiceProgressData.empty() {
     return const StoreSellerServiceProgressData(
       steps: <String>[],
@@ -2821,6 +3001,59 @@ class StoreSellerServiceProgressData {
       percent: 0,
       completed: false,
       statusLabel: 'Aguardando início',
+    );
+  }
+
+  StoreSellerServiceProgressData normalizedForServiceType({
+    required bool isPresential,
+  }) {
+    if (!isPresential) {
+      return this;
+    }
+
+    final Set<String> allowedKeys =
+        presentialDefinitions.map((definition) => definition.key).toSet();
+    final List<String> normalizedSteps = steps
+        .where((step) => allowedKeys.contains(step))
+        .toList(growable: false);
+    final Set<String> completedGroups = <String>{};
+
+    for (final StoreSellerServiceProgressStepData definition
+        in presentialDefinitions) {
+      if (normalizedSteps.contains(definition.key)) {
+        completedGroups.add(definition.actionGroup);
+      }
+    }
+
+    final Set<String> totalGroups = presentialDefinitions
+        .map((definition) => definition.actionGroup)
+        .toSet();
+    final int total = totalGroups.isEmpty ? 1 : totalGroups.length;
+    final int completedCount = completedGroups.length;
+    final int parsedPercent = ((completedCount / total) * 100).round();
+    final bool parsedCompleted = completedCount >= total;
+    String parsedStatusLabel = 'Aguardando início';
+
+    if (parsedCompleted) {
+      parsedStatusLabel = 'Serviço finalizado';
+    } else if (normalizedSteps.isNotEmpty) {
+      for (final StoreSellerServiceProgressStepData definition
+          in presentialDefinitions.reversed) {
+        if (normalizedSteps.contains(definition.key)) {
+          parsedStatusLabel = definition.label;
+          break;
+        }
+      }
+    }
+
+    return StoreSellerServiceProgressData(
+      steps: normalizedSteps,
+      definitions: presentialDefinitions,
+      completedActions: completedCount,
+      totalActions: total,
+      percent: parsedPercent.clamp(0, 100).toInt(),
+      completed: parsedCompleted,
+      statusLabel: parsedStatusLabel,
     );
   }
 
@@ -2936,6 +3169,8 @@ class StoreSellerServiceRequestItem {
   final String serviceTitle;
   final double servicePrice;
   final String servicePriceLabel;
+  final String serviceDeliveryType;
+  final String serviceDeliveryLabel;
   final String categoryName;
   final String customerId;
   final String customerName;
@@ -2961,6 +3196,8 @@ class StoreSellerServiceRequestItem {
     required this.serviceTitle,
     required this.servicePrice,
     required this.servicePriceLabel,
+    required this.serviceDeliveryType,
+    required this.serviceDeliveryLabel,
     required this.categoryName,
     required this.customerId,
     required this.customerName,
@@ -2986,6 +3223,13 @@ class StoreSellerServiceRequestItem {
     );
     final String priceLabel = '${map['service_price_label'] ?? ''}'.trim();
     final String orderNumber = '${map['order_number'] ?? ''}'.trim();
+    final String parsedServiceDeliveryType =
+        '${map['service_delivery_type'] ?? map['delivery_type'] ?? map['service_format'] ?? ''}'
+            .trim()
+            .toLowerCase();
+    final String parsedServiceDeliveryLabel =
+        '${map['service_delivery_label'] ?? map['delivery_type_label'] ?? map['service_format_label'] ?? ''}'
+            .trim();
 
     return StoreSellerServiceRequestItem(
       id: '${map['id'] ?? threadId}',
@@ -2999,6 +3243,8 @@ class StoreSellerServiceRequestItem {
       servicePriceLabel: priceLabel.isNotEmpty
           ? priceLabel
           : StoreSellerOrderCurrency.format(price),
+      serviceDeliveryType: parsedServiceDeliveryType,
+      serviceDeliveryLabel: parsedServiceDeliveryLabel,
       categoryName: '${map['category_name'] ?? ''}',
       customerId: '${map['customer_id'] ?? ''}',
       customerName: '${map['customer_name'] ?? 'Cliente Lokally'}',
@@ -3030,6 +3276,8 @@ class StoreSellerServiceRequestItem {
     String? serviceTitle,
     double? servicePrice,
     String? servicePriceLabel,
+    String? serviceDeliveryType,
+    String? serviceDeliveryLabel,
     String? categoryName,
     String? customerId,
     String? customerName,
@@ -3055,6 +3303,8 @@ class StoreSellerServiceRequestItem {
       serviceTitle: serviceTitle ?? this.serviceTitle,
       servicePrice: servicePrice ?? this.servicePrice,
       servicePriceLabel: servicePriceLabel ?? this.servicePriceLabel,
+      serviceDeliveryType: serviceDeliveryType ?? this.serviceDeliveryType,
+      serviceDeliveryLabel: serviceDeliveryLabel ?? this.serviceDeliveryLabel,
       categoryName: categoryName ?? this.categoryName,
       customerId: customerId ?? this.customerId,
       customerName: customerName ?? this.customerName,
@@ -3072,20 +3322,67 @@ class StoreSellerServiceRequestItem {
     );
   }
 
+  bool get isPresentialRequest {
+    final String normalizedType = serviceDeliveryType.trim().toLowerCase();
+    final String normalizedLabel = serviceDeliveryLabel.trim().toLowerCase();
+
+    return <String>{
+          'presential',
+          'presencial',
+          'client_location',
+          'provider_location',
+          'region',
+          'local',
+          'in_person',
+          'onsite',
+        }.contains(normalizedType) ||
+        normalizedLabel.contains('presencial') ||
+        normalizedLabel.contains('endereço do cliente') ||
+        normalizedLabel.contains('endereco do cliente') ||
+        normalizedLabel.contains('endereço do prestador') ||
+        normalizedLabel.contains('endereco do prestador') ||
+        normalizedLabel.contains('regional');
+  }
+
+  String get normalizedServiceDeliveryType {
+    if (serviceDeliveryType.trim().isNotEmpty) {
+      return serviceDeliveryType.trim().toLowerCase();
+    }
+
+    return isPresentialRequest ? 'presential' : 'download';
+  }
+
+  String get normalizedServiceDeliveryLabel {
+    if (serviceDeliveryLabel.trim().isNotEmpty) {
+      return serviceDeliveryLabel.trim();
+    }
+
+    return isPresentialRequest ? 'Serviço presencial' : 'Serviço digital';
+  }
+
+  String get normalizedServiceDeliveryDescription {
+    return isPresentialRequest
+        ? 'Solicitação de serviço presencial pelo Chat seguro Lokally.'
+        : 'Solicitação de serviço digital pelo Chat seguro Lokally.';
+  }
+
   StoreSellerOrderItem toServiceOrderItem() {
+    final String normalizedType = normalizedServiceDeliveryType;
+    final String normalizedLabel = normalizedServiceDeliveryLabel;
+    final String normalizedDescription = normalizedServiceDeliveryDescription;
+
     return StoreSellerOrderItem(
       id: orderId,
       orderNumber: orderNumber,
       deliveryType: 'service',
-      deliveryTypeLabel: 'Serviço digital',
+      deliveryTypeLabel: normalizedLabel,
       containsServiceItems: true,
       containsPhysicalItems: false,
       isServiceOrder: true,
       isMixedOrder: false,
-      serviceDeliveryType: 'download',
-      serviceDeliveryLabel: 'Serviço digital',
-      serviceDeliveryDescription:
-          'Solicitação de serviço pelo Chat seguro Lokally.',
+      serviceDeliveryType: normalizedType,
+      serviceDeliveryLabel: normalizedLabel,
+      serviceDeliveryDescription: normalizedDescription,
       serviceActionLabel: 'Abrir Chat Lokally',
       serviceChatAvailable: true,
       lokallyGuaranteeMessage:
@@ -3146,10 +3443,9 @@ class StoreSellerServiceRequestItem {
           total: servicePrice,
           productType: 'service',
           conditionType: '',
-          serviceDeliveryType: 'download',
-          serviceDeliveryLabel: 'Serviço digital',
-          serviceDeliveryDescription:
-              'Solicitação de serviço pelo Chat seguro Lokally.',
+          serviceDeliveryType: normalizedType,
+          serviceDeliveryLabel: normalizedLabel,
+          serviceDeliveryDescription: normalizedDescription,
           isService: true,
         ),
       ],
@@ -3348,8 +3644,40 @@ class StoreSellerOrderItem {
   bool get isDownloadService => serviceDeliveryType == 'download';
 
   bool get isPresentialService {
-    return serviceDeliveryType == 'presential' ||
-        serviceDeliveryType == 'presencial';
+    final String normalizedType = serviceDeliveryType.trim().toLowerCase();
+    final String normalizedLabel = serviceDeliveryLabel.trim().toLowerCase();
+
+    if (<String>{
+      'presential',
+      'presencial',
+      'client_location',
+      'provider_location',
+      'region',
+      'local',
+      'in_person',
+      'onsite',
+    }.contains(normalizedType)) {
+      return true;
+    }
+
+    if (normalizedLabel.contains('presencial') ||
+        normalizedLabel.contains('endereço do cliente') ||
+        normalizedLabel.contains('endereco do cliente') ||
+        normalizedLabel.contains('endereço do prestador') ||
+        normalizedLabel.contains('endereco do prestador') ||
+        normalizedLabel.contains('regional')) {
+      return true;
+    }
+
+    return items.any((item) => item.isPresentialService);
+  }
+
+  bool get isDigitalService {
+    if (!isServiceOrder) {
+      return false;
+    }
+
+    return !isPresentialService;
   }
 
   bool get isHomeOfficeService => serviceDeliveryType == 'home_office';
@@ -3359,19 +3687,24 @@ class StoreSellerOrderItem {
   }
 
   bool get canOpenServiceChat {
-    return isServiceOrder &&
-        serviceChatAvailable &&
-        isPaymentApproved &&
-        releaseStatus.isEmpty &&
-        orderStatus != 'awaiting_customer_release' &&
-        orderStatus != 'payout_authorized' &&
-        orderStatus != 'auto_payout_authorized' &&
-        orderStatus != 'dispute_opened' &&
-        orderStatus != 'dispute_resolved_customer' &&
-        orderStatus != 'dispute_resolved_seller' &&
-        !isDisputeFinalized &&
-        orderStatus != 'completed' &&
-        orderStatus != 'cancelled';
+    if (!isServiceOrder || !serviceChatAvailable) {
+      return false;
+    }
+
+    if (releaseStatus.isNotEmpty ||
+        orderStatus == 'awaiting_customer_release' ||
+        orderStatus == 'payout_authorized' ||
+        orderStatus == 'auto_payout_authorized' ||
+        orderStatus == 'dispute_opened' ||
+        orderStatus == 'dispute_resolved_customer' ||
+        orderStatus == 'dispute_resolved_seller' ||
+        isDisputeFinalized ||
+        orderStatus == 'completed' ||
+        orderStatus == 'cancelled') {
+      return false;
+    }
+
+    return true;
   }
 
   bool get isReleasePending {
@@ -3641,6 +3974,28 @@ class StoreSellerOrderProductItem {
           type == 'service',
     );
   }
+
+  bool get isPresentialService {
+    final String normalizedType = serviceDeliveryType.trim().toLowerCase();
+    final String normalizedLabel = serviceDeliveryLabel.trim().toLowerCase();
+
+    return <String>{
+          'presential',
+          'presencial',
+          'client_location',
+          'provider_location',
+          'region',
+          'local',
+          'in_person',
+          'onsite',
+        }.contains(normalizedType) ||
+        normalizedLabel.contains('presencial') ||
+        normalizedLabel.contains('endereço do cliente') ||
+        normalizedLabel.contains('endereco do cliente') ||
+        normalizedLabel.contains('endereço do prestador') ||
+        normalizedLabel.contains('endereco do prestador') ||
+        normalizedLabel.contains('regional');
+  }
 }
 
 class StoreSellerOrderDisputeScreen extends StatefulWidget {
@@ -3725,7 +4080,7 @@ class _StoreSellerOrderDisputeScreenState
         .join(', ');
   }
 
-  Future<void> loadDispute() async {
+  Future<void> loadDispute({bool keepScrollPosition = false}) async {
     if (isLoading) {
       return;
     }
@@ -3780,9 +4135,11 @@ class _StoreSellerOrderDisputeScreenState
             : <StoreSellerOrderDisputeMessage>[];
       });
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        scrollToBottom();
-      });
+      if (!keepScrollPosition) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          scrollToBottom();
+        });
+      }
     } catch (_) {
       if (mounted) {
         showDisputeMessage('Não foi possível abrir a Disputa Lokally.');
@@ -5125,7 +5482,13 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
   bool isSending = false;
   bool isUpdatingProgress = false;
   bool isSchedulingMeeting = false;
+  bool isSendingServiceTool = false;
   bool hasAskedAttachmentOnStart = false;
+  bool isChatBackgroundRefreshing = false;
+  Timer? chatRefreshTimer;
+  Timer? serviceTrackingLocationTimer;
+  bool isServiceTrackingActive = false;
+  bool isPostingServiceTrackingLocation = false;
 
   StoreServiceChatThreadData? thread;
   StoreServiceChatSafetyNotice safetyNotice =
@@ -5136,12 +5499,35 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
     return '/api/customer/store/service-chat/order/${widget.order.id}';
   }
 
+  StoreSellerServiceProgressData get effectiveServiceProgress {
+    return (thread?.serviceProgress ?? StoreSellerServiceProgressData.empty())
+        .normalizedForServiceType(
+      isPresential: isPresentialServiceContext,
+    );
+  }
+
+  StoreServiceToolCapabilityData get serviceCapabilities {
+    return thread?.serviceCapabilities ??
+        StoreServiceToolCapabilityData.fallbackFromOrder(widget.order);
+  }
+
+  bool get isPresentialServiceContext {
+    return widget.order.isPresentialService || serviceCapabilities.isPresential;
+  }
+
+  bool get canShowServiceToolsButton {
+    final StoreServiceToolCapabilityData capabilities = serviceCapabilities;
+
+    return capabilities.isPresential || capabilities.hasAnyTool;
+  }
+
   @override
   void initState() {
     super.initState();
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await loadChat();
+      startChatAutoRefresh();
 
       if (widget.openAttachmentPickerOnStart && mounted) {
         hasAskedAttachmentOnStart = true;
@@ -5152,19 +5538,125 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
 
   @override
   void dispose() {
+    chatRefreshTimer?.cancel();
+    serviceTrackingLocationTimer?.cancel();
     messageController.dispose();
     scrollController.dispose();
     super.dispose();
   }
 
-  Future<void> loadChat() async {
-    if (isLoading) {
+  void startChatAutoRefresh() {
+    chatRefreshTimer?.cancel();
+    chatRefreshTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      loadChat(silent: true, keepScrollPosition: true);
+    });
+  }
+
+  bool get shouldPauseSilentChatUpdate {
+    return isSending ||
+        isUpdatingProgress ||
+        isSchedulingMeeting ||
+        isSendingServiceTool;
+  }
+
+  bool get isScrollNearBottom {
+    if (!scrollController.hasClients) {
+      return true;
+    }
+
+    final ScrollPosition position = scrollController.position;
+    final double distanceFromBottom =
+        position.maxScrollExtent - position.pixels;
+
+    return distanceFromBottom <= 140;
+  }
+
+  String progressSignature(StoreSellerServiceProgressData? progress) {
+    if (progress == null) {
+      return '';
+    }
+
+    return [
+      progress.percent,
+      progress.completedActions,
+      progress.totalActions,
+      progress.completed,
+      progress.statusLabel,
+      progress.steps.join(','),
+      progress.definitions.map((item) => item.key).join(','),
+    ].join('|');
+  }
+
+  String threadSignature(StoreServiceChatThreadData? threadData) {
+    if (threadData == null) {
+      return '';
+    }
+
+    return [
+      threadData.id,
+      threadData.orderId,
+      threadData.safetyNoticeAccepted,
+      progressSignature(threadData.serviceProgress),
+      threadData.serviceCapabilities.signature,
+    ].join('|');
+  }
+
+  String safetyNoticeSignature(StoreServiceChatSafetyNotice notice) {
+    return [
+      notice.title,
+      notice.message,
+      notice.details.join('|'),
+    ].join('|');
+  }
+
+  String messagesSignature(List<StoreServiceChatMessageData> messageList) {
+    if (messageList.isEmpty) {
+      return '';
+    }
+
+    return messageList
+        .map(
+          (message) => [
+            message.id,
+            message.senderType,
+            message.messageType,
+            message.message,
+            message.fileUrl,
+            message.fileOriginalName,
+            message.fileSize ?? '',
+            message.meetingId,
+            message.meeting?.id ?? '',
+            message.meeting?.status ?? '',
+            message.meeting?.scheduledAt ?? '',
+            message.metaDataSignature,
+            message.createdAt,
+          ].join('§'),
+        )
+        .join('¶');
+  }
+
+  Future<void> loadChat({
+    bool silent = false,
+    bool keepScrollPosition = false,
+    bool force = false,
+  }) async {
+    if (isLoading || (silent && isChatBackgroundRefreshing)) {
       return;
     }
 
-    setState(() {
-      isLoading = true;
-    });
+    if (silent && !force && shouldPauseSilentChatUpdate) {
+      return;
+    }
+
+    final bool shouldKeepAtBottom = !keepScrollPosition || isScrollNearBottom;
+
+    if (silent) {
+      isChatBackgroundRefreshing = true;
+    } else {
+      setState(() {
+        isLoading = true;
+      });
+    }
 
     try {
       final Response response =
@@ -5179,7 +5671,9 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
       if (response.statusCode != 200 ||
           body is! Map ||
           body['status'] != true) {
-        showChatMessage('Não foi possível carregar o Chat Lokally.');
+        if (!silent) {
+          showChatMessage('Não foi possível carregar o Chat Lokally.');
+        }
         return;
       }
 
@@ -5202,31 +5696,78 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
       final List<dynamic> messageList =
           messagesValue is List ? messagesValue : <dynamic>[];
 
-      final List<StoreServiceChatMessageData> parsedMessages = messageList
-          .whereType<Map>()
-          .map((item) => StoreServiceChatMessageData.fromMap(
-                Map<String, dynamic>.from(item),
-              ))
-          .toList();
+      StoreServiceChatThreadData parsedThread =
+          StoreServiceChatThreadData.fromMap(threadMap);
 
-      setState(() {
-        thread = StoreServiceChatThreadData.fromMap(threadMap);
-        safetyNotice = StoreServiceChatSafetyNotice.fromMap(safetyMap);
-        messages = normalizeMeetingMessagesForSeller(parsedMessages);
-      });
+      if (silent &&
+          thread != null &&
+          parsedThread.serviceProgress.percent == 0 &&
+          thread!.serviceProgress.percent > 0 &&
+          parsedThread.orderId == thread!.orderId) {
+        parsedThread = StoreServiceChatThreadData(
+          id: parsedThread.id,
+          orderId: parsedThread.orderId,
+          safetyNoticeAccepted: parsedThread.safetyNoticeAccepted,
+          serviceProgress: thread!.serviceProgress,
+          serviceCapabilities: parsedThread.serviceCapabilities,
+        );
+      }
 
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        scrollToBottom();
-      });
+      final StoreServiceChatSafetyNotice parsedSafetyNotice =
+          StoreServiceChatSafetyNotice.fromMap(safetyMap);
+      final List<StoreServiceChatMessageData> parsedMessages =
+          normalizeMeetingMessagesForSeller(
+        messageList
+            .whereType<Map>()
+            .map((item) => StoreServiceChatMessageData.fromMap(
+                  Map<String, dynamic>.from(item),
+                ))
+            .toList(),
+      );
+
+      final bool threadChanged =
+          threadSignature(thread) != threadSignature(parsedThread);
+      final bool safetyChanged = safetyNoticeSignature(safetyNotice) !=
+          safetyNoticeSignature(parsedSafetyNotice);
+      final bool messagesChanged =
+          messagesSignature(messages) != messagesSignature(parsedMessages);
+
+      if (!silent || threadChanged || safetyChanged || messagesChanged) {
+        setState(() {
+          if (!silent || threadChanged) {
+            thread = parsedThread;
+          }
+
+          if (!silent || safetyChanged) {
+            safetyNotice = parsedSafetyNotice;
+          }
+
+          if (!silent || messagesChanged) {
+            messages = parsedMessages;
+          }
+        });
+      }
+
+      if (!keepScrollPosition || (messagesChanged && shouldKeepAtBottom)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            scrollToBottom();
+          }
+        });
+      }
 
       // O aviso de segurança do cliente não é exibido no painel do vendedor.
       // No painel do vendedor, o chat abre direto após pagamento aprovado.
     } catch (_) {
-      if (mounted) {
+      if (mounted && !silent) {
         showChatMessage('Não foi possível carregar o Chat Lokally.');
       }
     } finally {
-      if (mounted) {
+      if (silent) {
+        isChatBackgroundRefreshing = false;
+      }
+
+      if (mounted && !silent) {
         setState(() {
           isLoading = false;
         });
@@ -5652,7 +6193,7 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
       if ((response.statusCode == 200 || response.statusCode == 201) &&
           body is Map &&
           body['status'] == true) {
-        await loadChat();
+        await loadChat(silent: true, keepScrollPosition: false, force: true);
         return;
       }
 
@@ -5967,6 +6508,1833 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
     return result;
   }
 
+  String formatServiceToolDateForApi(DateTime value) {
+    return '${value.year}-${twoDigits(value.month)}-${twoDigits(value.day)}';
+  }
+
+  String formatServiceToolDateBrazil(DateTime value) {
+    return '${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year}';
+  }
+
+  bool get serviceToolsAreFreeForPresential {
+    return isPresentialServiceContext;
+  }
+
+  Widget serviceToolBottomSheetContainer({
+    required Widget child,
+    double maxHeightFactor = 0.86,
+  }) {
+    final MediaQueryData mediaQuery = MediaQuery.of(context);
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: mediaQuery.viewInsets.bottom),
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            width: double.infinity,
+            constraints: BoxConstraints(
+              maxHeight: mediaQuery.size.height * maxHeightFactor,
+            ),
+            padding: EdgeInsets.fromLTRB(
+              18,
+              18,
+              18,
+              mediaQuery.padding.bottom + 16,
+            ),
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(28),
+                topRight: Radius.circular(28),
+              ),
+            ),
+            child: child,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<DateTime?> pickServiceToolDateTime(DateTime initialValue) async {
+    final DateTime now = DateTime.now();
+    final DateTime initialDate = initialValue.isBefore(now)
+        ? now.add(const Duration(hours: 1))
+        : initialValue;
+
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 365)),
+    );
+
+    if (pickedDate == null || !mounted) {
+      return null;
+    }
+
+    final TimeOfDay? pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(initialDate),
+    );
+
+    if (pickedTime == null) {
+      return null;
+    }
+
+    return DateTime(
+      pickedDate.year,
+      pickedDate.month,
+      pickedDate.day,
+      pickedTime.hour,
+      pickedTime.minute,
+    );
+  }
+
+  Future<DateTime?> pickServiceToolDate(DateTime initialValue) async {
+    final DateTime now = DateTime.now();
+    final DateTime initialDate =
+        initialValue.isBefore(now) ? now : initialValue;
+
+    return showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 365)),
+    );
+  }
+
+  Future<void> showServiceToolsModal() async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    final StoreServiceToolCapabilityData capabilities = serviceCapabilities;
+    final bool freeForPresential = serviceToolsAreFreeForPresential;
+    final bool showQuote = freeForPresential || capabilities.canUseQuote;
+    final bool showSchedule = freeForPresential || capabilities.canUseSchedule;
+    final bool showRecurring =
+        freeForPresential || capabilities.canUseRecurring;
+    final bool showTracking = freeForPresential || capabilities.canUseTracking;
+    final bool showMeeting =
+        freeForPresential || capabilities.canUseLokallyMeeting;
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return serviceToolBottomSheetContainer(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 44,
+                    height: 5,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        Icons.construction_rounded,
+                        color: primaryColor,
+                        size: 23,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Ferramentas',
+                            style: textBold.copyWith(
+                              color: Colors.black87,
+                              fontSize: 18,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'Escolha uma ação para combinar os detalhes deste atendimento com o cliente.',
+                            style: textRegular.copyWith(
+                              color: Colors.grey.shade600,
+                              fontSize: 12.1,
+                              height: 1.25,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                if (!showQuote &&
+                    !showSchedule &&
+                    !showRecurring &&
+                    !showTracking &&
+                    !showMeeting)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(13),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Text(
+                      'Continue o atendimento pelo chat. Nenhuma ação adicional está disponível neste momento.',
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.3,
+                        height: 1.32,
+                      ),
+                    ),
+                  ),
+                if (showQuote)
+                  StoreServiceToolOptionTile(
+                    primaryColor: primaryColor,
+                    icon: Icons.request_quote_outlined,
+                    title: 'Enviar orçamento',
+                    description:
+                        'Informe valor, prazo, validade e observações para este cliente.',
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await showQuoteToolModal();
+                    },
+                  ),
+                if (showSchedule)
+                  StoreServiceToolOptionTile(
+                    primaryColor: primaryColor,
+                    icon: Icons.event_available_outlined,
+                    title: 'Propor agendamento',
+                    description:
+                        'Escolha data, horário, duração prevista e envie ao cliente.',
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await showScheduleToolModal();
+                    },
+                  ),
+                if (showRecurring)
+                  StoreServiceToolOptionTile(
+                    primaryColor: primaryColor,
+                    icon: Icons.repeat_rounded,
+                    title: 'Combinar recorrência',
+                    description:
+                        'Defina frequência, período e observações do atendimento recorrente.',
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await showRecurrenceToolModal();
+                    },
+                  ),
+                if (showTracking)
+                  StoreServiceToolOptionTile(
+                    primaryColor: primaryColor,
+                    icon: Icons.location_searching_rounded,
+                    title: 'Acompanhamento',
+                    description:
+                        'Avise o cliente sobre deslocamento, chegada e início do serviço.',
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await showTrackingToolModal();
+                    },
+                  ),
+                if (showMeeting)
+                  StoreServiceToolOptionTile(
+                    primaryColor: primaryColor,
+                    icon: Icons.video_call_rounded,
+                    title: 'Lokally Meeting',
+                    description:
+                        'Agende uma videochamada com data e horário definidos.',
+                    onTap: () async {
+                      Navigator.of(context).pop();
+                      await scheduleLokallyMeeting();
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<Position?> getServiceTrackingCurrentPosition({
+    bool showErrors = true,
+  }) async {
+    try {
+      final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+
+      if (!serviceEnabled) {
+        if (showErrors && mounted) {
+          showChatMessage(
+            'Ative a localização do aparelho para iniciar o acompanhamento.',
+          );
+        }
+
+        return null;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied) {
+        if (showErrors && mounted) {
+          showChatMessage(
+            'Permita o acesso à localização para acompanhar o deslocamento.',
+          );
+        }
+
+        return null;
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (showErrors && mounted) {
+          showChatMessage(
+            'A localização está bloqueada. Libere a permissão nas configurações do aparelho.',
+          );
+        }
+
+        await Geolocator.openAppSettings();
+        return null;
+      }
+
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+    } catch (_) {
+      if (showErrors && mounted) {
+        showChatMessage(
+          'Não foi possível obter sua localização atual.',
+        );
+      }
+
+      return null;
+    }
+  }
+
+  Map<String, dynamic> serviceTrackingPayloadFromPosition(Position position) {
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'latitude': position.latitude,
+      'longitude': position.longitude,
+      'accuracy': position.accuracy,
+    };
+
+    if (!position.speed.isNaN && position.speed >= 0) {
+      payload['speed'] = position.speed;
+    }
+
+    if (!position.heading.isNaN &&
+        position.heading >= 0 &&
+        position.heading <= 360) {
+      payload['heading'] = position.heading;
+    }
+
+    return payload;
+  }
+
+  void startServiceTrackingLocationTimer() {
+    serviceTrackingLocationTimer?.cancel();
+
+    serviceTrackingLocationTimer =
+        Timer.periodic(const Duration(seconds: 8), (_) {
+      sendServiceTrackingLocationSilently();
+    });
+  }
+
+  void stopServiceTrackingLocationTimer() {
+    serviceTrackingLocationTimer?.cancel();
+    serviceTrackingLocationTimer = null;
+
+    if (mounted && isServiceTrackingActive) {
+      setState(() {
+        isServiceTrackingActive = false;
+      });
+    } else {
+      isServiceTrackingActive = false;
+    }
+  }
+
+  Future<void> sendServiceTrackingLocationSilently({
+    bool force = false,
+  }) async {
+    if ((!isServiceTrackingActive && !force) ||
+        isPostingServiceTrackingLocation ||
+        (isSendingServiceTool && !force)) {
+      return;
+    }
+
+    isPostingServiceTrackingLocation = true;
+
+    try {
+      final Position? position = await getServiceTrackingCurrentPosition(
+        showErrors: false,
+      );
+
+      if (position == null) {
+        return;
+      }
+
+      await Get.find<ApiClient>().postData(
+        '$chatBaseUri/tracking/location',
+        serviceTrackingPayloadFromPosition(position),
+      );
+    } catch (_) {
+      // Atualização silenciosa: não interrompe o uso do chat.
+    } finally {
+      isPostingServiceTrackingLocation = false;
+    }
+  }
+
+  List<String> serviceProgressStepsWithTracking(String trackingStatus) {
+    final Set<String> steps = effectiveServiceProgress.steps.toSet();
+
+    if (trackingStatus == 'on_the_way') {
+      steps.add('a_caminho');
+    }
+
+    if (trackingStatus == 'arrived') {
+      steps.add('a_caminho');
+      steps.add('cheguei_ao_local');
+    }
+
+    if (trackingStatus == 'validated' || trackingStatus == 'service_started') {
+      steps.add('a_caminho');
+      steps.add('cheguei_ao_local');
+      steps.add('servico_iniciado');
+    }
+
+    return steps.toList(growable: false);
+  }
+
+  Future<void> syncServiceProgressForTracking(String trackingStatus) async {
+    if (!isPresentialServiceContext) {
+      return;
+    }
+
+    if (trackingStatus != 'on_the_way' &&
+        trackingStatus != 'arrived' &&
+        trackingStatus != 'validated' &&
+        trackingStatus != 'service_started') {
+      return;
+    }
+
+    final List<String> steps = serviceProgressStepsWithTracking(trackingStatus);
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatBaseUri/progress',
+        <String, dynamic>{'steps': steps},
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+        final dynamic serviceProgressValue = data['service_progress'];
+
+        StoreSellerServiceProgressData updatedProgress =
+            progressFromSelectedSteps(steps);
+
+        if (serviceProgressValue is Map) {
+          final StoreSellerServiceProgressData apiProgress =
+              StoreSellerServiceProgressData.fromMap(
+            Map<String, dynamic>.from(serviceProgressValue),
+          ).normalizedForServiceType(
+            isPresential: isPresentialServiceContext,
+          );
+
+          if (apiProgress.percent > 0 || updatedProgress.percent == 0) {
+            updatedProgress = apiProgress;
+          }
+        }
+
+        setState(() {
+          thread = StoreServiceChatThreadData(
+            id: thread?.id ?? '',
+            orderId: thread?.orderId ?? widget.order.id,
+            safetyNoticeAccepted: thread?.safetyNoticeAccepted ?? true,
+            serviceProgress: updatedProgress,
+            serviceCapabilities: thread?.serviceCapabilities ??
+                StoreServiceToolCapabilityData.fallbackFromOrder(widget.order),
+          );
+        });
+      }
+    } catch (_) {
+      // Não bloqueia o rastreio se a barra não sincronizar no mesmo instante.
+    }
+  }
+
+  Future<void> startServiceTrackingFromTool() async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    setState(() {
+      isSendingServiceTool = true;
+    });
+
+    try {
+      final Position? position = await getServiceTrackingCurrentPosition();
+
+      if (!mounted) {
+        return;
+      }
+
+      if (position == null) {
+        return;
+      }
+
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatBaseUri/tracking/start',
+        serviceTrackingPayloadFromPosition(position),
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        setState(() {
+          isServiceTrackingActive = true;
+        });
+
+        startServiceTrackingLocationTimer();
+        await syncServiceProgressForTracking('on_the_way');
+        await loadChat(silent: true, keepScrollPosition: false, force: true);
+
+        showChatMessage(
+          'Acompanhamento iniciado. O cliente poderá ver seu deslocamento.',
+        );
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível iniciar o acompanhamento.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível iniciar o acompanhamento.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSendingServiceTool = false;
+        });
+      }
+    }
+  }
+
+  Future<void> markServiceTrackingArrivedFromTool() async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    bool shouldOpenOtpValidation = false;
+
+    setState(() {
+      isSendingServiceTool = true;
+    });
+
+    try {
+      await sendServiceTrackingLocationSilently(force: true);
+
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatBaseUri/tracking/arrived',
+        <String, dynamic>{},
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        stopServiceTrackingLocationTimer();
+        await syncServiceProgressForTracking('arrived');
+        await loadChat(silent: true, keepScrollPosition: false, force: true);
+
+        shouldOpenOtpValidation = true;
+        showChatMessage(
+          'Chegada registrada. Peça ao cliente o código de segurança exibido no app dele.',
+        );
+      } else {
+        showChatMessage(
+          body is Map && body['message'] != null
+              ? body['message'].toString()
+              : 'Não foi possível registrar a chegada.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível registrar a chegada.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSendingServiceTool = false;
+        });
+      }
+    }
+
+    if (shouldOpenOtpValidation && mounted) {
+      await showValidateServiceTrackingOtpModal();
+    }
+  }
+
+  Future<void> showValidateServiceTrackingOtpModal() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final TextEditingController otpController = TextEditingController();
+    String errorText = '';
+
+    final String? otpCode = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return serviceToolBottomSheetContainer(
+              maxHeightFactor: 0.72,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: primaryColor.withValues(alpha: 0.10),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Icon(
+                          Icons.verified_user_outlined,
+                          color: primaryColor,
+                          size: 23,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Validar chegada',
+                              style: textBold.copyWith(
+                                color: Colors.black87,
+                                fontSize: 18,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              'Peça ao cliente o código de segurança exibido no app dele para confirmar sua chegada.',
+                              style: textRegular.copyWith(
+                                color: Colors.grey.shade700,
+                                fontSize: 12.2,
+                                height: 1.28,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  StoreServiceToolTextField(
+                    controller: otpController,
+                    label: 'Código de segurança',
+                    hint: 'Digite o código informado pelo cliente',
+                    keyboardType: TextInputType.number,
+                    inputFormatters: <TextInputFormatter>[
+                      FilteringTextInputFormatter.allow(RegExp(r'[0-9A-Za-z]')),
+                      LengthLimitingTextInputFormatter(12),
+                    ],
+                  ),
+                  if (errorText.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      errorText,
+                      style: textMedium.copyWith(
+                        color: Colors.redAccent,
+                        fontSize: 11.8,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  Material(
+                    color: primaryColor,
+                    borderRadius: BorderRadius.circular(17),
+                    child: InkWell(
+                      onTap: () {
+                        final String code = otpController.text.trim();
+
+                        if (code.length < 4) {
+                          setModalState(() {
+                            errorText =
+                                'Informe o código exibido no app do cliente.';
+                          });
+                          return;
+                        }
+
+                        Navigator.of(context).pop(code);
+                      },
+                      borderRadius: BorderRadius.circular(17),
+                      child: Container(
+                        height: 46,
+                        width: double.infinity,
+                        alignment: Alignment.center,
+                        child: Text(
+                          'Confirmar chegada',
+                          style: textBold.copyWith(
+                            color: Colors.white,
+                            fontSize: 13.2,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    otpController.dispose();
+
+    if (otpCode == null || otpCode.trim().isEmpty) {
+      showChatMessage(
+        'A chegada precisa ser confirmada para iniciar o serviço com segurança.',
+      );
+      await showValidateServiceTrackingOtpModal();
+      return;
+    }
+
+    await validateServiceTrackingOtp(otpCode.trim());
+  }
+
+  Future<void> validateServiceTrackingOtp(String otpCode) async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    setState(() {
+      isSendingServiceTool = true;
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatBaseUri/tracking/validate-otp',
+        <String, dynamic>{'otp_code': otpCode},
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        await syncServiceProgressForTracking('validated');
+        await loadChat(silent: true, keepScrollPosition: false, force: true);
+        showChatMessage('Chegada confirmada. Serviço iniciado com segurança.');
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível validar o código de segurança.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível validar o código de segurança.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSendingServiceTool = false;
+        });
+      }
+    }
+  }
+
+  Future<bool?> showServiceCompletionChoiceSheet({
+    required String title,
+    required String description,
+    required IconData icon,
+    required String yesLabel,
+    required String noLabel,
+  }) async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    return showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: false,
+      enableDrag: false,
+      builder: (_) {
+        return serviceToolBottomSheetContainer(
+          maxHeightFactor: 0.62,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: primaryColor.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Icon(icon, color: primaryColor, size: 23),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 18,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                description,
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade700,
+                  fontSize: 12.6,
+                  height: 1.34,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Material(
+                color: primaryColor,
+                borderRadius: BorderRadius.circular(17),
+                child: InkWell(
+                  onTap: () => Navigator.of(context).pop(true),
+                  borderRadius: BorderRadius.circular(17),
+                  child: Container(
+                    height: 46,
+                    width: double.infinity,
+                    alignment: Alignment.center,
+                    child: Text(
+                      yesLabel,
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 13.2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 9),
+              Material(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(17),
+                child: InkWell(
+                  onTap: () => Navigator.of(context).pop(false),
+                  borderRadius: BorderRadius.circular(17),
+                  child: Container(
+                    height: 44,
+                    width: double.infinity,
+                    alignment: Alignment.center,
+                    child: Text(
+                      noLabel,
+                      style: textBold.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<String?> showServiceCompletionMediaTypeSheet(int currentCount) async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    return showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return serviceToolBottomSheetContainer(
+          maxHeightFactor: 0.72,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Registrar conclusão',
+                style: textBold.copyWith(
+                  color: Colors.black87,
+                  fontSize: 18,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                currentCount == 0
+                    ? 'Capture uma foto ou vídeo para enviar ao cliente junto com a conclusão do serviço.'
+                    : 'Você já adicionou $currentCount mídia(s). Pode adicionar mais uma ou finalizar o envio.',
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade700,
+                  fontSize: 12.5,
+                  height: 1.32,
+                ),
+              ),
+              const SizedBox(height: 14),
+              StoreServiceToolOptionTile(
+                primaryColor: primaryColor,
+                icon: Icons.photo_camera_outlined,
+                title: 'Capturar foto',
+                description:
+                    'Abra a câmera para registrar uma imagem do serviço executado.',
+                onTap: () => Navigator.of(context).pop('photo'),
+              ),
+              StoreServiceToolOptionTile(
+                primaryColor: primaryColor,
+                icon: Icons.videocam_outlined,
+                title: 'Gravar vídeo',
+                description:
+                    'Abra a câmera para gravar um vídeo curto da conclusão.',
+                onTap: () => Navigator.of(context).pop('video'),
+              ),
+              if (currentCount > 0)
+                StoreServiceToolOptionTile(
+                  primaryColor: primaryColor,
+                  icon: Icons.check_circle_outline_rounded,
+                  title: 'Finalizar mídias',
+                  description: 'Continuar com as mídias já adicionadas.',
+                  onTap: () => Navigator.of(context).pop('done'),
+                ),
+              const SizedBox(height: 6),
+              StoreServiceToolCancelButton(
+                onTap: () => Navigator.of(context).pop('cancel'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<List<XFile>> captureServiceCompletionMedia() async {
+    final ImagePicker picker = ImagePicker();
+    final List<XFile> files = <XFile>[];
+
+    while (mounted && files.length < 8) {
+      final String? choice = await showServiceCompletionMediaTypeSheet(
+        files.length,
+      );
+
+      if (choice == null || choice == 'cancel') {
+        if (files.isEmpty) {
+          return <XFile>[];
+        }
+        break;
+      }
+
+      if (choice == 'done') {
+        break;
+      }
+
+      try {
+        XFile? capturedFile;
+
+        if (choice == 'photo') {
+          capturedFile = await picker.pickImage(
+            source: ImageSource.camera,
+            imageQuality: 82,
+          );
+        } else if (choice == 'video') {
+          capturedFile = await picker.pickVideo(
+            source: ImageSource.camera,
+            maxDuration: const Duration(minutes: 2),
+          );
+        }
+
+        if (capturedFile != null) {
+          files.add(capturedFile);
+        }
+      } catch (_) {
+        if (mounted) {
+          showChatMessage('Não foi possível abrir a câmera agora.');
+        }
+      }
+    }
+
+    return files;
+  }
+
+  Future<String?> showServiceCompletionNoteSheet() async {
+    final TextEditingController noteController = TextEditingController();
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return serviceToolBottomSheetContainer(
+          maxHeightFactor: 0.78,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: primaryColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(
+                        Icons.edit_note_rounded,
+                        color: primaryColor,
+                        size: 24,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Observações da conclusão',
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 18,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Descreva informações importantes sobre o serviço executado para o cliente acompanhar a conclusão.',
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.5,
+                    height: 1.32,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                StoreServiceToolTextField(
+                  controller: noteController,
+                  label: 'Observações',
+                  hint:
+                      'Ex.: serviço executado conforme combinado, ambiente testado e entregue ao cliente.',
+                  minLines: 4,
+                  maxLines: 7,
+                ),
+                const SizedBox(height: 14),
+                StoreServiceToolPrimaryButton(
+                  primaryColor: primaryColor,
+                  label: 'Enviar observações',
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+                const SizedBox(height: 9),
+                StoreServiceToolCancelButton(
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    final String note = noteController.text.trim();
+    noteController.dispose();
+
+    if (confirmed != true) {
+      return null;
+    }
+
+    return note;
+  }
+
+  Future<void> showSubmitServiceCompletionFlow() async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    final bool? wantsMedia = await showServiceCompletionChoiceSheet(
+      title: 'Enviar fotos ou vídeo?',
+      description:
+          'Você pode enviar imagens ou vídeo para mostrar ao cliente que o serviço foi executado.',
+      icon: Icons.photo_camera_outlined,
+      yesLabel: 'Sim, capturar mídia',
+      noLabel: 'Não enviar mídia',
+    );
+
+    if (wantsMedia == null) {
+      return;
+    }
+
+    List<XFile> mediaFiles = <XFile>[];
+    String sellerNote = '';
+
+    if (wantsMedia) {
+      mediaFiles = await captureServiceCompletionMedia();
+      if (!mounted) {
+        return;
+      }
+    } else {
+      final bool? wantsNote = await showServiceCompletionChoiceSheet(
+        title: 'Deseja adicionar observações?',
+        description:
+            'Você pode enviar uma observação final explicando o que foi realizado no atendimento.',
+        icon: Icons.edit_note_rounded,
+        yesLabel: 'Sim, escrever observações',
+        noLabel: 'Não, encerrar serviço',
+      );
+
+      if (wantsNote == null) {
+        return;
+      }
+
+      if (wantsNote) {
+        final String? note = await showServiceCompletionNoteSheet();
+        if (note == null) {
+          return;
+        }
+        sellerNote = note;
+      }
+    }
+
+    final bool? confirm = await showServiceCompletionChoiceSheet(
+      title: 'Encerrar serviço?',
+      description:
+          'Ao confirmar, o cliente receberá a conclusão do serviço e poderá aprovar o atendimento no app Lokally.',
+      icon: Icons.task_alt_rounded,
+      yesLabel: 'Encerrar serviço',
+      noLabel: 'Voltar',
+    );
+
+    if (confirm != true) {
+      return;
+    }
+
+    await submitServiceCompletion(
+      sellerNote: sellerNote,
+      mediaFiles: mediaFiles,
+    );
+  }
+
+  Future<void> submitServiceCompletion({
+    required String sellerNote,
+    required List<XFile> mediaFiles,
+  }) async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    setState(() {
+      isSendingServiceTool = true;
+    });
+
+    try {
+      Response response;
+
+      if (mediaFiles.isNotEmpty) {
+        response = await Get.find<ApiClient>().postMultipartData(
+          '$chatBaseUri/completion',
+          <String, String>{
+            'seller_note': sellerNote,
+          },
+          MultipartBody('media[]', mediaFiles.first),
+          mediaFiles
+              .skip(1)
+              .map((file) => MultipartBody('media[]', file))
+              .toList(),
+        );
+      } else {
+        response = await Get.find<ApiClient>().postData(
+          '$chatBaseUri/completion',
+          <String, dynamic>{
+            'seller_note': sellerNote,
+          },
+        );
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        await loadChat(silent: true, keepScrollPosition: false, force: true);
+        showChatMessage(
+          'Conclusão enviada ao cliente. Aguarde a confirmação pelo app Lokally.',
+        );
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível enviar a conclusão do serviço.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível enviar a conclusão do serviço.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSendingServiceTool = false;
+        });
+      }
+    }
+  }
+
+  Future<void> handleTrackingToolStatus(
+    String selectedStatus,
+    String note,
+  ) async {
+    if (selectedStatus == 'on_the_way') {
+      await startServiceTrackingFromTool();
+      return;
+    }
+
+    if (selectedStatus == 'arrived') {
+      await markServiceTrackingArrivedFromTool();
+      return;
+    }
+
+    if (selectedStatus == 'validate_otp') {
+      await showValidateServiceTrackingOtpModal();
+      return;
+    }
+
+    if (selectedStatus == 'finished') {
+      await showSubmitServiceCompletionFlow();
+      return;
+    }
+
+    await postServiceTool(
+      endpoint: 'tracking',
+      payload: <String, dynamic>{
+        'tracking_status': selectedStatus,
+        'note': note,
+      },
+      successMessage: 'Acompanhamento enviado ao cliente.',
+    );
+  }
+
+  Future<void> postServiceTool({
+    required String endpoint,
+    required Map<String, dynamic> payload,
+    required String successMessage,
+  }) async {
+    if (isSendingServiceTool || isSending || isUpdatingProgress) {
+      return;
+    }
+
+    setState(() {
+      isSendingServiceTool = true;
+    });
+
+    try {
+      final Response response = await Get.find<ApiClient>().postData(
+        '$chatBaseUri/tools/$endpoint',
+        payload,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      final dynamic body = response.body;
+
+      if ((response.statusCode == 200 || response.statusCode == 201) &&
+          body is Map &&
+          body['status'] == true) {
+        await loadChat(silent: true, keepScrollPosition: false, force: true);
+        showChatMessage(successMessage);
+        return;
+      }
+
+      showChatMessage(
+        body is Map && body['message'] != null
+            ? body['message'].toString()
+            : 'Não foi possível enviar esta ferramenta.',
+      );
+    } catch (_) {
+      if (mounted) {
+        showChatMessage('Não foi possível enviar esta ferramenta.');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          isSendingServiceTool = false;
+        });
+      }
+    }
+  }
+
+  Future<void> showQuoteToolModal() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final TextEditingController amountController = TextEditingController();
+    final TextEditingController executionController = TextEditingController(
+      text: serviceCapabilities.estimatedDuration,
+    );
+    final TextEditingController noteController = TextEditingController();
+    DateTime? validUntilDate;
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return serviceToolBottomSheetContainer(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Enviar orçamento',
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Use as informações do anúncio como base e ajuste apenas o que for específico deste atendimento.',
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.5,
+                        height: 1.32,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    StoreServiceToolTextField(
+                      controller: amountController,
+                      label: 'Valor do orçamento',
+                      hint: 'Ex.: 350,00',
+                      keyboardType:
+                          const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: <TextInputFormatter>[
+                        BrazilianMoneyInputFormatter(),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolTextField(
+                      controller: executionController,
+                      label: 'Tempo de execução',
+                      hint: 'Ex.: 2 horas, 3 dias úteis...',
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolPickerButton(
+                      primaryColor: primaryColor,
+                      icon: Icons.event_available_outlined,
+                      label: 'Validade do orçamento',
+                      value: validUntilDate == null
+                          ? 'Opcional'
+                          : formatServiceToolDateBrazil(validUntilDate!),
+                      onTap: () async {
+                        final DateTime? picked = await pickServiceToolDate(
+                          validUntilDate ??
+                              DateTime.now().add(const Duration(days: 7)),
+                        );
+                        if (picked != null) {
+                          setModalState(() {
+                            validUntilDate = picked;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolTextField(
+                      controller: noteController,
+                      label: 'Observações',
+                      hint: 'Descreva condições específicas deste cliente.',
+                      minLines: 3,
+                      maxLines: 5,
+                    ),
+                    const SizedBox(height: 14),
+                    StoreServiceToolPrimaryButton(
+                      primaryColor: primaryColor,
+                      label: 'Enviar orçamento',
+                      onTap: () => Navigator.of(context).pop(true),
+                    ),
+                    const SizedBox(height: 9),
+                    StoreServiceToolCancelButton(
+                      onTap: () => Navigator.of(context).pop(false),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final String amountText = amountController.text.trim();
+    final String executionTime = executionController.text.trim();
+    final String validUntil = validUntilDate == null
+        ? ''
+        : formatServiceToolDateForApi(validUntilDate!);
+    final String note = noteController.text.trim();
+
+    amountController.dispose();
+    executionController.dispose();
+    noteController.dispose();
+
+    if (confirmed != true) {
+      return;
+    }
+
+    final double? amount = StoreSellerOrderParser.parseNullableDouble(
+      amountText.replaceAll('.', '').replaceAll(',', '.'),
+    );
+
+    if (amount == null || amount < 0) {
+      showChatMessage('Informe um valor válido para o orçamento.');
+      return;
+    }
+
+    await postServiceTool(
+      endpoint: 'quote',
+      payload: <String, dynamic>{
+        'amount': amount,
+        'execution_time': executionTime,
+        'valid_until': validUntil,
+        'note': note,
+      },
+      successMessage: 'Orçamento enviado ao cliente.',
+    );
+  }
+
+  Future<void> showScheduleToolModal() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final TextEditingController durationController = TextEditingController(
+      text: serviceCapabilities.estimatedDuration,
+    );
+    final TextEditingController noteController = TextEditingController();
+    DateTime selectedDateTime = DateTime.now().add(const Duration(hours: 2));
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return serviceToolBottomSheetContainer(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Propor agendamento',
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Selecione uma data e horário para combinar o atendimento com o cliente.',
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.5,
+                        height: 1.32,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    StoreServiceToolPickerButton(
+                      primaryColor: primaryColor,
+                      icon: Icons.calendar_month_outlined,
+                      label: 'Data e horário',
+                      value: formatMeetingDateTime(selectedDateTime),
+                      onTap: () async {
+                        final DateTime? picked =
+                            await pickServiceToolDateTime(selectedDateTime);
+                        if (picked != null) {
+                          setModalState(() {
+                            selectedDateTime = picked;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolTextField(
+                      controller: durationController,
+                      label: 'Duração prevista',
+                      hint: 'Ex.: 1 hora, 1 diária...',
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolTextField(
+                      controller: noteController,
+                      label: 'Observações',
+                      hint: 'Instruções de chegada, preparação ou detalhes.',
+                      minLines: 3,
+                      maxLines: 5,
+                    ),
+                    const SizedBox(height: 14),
+                    StoreServiceToolPrimaryButton(
+                      primaryColor: primaryColor,
+                      label: 'Enviar agendamento',
+                      onTap: () => Navigator.of(context).pop(true),
+                    ),
+                    const SizedBox(height: 9),
+                    StoreServiceToolCancelButton(
+                      onTap: () => Navigator.of(context).pop(false),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final String duration = durationController.text.trim();
+    final String note = noteController.text.trim();
+    durationController.dispose();
+    noteController.dispose();
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await postServiceTool(
+      endpoint: 'schedule',
+      payload: <String, dynamic>{
+        'scheduled_at': formatMeetingDateTimeForApi(selectedDateTime),
+        'timezone': 'America/Sao_Paulo',
+        'duration': duration,
+        'note': note,
+      },
+      successMessage: 'Agendamento enviado ao cliente.',
+    );
+  }
+
+  Future<void> showRecurrenceToolModal() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final TextEditingController noteController = TextEditingController();
+    String selectedFrequency = 'weekly';
+    DateTime? startDate;
+    DateTime? endDate;
+
+    final bool? confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return serviceToolBottomSheetContainer(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Combinar recorrência',
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 18,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Use esta opção para propor atendimentos repetidos ao cliente.',
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade700,
+                        fontSize: 12.5,
+                        height: 1.32,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedFrequency,
+                      decoration: InputDecoration(
+                        labelText: 'Frequência',
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: Colors.grey.shade200),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(color: primaryColor),
+                        ),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                            value: 'weekly', child: Text('Semanal')),
+                        DropdownMenuItem(
+                            value: 'biweekly', child: Text('Quinzenal')),
+                        DropdownMenuItem(
+                            value: 'monthly', child: Text('Mensal')),
+                        DropdownMenuItem(
+                            value: 'custom', child: Text('Personalizada')),
+                      ],
+                      onChanged: (value) {
+                        if (value == null) {
+                          return;
+                        }
+                        setModalState(() {
+                          selectedFrequency = value;
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolPickerButton(
+                      primaryColor: primaryColor,
+                      icon: Icons.event_outlined,
+                      label: 'Data de início',
+                      value: startDate == null
+                          ? 'Opcional'
+                          : formatServiceToolDateBrazil(startDate!),
+                      onTap: () async {
+                        final DateTime? picked = await pickServiceToolDate(
+                          startDate ?? DateTime.now(),
+                        );
+                        if (picked != null) {
+                          setModalState(() {
+                            startDate = picked;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolPickerButton(
+                      primaryColor: primaryColor,
+                      icon: Icons.event_busy_outlined,
+                      label: 'Data final',
+                      value: endDate == null
+                          ? 'Opcional'
+                          : formatServiceToolDateBrazil(endDate!),
+                      onTap: () async {
+                        final DateTime? picked = await pickServiceToolDate(
+                          endDate ??
+                              DateTime.now().add(const Duration(days: 30)),
+                        );
+                        if (picked != null) {
+                          setModalState(() {
+                            endDate = picked;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    StoreServiceToolTextField(
+                      controller: noteController,
+                      label: 'Observações',
+                      hint: 'Ex.: toda segunda-feira pela manhã.',
+                      minLines: 3,
+                      maxLines: 5,
+                    ),
+                    const SizedBox(height: 14),
+                    StoreServiceToolPrimaryButton(
+                      primaryColor: primaryColor,
+                      label: 'Enviar recorrência',
+                      onTap: () => Navigator.of(context).pop(true),
+                    ),
+                    const SizedBox(height: 9),
+                    StoreServiceToolCancelButton(
+                      onTap: () => Navigator.of(context).pop(false),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    final String note = noteController.text.trim();
+    noteController.dispose();
+
+    if (confirmed != true) {
+      return;
+    }
+
+    await postServiceTool(
+      endpoint: 'recurrence',
+      payload: <String, dynamic>{
+        'frequency': selectedFrequency,
+        'start_date':
+            startDate == null ? '' : formatServiceToolDateForApi(startDate!),
+        'end_date':
+            endDate == null ? '' : formatServiceToolDateForApi(endDate!),
+        'note': note,
+      },
+      successMessage: 'Recorrência enviada ao cliente.',
+    );
+  }
+
+  Future<void> showTrackingToolModal() async {
+    final Color primaryColor = Theme.of(context).primaryColor;
+    final TextEditingController noteController = TextEditingController();
+
+    final String? selectedStatus = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) {
+        return serviceToolBottomSheetContainer(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Acompanhamento do serviço',
+                  style: textBold.copyWith(
+                    color: Colors.black87,
+                    fontSize: 18,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Envie uma atualização rápida para o cliente acompanhar o atendimento.',
+                  style: textRegular.copyWith(
+                    color: Colors.grey.shade700,
+                    fontSize: 12.4,
+                    height: 1.32,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                StoreServiceToolTextField(
+                  controller: noteController,
+                  label: 'Observação opcional',
+                  hint: 'Ex.: saindo agora para o endereço informado.',
+                  minLines: 2,
+                  maxLines: 4,
+                ),
+                const SizedBox(height: 12),
+                StoreServiceToolTrackingButton(
+                  primaryColor: primaryColor,
+                  icon: Icons.directions_run_rounded,
+                  label: 'A caminho',
+                  helper:
+                      'Inicia o acompanhamento em tempo real para o cliente.',
+                  onTap: () => Navigator.of(context).pop('on_the_way'),
+                ),
+                const SizedBox(height: 8),
+                StoreServiceToolTrackingButton(
+                  primaryColor: primaryColor,
+                  icon: Icons.location_on_outlined,
+                  label: 'Cheguei ao local',
+                  helper:
+                      'Encerra o deslocamento e libera o código de segurança no app do cliente.',
+                  onTap: () => Navigator.of(context).pop('arrived'),
+                ),
+                const SizedBox(height: 8),
+                StoreServiceToolTrackingButton(
+                  primaryColor: primaryColor,
+                  icon: Icons.verified_user_outlined,
+                  label: 'Validar código de chegada',
+                  helper:
+                      'Use quando o cliente informar o código de segurança exibido no app dele.',
+                  onTap: () => Navigator.of(context).pop('validate_otp'),
+                ),
+                const SizedBox(height: 8),
+                StoreServiceToolTrackingButton(
+                  primaryColor: primaryColor,
+                  icon: Icons.check_circle_outline_rounded,
+                  label: 'Serviço finalizado',
+                  helper:
+                      'Use somente quando o atendimento já tiver sido executado no local.',
+                  onTap: () => Navigator.of(context).pop('finished'),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    final String note = noteController.text.trim();
+    noteController.dispose();
+
+    if (selectedStatus == null || selectedStatus.isEmpty) {
+      return;
+    }
+
+    await handleTrackingToolStatus(selectedStatus, note);
+  }
+
   Future<void> scheduleLokallyMeeting() async {
     if (isSchedulingMeeting || isSending) {
       return;
@@ -6240,9 +8608,58 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
     );
   }
 
+  StoreSellerServiceProgressData progressFromSelectedSteps(
+    List<String> steps,
+  ) {
+    final StoreSellerServiceProgressData currentProgress =
+        effectiveServiceProgress;
+    final Set<String> selectedSteps = steps.toSet();
+    final Set<String> completedGroups = <String>{};
+
+    for (final StoreSellerServiceProgressStepData definition
+        in currentProgress.definitions) {
+      if (selectedSteps.contains(definition.key)) {
+        completedGroups.add(definition.actionGroup);
+      }
+    }
+
+    final Set<String> totalGroups = currentProgress.definitions
+        .map((definition) => definition.actionGroup)
+        .toSet();
+    final int total = totalGroups.isEmpty ? 1 : totalGroups.length;
+    final int completedCount = completedGroups.length;
+    final int parsedPercent = ((completedCount / total) * 100).round();
+    final bool parsedCompleted = completedCount >= total;
+    String parsedStatusLabel = 'Aguardando início';
+
+    if (parsedCompleted) {
+      parsedStatusLabel = isPresentialServiceContext
+          ? 'Serviço finalizado'
+          : 'Serviço concluído';
+    } else if (selectedSteps.isNotEmpty) {
+      for (final StoreSellerServiceProgressStepData definition
+          in currentProgress.definitions.reversed) {
+        if (selectedSteps.contains(definition.key)) {
+          parsedStatusLabel = definition.label;
+          break;
+        }
+      }
+    }
+
+    return StoreSellerServiceProgressData(
+      steps: selectedSteps.toList(growable: false),
+      definitions: currentProgress.definitions,
+      completedActions: completedCount,
+      totalActions: total,
+      percent: parsedPercent.clamp(0, 100).toInt(),
+      completed: parsedCompleted,
+      statusLabel: parsedStatusLabel,
+    );
+  }
+
   Future<void> showUpdateProgressModal() async {
     final StoreSellerServiceProgressData currentProgress =
-        thread?.serviceProgress ?? StoreSellerServiceProgressData.empty();
+        effectiveServiceProgress;
     final Set<String> selectedSteps = currentProgress.steps.toSet();
     final Color primaryColor = Theme.of(context).primaryColor;
 
@@ -6297,7 +8714,9 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
                     ),
                     const SizedBox(height: 10),
                     Text(
-                      'Marque as etapas já concluídas. Reajuste 1, 2 e 3 contam juntos como uma única etapa na barra de progresso.',
+                      isPresentialServiceContext
+                          ? 'Marque somente as etapas já combinadas ou concluídas deste atendimento presencial.'
+                          : 'Marque as etapas já concluídas. Reajuste 1, 2 e 3 contam juntos como uma única etapa na barra de progresso.',
                       style: textRegular.copyWith(
                         color: Colors.grey.shade700,
                         fontSize: 12.4,
@@ -6397,8 +8816,45 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
       if ((response.statusCode == 200 || response.statusCode == 201) &&
           body is Map &&
           body['status'] == true) {
-        await loadChat();
+        final dynamic dataValue = body['data'];
+        final Map<String, dynamic> data = dataValue is Map
+            ? Map<String, dynamic>.from(dataValue)
+            : <String, dynamic>{};
+        final dynamic serviceProgressValue = data['service_progress'];
+        final StoreSellerServiceProgressData localProgress =
+            progressFromSelectedSteps(steps);
+        StoreSellerServiceProgressData updatedProgress = localProgress;
+
+        if (serviceProgressValue is Map) {
+          final StoreSellerServiceProgressData apiProgress =
+              StoreSellerServiceProgressData.fromMap(
+            Map<String, dynamic>.from(serviceProgressValue),
+          ).normalizedForServiceType(
+            isPresential: isPresentialServiceContext,
+          );
+
+          if (apiProgress.percent > 0 || localProgress.percent == 0) {
+            updatedProgress = apiProgress;
+          }
+        }
+
+        setState(() {
+          thread = StoreServiceChatThreadData(
+            id: thread?.id ?? '',
+            orderId: thread?.orderId ?? widget.order.id,
+            safetyNoticeAccepted: thread?.safetyNoticeAccepted ?? true,
+            serviceProgress: updatedProgress,
+            serviceCapabilities: thread?.serviceCapabilities ??
+                StoreServiceToolCapabilityData.fallbackFromOrder(widget.order),
+          );
+        });
+
         showChatMessage('Status do serviço atualizado.');
+        Future<void>.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            loadChat(silent: true, keepScrollPosition: true, force: true);
+          }
+        });
         return;
       }
 
@@ -6465,18 +8921,12 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
       backgroundColor: Colors.white,
       body: Column(
         children: [
-          StoreServiceChatTopBar(
-            primaryColor: primaryColor,
-            orderNumber: widget.order.orderNumber,
-            serviceLabel: widget.order.serviceDeliveryLabel,
-            onBackTap: () => Get.back(),
-          ),
-          StoreServiceChatOrderSummary(
+          StoreServiceChatCompactProgressHeader(
             order: widget.order,
             primaryColor: primaryColor,
-            progress: thread?.serviceProgress ??
-                StoreSellerServiceProgressData.empty(),
+            progress: effectiveServiceProgress,
             isUpdatingProgress: isUpdatingProgress,
+            onBackTap: () => Get.back(),
             onUpdateProgressTap: showUpdateProgressModal,
           ),
           Expanded(
@@ -6487,23 +8937,42 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
                       strokeWidth: 2.4,
                     ),
                   )
-                : ListView.builder(
-                    controller: scrollController,
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-                    itemCount: messages.length,
-                    itemBuilder: (context, index) {
-                      final StoreServiceChatMessageData message =
-                          messages[index];
+                : Stack(
+                    children: [
+                      ListView.builder(
+                        controller: scrollController,
+                        padding: EdgeInsets.fromLTRB(
+                          14,
+                          10,
+                          14,
+                          canShowServiceToolsButton ? 86 : 14,
+                        ),
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final StoreServiceChatMessageData message =
+                              messages[index];
 
-                      return StoreServiceChatBubble(
-                        message: message,
-                        isMine: message.senderType == 'seller',
-                        primaryColor: primaryColor,
-                        onOpenMeetingApp: openLokallyMeetingApp,
-                        onGenerateMeetingLink:
-                            generateLokallyMeetingDesktopLink,
-                      );
-                    },
+                          return StoreServiceChatBubble(
+                            message: message,
+                            isMine: message.senderType == 'seller',
+                            primaryColor: primaryColor,
+                            onOpenMeetingApp: openLokallyMeetingApp,
+                            onGenerateMeetingLink:
+                                generateLokallyMeetingDesktopLink,
+                          );
+                        },
+                      ),
+                      if (canShowServiceToolsButton)
+                        Positioned(
+                          right: 14,
+                          bottom: 14,
+                          child: StoreServiceFloatingToolsButton(
+                            primaryColor: primaryColor,
+                            isLoading: isSendingServiceTool,
+                            onTap: showServiceToolsModal,
+                          ),
+                        ),
+                    ],
                   ),
           ),
           StoreServiceChatInputBar(
@@ -6516,6 +8985,616 @@ class _StoreServiceChatScreenState extends State<StoreServiceChatScreen> {
             onSendTap: sendTextMessage,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class StoreServiceFloatingToolsButton extends StatelessWidget {
+  final Color primaryColor;
+  final bool isLoading;
+  final VoidCallback onTap;
+
+  const StoreServiceFloatingToolsButton({
+    super.key,
+    required this.primaryColor,
+    required this.isLoading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: primaryColor,
+      elevation: 8,
+      shadowColor: Colors.black.withValues(alpha: 0.18),
+      borderRadius: BorderRadius.circular(999),
+      child: InkWell(
+        onTap: isLoading ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.28)),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (isLoading)
+                const SizedBox(
+                  width: 17,
+                  height: 17,
+                  child: CircularProgressIndicator(
+                    color: Colors.white,
+                    strokeWidth: 2,
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.construction_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              const SizedBox(width: 7),
+              Text(
+                'Ferramentas',
+                style: textBold.copyWith(
+                  color: Colors.white,
+                  fontSize: 12.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceToolOptionTile extends StatelessWidget {
+  final Color primaryColor;
+  final IconData icon;
+  final String title;
+  final String description;
+  final VoidCallback onTap;
+
+  const StoreServiceToolOptionTile({
+    super.key,
+    required this.primaryColor,
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: primaryColor.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: primaryColor.withValues(alpha: 0.14)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, color: primaryColor, size: 21),
+                ),
+                const SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: textBold.copyWith(
+                          color: Colors.black87,
+                          fontSize: 13.2,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        description,
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade700,
+                          fontSize: 11.4,
+                          height: 1.28,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.chevron_right_rounded,
+                    color: primaryColor, size: 22),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceToolTextField extends StatelessWidget {
+  final TextEditingController controller;
+  final String label;
+  final String hint;
+  final TextInputType? keyboardType;
+  final List<TextInputFormatter>? inputFormatters;
+  final int minLines;
+  final int maxLines;
+
+  const StoreServiceToolTextField({
+    super.key,
+    required this.controller,
+    required this.label,
+    required this.hint,
+    this.keyboardType,
+    this.inputFormatters,
+    this.minLines = 1,
+    this.maxLines = 1,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final Color primaryColor = Theme.of(context).primaryColor;
+
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      inputFormatters: inputFormatters,
+      minLines: minLines,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        hintText: hint,
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: Colors.grey.shade200),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide(color: primaryColor),
+        ),
+      ),
+    );
+  }
+}
+
+class BrazilianMoneyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final String digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+
+    if (digits.isEmpty) {
+      return const TextEditingValue(
+        text: '',
+        selection: TextSelection.collapsed(offset: 0),
+      );
+    }
+
+    final int value = int.tryParse(digits) ?? 0;
+    final int cents = value % 100;
+    final int reais = value ~/ 100;
+    final String reaisText = _formatThousands(reais);
+    final String formatted = '$reaisText,${cents.toString().padLeft(2, '0')}';
+
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
+
+  static String _formatThousands(int value) {
+    final String raw = value.toString();
+    final StringBuffer buffer = StringBuffer();
+
+    for (int i = 0; i < raw.length; i++) {
+      final int remaining = raw.length - i;
+      buffer.write(raw[i]);
+
+      if (remaining > 1 && remaining % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+
+    return buffer.toString();
+  }
+}
+
+class StoreServiceToolPrimaryButton extends StatelessWidget {
+  final Color primaryColor;
+  final String label;
+  final VoidCallback onTap;
+
+  const StoreServiceToolPrimaryButton({
+    super.key,
+    required this.primaryColor,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: primaryColor,
+      borderRadius: BorderRadius.circular(17),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(17),
+        child: Container(
+          height: 46,
+          width: double.infinity,
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: textBold.copyWith(color: Colors.white, fontSize: 13.2),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceToolCancelButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const StoreServiceToolCancelButton({super.key, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.grey.shade100,
+      borderRadius: BorderRadius.circular(17),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(17),
+        child: Container(
+          height: 44,
+          width: double.infinity,
+          alignment: Alignment.center,
+          child: Text(
+            'Cancelar',
+            style: textBold.copyWith(
+              color: Colors.grey.shade700,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceToolPickerButton extends StatelessWidget {
+  final Color primaryColor;
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  const StoreServiceToolPickerButton({
+    super.key,
+    required this.primaryColor,
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.grey.shade50,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: primaryColor, size: 20),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: textRegular.copyWith(
+                        color: Colors.grey.shade600,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 12.7,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.edit_calendar_outlined, color: primaryColor, size: 19),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceToolTrackingButton extends StatelessWidget {
+  final Color primaryColor;
+  final IconData icon;
+  final String label;
+  final String helper;
+  final VoidCallback onTap;
+
+  const StoreServiceToolTrackingButton({
+    super.key,
+    required this.primaryColor,
+    required this.icon,
+    required this.label,
+    this.helper = '',
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasHelper = helper.trim().isNotEmpty;
+
+    return Material(
+      color: primaryColor.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 46),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: primaryColor.withValues(alpha: 0.16)),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: primaryColor, size: 20),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: textBold.copyWith(
+                        color: Colors.black87,
+                        fontSize: 12.7,
+                      ),
+                    ),
+                    if (hasHelper) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        helper,
+                        style: textRegular.copyWith(
+                          color: Colors.grey.shade600,
+                          fontSize: 10.7,
+                          height: 1.25,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(Icons.send_rounded, color: primaryColor, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceChatCompactProgressHeader extends StatelessWidget {
+  final StoreSellerOrderItem order;
+  final Color primaryColor;
+  final StoreSellerServiceProgressData progress;
+  final bool isUpdatingProgress;
+  final VoidCallback onBackTap;
+  final VoidCallback onUpdateProgressTap;
+
+  const StoreServiceChatCompactProgressHeader({
+    super.key,
+    required this.order,
+    required this.primaryColor,
+    required this.progress,
+    required this.isUpdatingProgress,
+    required this.onBackTap,
+    required this.onUpdateProgressTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final String serviceName = order.items.isNotEmpty
+        ? order.items.first.productName
+        : order.orderNumber;
+    final String safeServiceName = serviceName.trim().isEmpty
+        ? 'Atendimento do serviço'
+        : serviceName.trim();
+    final int percent = progress.percent.clamp(0, 100).toInt();
+    final double factor = percent / 100;
+    final String statusLabel = progress.completed
+        ? 'Serviço concluído'
+        : progress.statusLabel.trim().isEmpty
+            ? 'Aguardando início'
+            : progress.statusLabel.trim();
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: primaryColor,
+        boxShadow: [
+          BoxShadow(
+            offset: const Offset(0, 5),
+            blurRadius: 16,
+            color: Colors.black.withValues(alpha: 0.08),
+          ),
+        ],
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  GestureDetector(
+                    onTap: onBackTap,
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.16),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back_rounded,
+                        color: Colors.white,
+                        size: 23,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      safeServiceName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 15.7,
+                        height: 1.08,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    child: InkWell(
+                      onTap: isUpdatingProgress ? null : onUpdateProgressTap,
+                      borderRadius: BorderRadius.circular(15),
+                      child: Container(
+                        height: 34,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        alignment: Alignment.center,
+                        child: isUpdatingProgress
+                            ? SizedBox(
+                                width: 15,
+                                height: 15,
+                                child: CircularProgressIndicator(
+                                  color: primaryColor,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    Icons.tune_rounded,
+                                    color: primaryColor,
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    'Status',
+                                    style: textBold.copyWith(
+                                      color: primaryColor,
+                                      fontSize: 12.2,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      statusLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textBold.copyWith(
+                        color: Colors.white,
+                        fontSize: 11.8,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    '$percent%',
+                    style: textBold.copyWith(
+                      color: Colors.white,
+                      fontSize: 11.8,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: LinearProgressIndicator(
+                  value: factor,
+                  minHeight: 6,
+                  backgroundColor: Colors.white.withValues(alpha: 0.26),
+                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -6763,6 +9842,14 @@ class StoreServiceChatBubble extends StatelessWidget {
       );
     }
 
+    if (message.isServiceToolMessage) {
+      return StoreServiceToolMessageCard(
+        message: message,
+        isMine: isMine,
+        primaryColor: primaryColor,
+      );
+    }
+
     final Color bubbleColor = isMine ? primaryColor : Colors.white;
     final Color textColor = isMine ? Colors.white : Colors.black87;
     final Color helperColor =
@@ -6811,6 +9898,99 @@ class StoreServiceChatBubble extends StatelessWidget {
               style: textRegular.copyWith(
                 color: helperColor,
                 fontSize: 10.4,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class StoreServiceToolMessageCard extends StatelessWidget {
+  final StoreServiceChatMessageData message;
+  final bool isMine;
+  final Color primaryColor;
+
+  const StoreServiceToolMessageCard({
+    super.key,
+    required this.message,
+    required this.isMine,
+    required this.primaryColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.84,
+        ),
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(13),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(20),
+            topRight: const Radius.circular(20),
+            bottomLeft: Radius.circular(isMine ? 20 : 5),
+            bottomRight: Radius.circular(isMine ? 5 : 20),
+          ),
+          border: Border.all(color: primaryColor.withValues(alpha: 0.18)),
+          boxShadow: [
+            BoxShadow(
+              offset: const Offset(0, 5),
+              blurRadius: 16,
+              color: Colors.black.withValues(alpha: 0.05),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: primaryColor.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(message.toolIcon, color: primaryColor, size: 21),
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    message.toolTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: textBold.copyWith(
+                      color: Colors.black87,
+                      fontSize: 13.8,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            if (message.message.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                message.message,
+                style: textRegular.copyWith(
+                  color: Colors.grey.shade700,
+                  fontSize: 12.1,
+                  height: 1.34,
+                ),
+              ),
+            ],
+            const SizedBox(height: 9),
+            Text(
+              '${message.senderLabel} • ${message.createdAt}',
+              style: textRegular.copyWith(
+                color: Colors.grey.shade500,
+                fontSize: 10.2,
               ),
             ),
           ],
@@ -7304,17 +10484,206 @@ class StoreServiceChatInputBar extends StatelessWidget {
   }
 }
 
+class StoreServiceToolCapabilityData {
+  final String serviceFormat;
+  final String serviceDeliveryType;
+  final String serviceDeliveryLabel;
+  final bool canUseQuote;
+  final bool canUseSchedule;
+  final bool canUseImmediateRequest;
+  final bool canUseLokallyMeeting;
+  final bool canUseTracking;
+  final bool canUseRecurring;
+  final String scheduleDays;
+  final String scheduleHours;
+  final String minimumNoticeHours;
+  final String estimatedDuration;
+  final String serviceRadiusKm;
+  final String serviceArea;
+
+  const StoreServiceToolCapabilityData({
+    required this.serviceFormat,
+    required this.serviceDeliveryType,
+    required this.serviceDeliveryLabel,
+    required this.canUseQuote,
+    required this.canUseSchedule,
+    required this.canUseImmediateRequest,
+    required this.canUseLokallyMeeting,
+    required this.canUseTracking,
+    required this.canUseRecurring,
+    required this.scheduleDays,
+    required this.scheduleHours,
+    required this.minimumNoticeHours,
+    required this.estimatedDuration,
+    required this.serviceRadiusKm,
+    required this.serviceArea,
+  });
+
+  bool get isPresential {
+    return serviceFormat == 'presential' ||
+        <String>{'client_location', 'provider_location', 'region'}
+            .contains(serviceDeliveryType);
+  }
+
+  bool get hasAnyTool {
+    return canUseQuote ||
+        canUseSchedule ||
+        canUseImmediateRequest ||
+        canUseLokallyMeeting ||
+        canUseTracking ||
+        canUseRecurring;
+  }
+
+  String get scheduleSummary {
+    final List<String> parts = <String>[];
+
+    if (scheduleDays.trim().isNotEmpty) {
+      parts.add(scheduleDays.trim());
+    }
+
+    if (scheduleHours.trim().isNotEmpty) {
+      parts.add(scheduleHours.trim());
+    }
+
+    if (minimumNoticeHours.trim().isNotEmpty) {
+      parts.add('antecedência mínima: ${minimumNoticeHours.trim()}h');
+    }
+
+    return parts.isEmpty ? 'conforme combinado no chat' : parts.join(' • ');
+  }
+
+  String get signature {
+    return [
+      serviceFormat,
+      serviceDeliveryType,
+      serviceDeliveryLabel,
+      canUseQuote,
+      canUseSchedule,
+      canUseImmediateRequest,
+      canUseLokallyMeeting,
+      canUseTracking,
+      canUseRecurring,
+      scheduleDays,
+      scheduleHours,
+      minimumNoticeHours,
+      estimatedDuration,
+      serviceRadiusKm,
+      serviceArea,
+    ].join('|');
+  }
+
+  factory StoreServiceToolCapabilityData.empty() {
+    return const StoreServiceToolCapabilityData(
+      serviceFormat: '',
+      serviceDeliveryType: '',
+      serviceDeliveryLabel: '',
+      canUseQuote: false,
+      canUseSchedule: false,
+      canUseImmediateRequest: false,
+      canUseLokallyMeeting: false,
+      canUseTracking: false,
+      canUseRecurring: false,
+      scheduleDays: '',
+      scheduleHours: '',
+      minimumNoticeHours: '',
+      estimatedDuration: '',
+      serviceRadiusKm: '',
+      serviceArea: '',
+    );
+  }
+
+  factory StoreServiceToolCapabilityData.fallbackFromOrder(
+    StoreSellerOrderItem order,
+  ) {
+    final bool presential = order.isPresentialService;
+
+    return StoreServiceToolCapabilityData(
+      serviceFormat: presential ? 'presential' : 'digital',
+      serviceDeliveryType: order.serviceDeliveryType,
+      serviceDeliveryLabel: order.serviceDeliveryLabel,
+      canUseQuote: presential,
+      canUseSchedule: presential,
+      canUseImmediateRequest: false,
+      canUseLokallyMeeting: true,
+      canUseTracking: presential,
+      canUseRecurring: presential,
+      scheduleDays: '',
+      scheduleHours: '',
+      minimumNoticeHours: '',
+      estimatedDuration: '',
+      serviceRadiusKm: '',
+      serviceArea: '',
+    );
+  }
+
+  factory StoreServiceToolCapabilityData.fromMap(Map<String, dynamic> map) {
+    if (map.isEmpty) {
+      return StoreServiceToolCapabilityData.empty();
+    }
+
+    final String parsedServiceFormat =
+        '${map['service_format'] ?? ''}'.trim().toLowerCase();
+    final String parsedServiceDeliveryType =
+        '${map['service_delivery_type'] ?? ''}'.trim().toLowerCase();
+    final bool presential = parsedServiceFormat == 'presential' ||
+        <String>{'client_location', 'provider_location', 'region'}
+            .contains(parsedServiceDeliveryType);
+
+    return StoreServiceToolCapabilityData(
+      serviceFormat: parsedServiceFormat,
+      serviceDeliveryType: parsedServiceDeliveryType,
+      serviceDeliveryLabel: '${map['service_delivery_label'] ?? ''}',
+      canUseQuote: presential
+          ? true
+          : StoreSellerOrderParser.parseBool(
+              map['can_use_quote'] ?? map['accepts_quote'],
+            ),
+      canUseSchedule: presential
+          ? true
+          : StoreSellerOrderParser.parseBool(
+              map['can_use_schedule'] ?? map['accepts_schedule'],
+            ),
+      canUseImmediateRequest: StoreSellerOrderParser.parseBool(
+        map['can_use_immediate_request'] ?? map['accepts_immediate_request'],
+      ),
+      canUseLokallyMeeting: presential
+          ? true
+          : StoreSellerOrderParser.parseBool(
+              map['can_use_lokally_meeting'] ?? map['accepts_lokally_meeting'],
+            ),
+      canUseTracking: presential
+          ? true
+          : StoreSellerOrderParser.parseBool(
+              map['can_use_tracking'] ?? map['allows_tracking'],
+            ),
+      canUseRecurring: presential
+          ? true
+          : StoreSellerOrderParser.parseBool(
+              map['can_use_recurring'] ?? map['allows_recurring'],
+            ),
+      scheduleDays: '${map['schedule_days'] ?? ''}',
+      scheduleHours: '${map['schedule_hours'] ?? ''}',
+      minimumNoticeHours: '${map['minimum_notice_hours'] ?? ''}',
+      estimatedDuration: '${map['estimated_duration'] ?? ''}',
+      serviceRadiusKm: '${map['service_radius_km'] ?? ''}',
+      serviceArea: '${map['service_area'] ?? ''}',
+    );
+  }
+}
+
 class StoreServiceChatThreadData {
   final String id;
   final String orderId;
   final bool safetyNoticeAccepted;
   final StoreSellerServiceProgressData serviceProgress;
+  final StoreServiceToolCapabilityData serviceCapabilities;
 
   StoreServiceChatThreadData({
     required this.id,
     required this.orderId,
     required this.safetyNoticeAccepted,
     required this.serviceProgress,
+    required this.serviceCapabilities,
   });
 
   factory StoreServiceChatThreadData.fromMap(Map<String, dynamic> map) {
@@ -7327,6 +10696,11 @@ class StoreServiceChatThreadData {
       serviceProgress: StoreSellerServiceProgressData.fromMap(
         map['service_progress'] is Map
             ? Map<String, dynamic>.from(map['service_progress'])
+            : <String, dynamic>{},
+      ),
+      serviceCapabilities: StoreServiceToolCapabilityData.fromMap(
+        map['service_capabilities'] is Map
+            ? Map<String, dynamic>.from(map['service_capabilities'])
             : <String, dynamic>{},
       ),
     );
@@ -7545,6 +10919,7 @@ class StoreServiceChatMessageData {
   final int? fileSize;
   final String meetingId;
   final StoreServiceChatMeetingData? meeting;
+  final Map<String, dynamic> metaData;
   final String createdAt;
 
   StoreServiceChatMessageData({
@@ -7558,6 +10933,7 @@ class StoreServiceChatMessageData {
     required this.fileSize,
     required this.meetingId,
     required this.meeting,
+    required this.metaData,
     required this.createdAt,
   });
 
@@ -7565,6 +10941,56 @@ class StoreServiceChatMessageData {
 
   bool get isLokallyMeetingMessage {
     return messageType.startsWith('lokally_meeting');
+  }
+
+  bool get isServiceToolMessage {
+    return messageType.startsWith('service_tool_');
+  }
+
+  String get metaDataSignature {
+    if (metaData.isEmpty) {
+      return '';
+    }
+
+    return metaData.entries
+        .map((entry) => '${entry.key}:${entry.value}')
+        .join('|');
+  }
+
+  String get toolTitle {
+    final String title = '${metaData['title'] ?? ''}'.trim();
+
+    if (title.isNotEmpty) {
+      return title;
+    }
+
+    switch (messageType) {
+      case 'service_tool_quote':
+        return 'Orçamento enviado';
+      case 'service_tool_schedule':
+        return 'Agendamento proposto';
+      case 'service_tool_recurrence':
+        return 'Recorrência proposta';
+      case 'service_tool_tracking':
+        return 'Acompanhamento atualizado';
+      default:
+        return 'Atualização do serviço';
+    }
+  }
+
+  IconData get toolIcon {
+    switch (messageType) {
+      case 'service_tool_quote':
+        return Icons.request_quote_outlined;
+      case 'service_tool_schedule':
+        return Icons.event_available_outlined;
+      case 'service_tool_recurrence':
+        return Icons.repeat_rounded;
+      case 'service_tool_tracking':
+        return Icons.location_searching_rounded;
+      default:
+        return Icons.construction_rounded;
+    }
   }
 
   String get meetingDedupKey {
@@ -7613,6 +11039,9 @@ class StoreServiceChatMessageData {
       fileSize: int.tryParse('${map['file_size'] ?? ''}'),
       meetingId: '${map['meeting_id'] ?? ''}',
       meeting: StoreServiceChatMeetingData.fromDynamic(map['meeting']),
+      metaData: map['meta_data'] is Map
+          ? Map<String, dynamic>.from(map['meta_data'])
+          : <String, dynamic>{},
       createdAt: '${map['created_at'] ?? ''}',
     );
   }
@@ -7692,6 +11121,24 @@ class StoreServiceChatMeetingData {
 }
 
 class StoreSellerOrderParser {
+  static double? parseNullableDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    final String text = '$value'.trim();
+
+    if (text.isEmpty) {
+      return null;
+    }
+
+    return double.tryParse(text);
+  }
+
   static double parseDouble(dynamic value) {
     if (value == null) {
       return 0;

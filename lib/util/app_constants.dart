@@ -134,6 +134,7 @@ class AppConstants {
   static const String storeLastLocationAPI = '/api/user/store-live-location';
   static const String undoSafetyAlert = '/api/customer/safety-alert/undo/';
   static const String readNotification = '/api/user/read-notification';
+  static const String deleteNotification = '/api/user/delete-notification';
   static const String updateScheduleTrip =
       '/api/customer/ride/edit-scheduled-trip/';
   static const String getRunningRideList =
@@ -204,7 +205,7 @@ class AppConstants {
   static List<LanguageModel> languages = [
     LanguageModel(
         imageUrl: Images.brasil,
-        languageName: 'Português Brasil',
+        languageName: 'PortuguÃªs Brasil',
         countryCode: 'BR',
         languageCode: 'pt'),
     LanguageModel(
@@ -214,7 +215,7 @@ class AppConstants {
         languageCode: 'en'),
     LanguageModel(
         imageUrl: Images.spain,
-        languageName: 'Español',
+        languageName: 'EspaÃ±ol',
         countryCode: 'ES',
         languageCode: 'es'),
   ];

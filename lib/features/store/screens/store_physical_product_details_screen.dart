@@ -483,70 +483,38 @@ class _StorePhysicalProductDetailsScreenState
       backgroundColor: const Color(0xFFF4F6F6),
       body: Stack(
         children: [
-          Column(
-            children: [
-              StoreMarketplaceModeSelectorHeader(
-                primaryColor: primaryColor,
-                onShoppingTap: () {},
-                onTravelTap: () {},
-                onDeliveryTap: () {},
-              ),
-              SizedBox(
-                height: 102,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    PhysicalProductHeaderGradient(
-                      primaryColor: primaryColor,
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        Dimensions.paddingSizeDefault,
-                        4,
-                        Dimensions.paddingSizeDefault,
-                        10,
-                      ),
-                      child: PhysicalProductMainCategoryMenu(
-                        categories: marketplaceHeaderCategories,
-                        selectedIndex: selectedMainCategoryIndex,
-                        primaryColor: primaryColor,
-                        onSelected: handleMainCategorySelected,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              PhysicalProductBackBar(
-                primaryColor: primaryColor,
-                onBackTap: () => Get.back(),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  color: primaryColor,
-                  onRefresh: loadProductDetails,
-                  child: SingleChildScrollView(
-                    controller: scrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
+          RefreshIndicator(
+            color: primaryColor,
+            onRefresh: loadProductDetails,
+            child: SingleChildScrollView(
+              controller: scrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 158),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  PhysicalProductImageGallery(
+                    product: currentProduct,
+                    primaryColor: primaryColor,
+                    selectedIndex: selectedImageIndex,
+                    fullTop: true,
+                    onBackTap: () => Get.back(),
+                    onImageChanged: (index) {
+                      setState(() {
+                        selectedImageIndex = index;
+                      });
+                    },
+                  ),
+                  Padding(
                     padding: const EdgeInsets.fromLTRB(
                       Dimensions.paddingSizeDefault,
-                      12,
+                      16,
                       Dimensions.paddingSizeDefault,
-                      158,
+                      0,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        PhysicalProductImageGallery(
-                          product: currentProduct,
-                          primaryColor: primaryColor,
-                          selectedIndex: selectedImageIndex,
-                          onImageChanged: (index) {
-                            setState(() {
-                              selectedImageIndex = index;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 16),
                         PhysicalProductInfoSection(
                           product: currentProduct,
                           primaryColor: primaryColor,
@@ -595,9 +563,9 @@ class _StorePhysicalProductDetailsScreenState
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
           Positioned(
             left: 0,
@@ -880,6 +848,8 @@ class PhysicalProductImageGallery extends StatefulWidget {
   final Color primaryColor;
   final int selectedIndex;
   final ValueChanged<int> onImageChanged;
+  final bool fullTop;
+  final VoidCallback? onBackTap;
 
   const PhysicalProductImageGallery({
     super.key,
@@ -887,6 +857,8 @@ class PhysicalProductImageGallery extends StatefulWidget {
     required this.primaryColor,
     required this.selectedIndex,
     required this.onImageChanged,
+    this.fullTop = false,
+    this.onBackTap,
   });
 
   @override
@@ -946,12 +918,166 @@ class _PhysicalProductImageGalleryState
     widget.onImageChanged(safeIndex);
   }
 
+  Widget buildIndicators(List<String> images) {
+    if (images.length <= 1) {
+      return const SizedBox.shrink();
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(images.length, (index) {
+        final bool active = index == widget.selectedIndex;
+
+        return GestureDetector(
+          onTap: () => goToImage(index, images.length),
+          child: Container(
+            width: active ? 20 : 7,
+            height: 7,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              color: active
+                  ? widget.primaryColor
+                  : Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget buildBackButton(BuildContext context) {
+    final VoidCallback? onBackTap = widget.onBackTap;
+
+    if (onBackTap == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      left: 16,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onBackTap,
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.16),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.arrow_back_rounded,
+            color: Colors.black87,
+            size: 25,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildImagePage(String imageUrl, BoxFit fit) {
+    return Container(
+      color: Colors.white,
+      alignment: Alignment.center,
+      child: imageUrl.isEmpty
+          ? Icon(
+              Icons.image_outlined,
+              color: widget.primaryColor,
+              size: 42,
+            )
+          : Image.network(
+              imageUrl,
+              fit: fit,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (_, __, ___) {
+                return Icon(
+                  Icons.broken_image_outlined,
+                  color: widget.primaryColor,
+                  size: 42,
+                );
+              },
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<String> images = widget.product.galleryImages.isEmpty
         ? <String>[widget.product.mainImageUrl]
         : widget.product.galleryImages;
     final bool hasMultipleImages = images.length > 1;
+
+    if (widget.fullTop) {
+      final double topHeight = (MediaQuery.of(context).size.width * 0.82) +
+          MediaQuery.of(context).padding.top;
+
+      return SizedBox(
+        height: topHeight,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            PageView.builder(
+              controller: pageController,
+              itemCount: images.length,
+              onPageChanged: widget.onImageChanged,
+              itemBuilder: (context, index) {
+                return buildImagePage(images[index], BoxFit.cover);
+              },
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.18),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.10),
+                  ],
+                  stops: const [0.0, 0.36, 1.0],
+                ),
+              ),
+            ),
+            if (hasMultipleImages) ...[
+              PhysicalGalleryArrowButton(
+                alignment: Alignment.centerLeft,
+                icon: Icons.chevron_left_rounded,
+                onTap: () => goToImage(widget.selectedIndex - 1, images.length),
+              ),
+              PhysicalGalleryArrowButton(
+                alignment: Alignment.centerRight,
+                icon: Icons.chevron_right_rounded,
+                onTap: () => goToImage(widget.selectedIndex + 1, images.length),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 17,
+                child: buildIndicators(images),
+              ),
+            ],
+            buildBackButton(context),
+          ],
+        ),
+      );
+    }
 
     return Column(
       children: [
@@ -967,31 +1093,7 @@ class _PhysicalProductImageGalleryState
                   itemCount: images.length,
                   onPageChanged: widget.onImageChanged,
                   itemBuilder: (context, index) {
-                    final String imageUrl = images[index];
-
-                    return Container(
-                      color: Colors.white,
-                      alignment: Alignment.center,
-                      child: imageUrl.isEmpty
-                          ? Icon(
-                              Icons.image_outlined,
-                              color: widget.primaryColor,
-                              size: 42,
-                            )
-                          : Image.network(
-                              imageUrl,
-                              fit: BoxFit.contain,
-                              width: double.infinity,
-                              height: double.infinity,
-                              errorBuilder: (_, __, ___) {
-                                return Icon(
-                                  Icons.broken_image_outlined,
-                                  color: widget.primaryColor,
-                                  size: 42,
-                                );
-                              },
-                            ),
-                    );
+                    return buildImagePage(images[index], BoxFit.contain);
                   },
                 ),
                 if (hasMultipleImages) ...[
@@ -1014,25 +1116,7 @@ class _PhysicalProductImageGalleryState
         ),
         if (hasMultipleImages) ...[
           const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(images.length, (index) {
-              final bool active = index == widget.selectedIndex;
-
-              return GestureDetector(
-                onTap: () => goToImage(index, images.length),
-                child: Container(
-                  width: active ? 20 : 7,
-                  height: 7,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: active ? widget.primaryColor : Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              );
-            }),
-          ),
+          buildIndicators(images),
         ],
       ],
     );

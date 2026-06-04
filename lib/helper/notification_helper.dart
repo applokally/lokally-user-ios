@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -15,6 +16,7 @@ import 'package:ride_sharing_user_app/features/message/screens/message_screen.da
 import 'package:ride_sharing_user_app/features/my_level/controller/level_controller.dart';
 import 'package:ride_sharing_user_app/features/my_level/widget/level_complete_dialog_widget.dart';
 import 'package:ride_sharing_user_app/features/my_offer/screens/my_offer_screen.dart';
+import 'package:ride_sharing_user_app/features/notification/screens/notification_screen.dart';
 import 'package:ride_sharing_user_app/features/parcel/controllers/parcel_controller.dart';
 import 'package:ride_sharing_user_app/features/parcel/widgets/driver_request_dialog.dart';
 import 'package:ride_sharing_user_app/features/payment/screens/payment_screen.dart';
@@ -602,12 +604,142 @@ class NotificationHelper {
     return filePath;
   }
 
+  static Map<String, dynamic> _decodeNotificationMap(dynamic value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+
+    if (value is String && value.trim().isNotEmpty) {
+      try {
+        final dynamic decoded = jsonDecode(value);
+        if (decoded is Map) {
+          return Map<String, dynamic>.from(decoded);
+        }
+      } catch (_) {
+        return <String, dynamic>{};
+      }
+    }
+
+    return <String, dynamic>{};
+  }
+
+  static String _notificationStringValue(dynamic value) {
+    if (value == null) {
+      return '';
+    }
+
+    final String text = value.toString().trim();
+    if (text == 'null') {
+      return '';
+    }
+
+    return text;
+  }
+
+  static String _firstNotificationValue(
+    Map<String, dynamic> data,
+    List<String> keys,
+  ) {
+    final Map<String, dynamic> targetParams =
+        _decodeNotificationMap(data['target_params']);
+    final Map<String, dynamic> payload =
+        _decodeNotificationMap(data['payload']);
+
+    for (final String key in keys) {
+      final String directValue = _notificationStringValue(data[key]);
+      if (directValue.isNotEmpty) {
+        return directValue;
+      }
+
+      final String targetParamValue = _notificationStringValue(
+        targetParams[key],
+      );
+      if (targetParamValue.isNotEmpty) {
+        return targetParamValue;
+      }
+
+      final String payloadValue = _notificationStringValue(payload[key]);
+      if (payloadValue.isNotEmpty) {
+        return payloadValue;
+      }
+    }
+
+    return '';
+  }
+
+  static bool _isAdminNotification(Map<String, dynamic> data) {
+    final String action = _notificationStringValue(data['action']);
+    final String type = _notificationStringValue(data['type']);
+    final String notificationType =
+        _notificationStringValue(data['notification_type']);
+
+    return action == 'open_admin_notification' ||
+        type == 'admin_notification' ||
+        type == 'send_notification' ||
+        notificationType == 'admin_notification';
+  }
+
+  static bool _isStoreServiceChatNotification(Map<String, dynamic> data) {
+    final String targetRoute = _firstNotificationValue(
+      data,
+      ['target_route'],
+    );
+    final String action = _notificationStringValue(data['action']);
+    final String type = _notificationStringValue(data['type']);
+    final String notificationType =
+        _notificationStringValue(data['notification_type']);
+
+    if (targetRoute == 'store_service_chat') {
+      return true;
+    }
+
+    if (action == 'open_store_service_chat') {
+      return true;
+    }
+
+    if (type == 'store_service_tool' || type == 'store_service_meeting') {
+      return true;
+    }
+
+    return notificationType == 'lokally_meeting' &&
+        _firstNotificationValue(data, [
+          'store_order_id',
+          'store_service_order_id',
+          'order_id',
+          'ride_request_id',
+        ]).isNotEmpty;
+  }
+
+  static void _openStoreServiceChatFromNotification(
+    Map<String, dynamic> data,
+    bool formSplash,
+  ) {
+    final String orderId = _firstNotificationValue(data, [
+      'store_order_id',
+      'store_service_order_id',
+      'order_id',
+      'ride_request_id',
+      'related_id',
+    ]);
+
+    _toRoute(
+      formSplash,
+      StoreCustomerOrderListScreen(
+        initialOrderId: orderId.isEmpty ? null : orderId,
+      ),
+    );
+  }
+
   static void notificationRouteCheck(
     Map<String, dynamic> data, {
     bool formSplash = false,
     String? userName,
   }) {
-    if (data['action'] == 'store_order_ready_for_pickup' ||
+    if (_isStoreServiceChatNotification(data)) {
+      _openStoreServiceChatFromNotification(data, formSplash);
+    } else if (_isAdminNotification(data)) {
+      _toRoute(formSplash, const NotificationScreen());
+    } else if (data['action'] == 'store_order_ready_for_pickup' ||
         data['notification_type'] == 'store_order' ||
         data['type'] == 'store_order') {
       final String orderId =

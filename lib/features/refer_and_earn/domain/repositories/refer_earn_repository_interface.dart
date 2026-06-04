@@ -1,6 +1,5 @@
-
-
 abstract class ReferEarnRepositoryInterface {
-  Future<dynamic> getEarningHistoryList (int offset);
+  Future<dynamic> getEarningHistoryList(int offset);
   Future<dynamic> getReferralDetails();
+  Future<dynamic> getPointsClubReferrals(int offset);
 }

@@ -8,6 +8,10 @@ import 'package:ride_sharing_user_app/data/api_client.dart';
 import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 
+class StoreSellerVehicleVisualTheme {
+  static const Color primaryColor = Color(0xFF111111);
+}
+
 class StoreSellerVehicleFormScreen extends StatefulWidget {
   final Map<String, dynamic>? initialVehicle;
 
@@ -673,7 +677,8 @@ class _StoreSellerVehicleFormScreenState
                             trailing: selected
                                 ? Icon(
                                     Icons.check_circle_rounded,
-                                    color: Theme.of(context).primaryColor,
+                                    color: StoreSellerVehicleVisualTheme
+                                        .primaryColor,
                                     size: 22,
                                   )
                                 : null,
@@ -907,7 +912,8 @@ class _StoreSellerVehicleFormScreenState
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 10),
                         child: StoreSellerVehiclePlanOption(
-                          primaryColor: Theme.of(context).primaryColor,
+                          primaryColor:
+                              StoreSellerVehicleVisualTheme.primaryColor,
                           selected: selectedPlan == plan.slug,
                           title: plan.name,
                           price: plan.formattedPrice,
@@ -1096,7 +1102,7 @@ class _StoreSellerVehicleFormScreenState
   }
 
   void showStoreMessage(String message) {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = StoreSellerVehicleVisualTheme.primaryColor;
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1122,7 +1128,7 @@ class _StoreSellerVehicleFormScreenState
 
   @override
   Widget build(BuildContext context) {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = StoreSellerVehicleVisualTheme.primaryColor;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1988,7 +1994,8 @@ class StoreSellerVehicleSection extends StatelessWidget {
             width: 42,
             height: 3,
             decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withValues(alpha: 0.22),
+              color: StoreSellerVehicleVisualTheme.primaryColor
+                  .withValues(alpha: 0.22),
               borderRadius: BorderRadius.circular(999),
             ),
           ),
@@ -2082,7 +2089,7 @@ class StoreSellerVehicleTextInput extends StatelessWidget {
             focusedBorder: OutlineInputBorder(
               borderRadius: borderRadius,
               borderSide: BorderSide(
-                color: Theme.of(context).primaryColor,
+                color: StoreSellerVehicleVisualTheme.primaryColor,
                 width: 1.4,
               ),
             ),

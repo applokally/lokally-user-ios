@@ -11,6 +11,30 @@ import 'package:ride_sharing_user_app/util/dimensions.dart';
 import 'package:ride_sharing_user_app/util/styles.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+const Color storeMarketplaceVehicleDetailsAccentColor = Color(0xFF111111);
+const Color storeMarketplaceRealEstateDetailsAccentColor = Color(0xFF1565C0);
+
+Color storeMarketplaceAccentColorForDetailsProduct(
+  StoreProductDetailsData product,
+  Color fallbackColor,
+) {
+  if (product.isVehicleAd) {
+    return storeMarketplaceVehicleDetailsAccentColor;
+  }
+
+  if (product.isRealEstateAd) {
+    return storeMarketplaceRealEstateDetailsAccentColor;
+  }
+
+  return fallbackColor;
+}
+
+Color storeDetailsReadableTextColorOn(Color backgroundColor) {
+  return backgroundColor.computeLuminance() > 0.50
+      ? Colors.black87
+      : Colors.white;
+}
+
 class StoreProductDetailsScreen extends StatefulWidget {
   final Map<String, dynamic> initialProduct;
 
@@ -277,7 +301,14 @@ class _StoreProductDetailsScreenState extends State<StoreProductDetailsScreen> {
   }
 
   void showStoreMessage(String message) {
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final StoreProductDetailsData? currentProduct = product;
+    final Color themePrimaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = currentProduct == null
+        ? themePrimaryColor
+        : storeMarketplaceAccentColorForDetailsProduct(
+            currentProduct,
+            themePrimaryColor,
+          );
 
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -544,7 +575,13 @@ class _StoreProductDetailsScreenState extends State<StoreProductDetailsScreen> {
   @override
   Widget build(BuildContext context) {
     final StoreProductDetailsData? currentProduct = product;
-    final Color primaryColor = Theme.of(context).primaryColor;
+    final Color themePrimaryColor = Theme.of(context).primaryColor;
+    final Color primaryColor = currentProduct == null
+        ? themePrimaryColor
+        : storeMarketplaceAccentColorForDetailsProduct(
+            currentProduct,
+            themePrimaryColor,
+          );
 
     if (currentProduct == null) {
       return Scaffold(
@@ -574,64 +611,38 @@ class _StoreProductDetailsScreenState extends State<StoreProductDetailsScreen> {
       backgroundColor: const Color(0xFFF4F6F6),
       body: Stack(
         children: [
-          Column(
-            children: [
-              StoreMarketplaceHeader(
-                primaryColor: primaryColor,
-                onSearchChanged: (value) {
-                  setState(() {
-                    searchQuery = value;
-                  });
-                },
-                onCartTap: openCartScreen,
-              ),
-              StoreProductMarketplaceNavigation(
-                categories: mainCategories,
-                selectedIndex: selectedMainCategoryIndex,
-                subcategories: activeSubcategories,
-                selectedSubcategoryId: selectedSubcategoryId,
-                primaryColor: primaryColor,
-                onMainCategorySelected: handleMainCategorySelected,
-                onSubcategorySelected: handleSubcategorySelected,
-                onBackTap: () => Get.back(),
-              ),
-              Expanded(
-                child: RefreshIndicator(
-                  color: primaryColor,
-                  onRefresh: loadProductDetails,
-                  child: SingleChildScrollView(
-                    controller: productScrollController,
-                    physics: const AlwaysScrollableScrollPhysics(),
+          RefreshIndicator(
+            color: primaryColor,
+            onRefresh: loadProductDetails,
+            child: SingleChildScrollView(
+              controller: productScrollController,
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.only(bottom: 158),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  StoreProductHeroGallery(
+                    product: currentProduct,
+                    primaryColor: primaryColor,
+                    selectedIndex: selectedImageIndex,
+                    fullTop: true,
+                    onBackTap: () => Get.back(),
+                    onImageChanged: (index) {
+                      setState(() {
+                        selectedImageIndex = index;
+                      });
+                    },
+                  ),
+                  Padding(
                     padding: const EdgeInsets.fromLTRB(
                       Dimensions.paddingSizeDefault,
-                      12,
+                      16,
                       Dimensions.paddingSizeDefault,
-                      158,
+                      0,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (shouldShowMarketplaceResults) ...[
-                          StoreProductHeaderResultsList(
-                            products: searchQuery.trim().isNotEmpty
-                                ? searchResults
-                                : visibleMarketplaceProducts,
-                            primaryColor: primaryColor,
-                            onProductTap: openRelatedProduct,
-                          ),
-                          const StoreProductSectionDivider(),
-                        ],
-                        StoreProductHeroGallery(
-                          product: currentProduct,
-                          primaryColor: primaryColor,
-                          selectedIndex: selectedImageIndex,
-                          onImageChanged: (index) {
-                            setState(() {
-                              selectedImageIndex = index;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 14),
                         StoreProductInfoBlock(
                           product: currentProduct,
                           primaryColor: primaryColor,
@@ -686,9 +697,9 @@ class _StoreProductDetailsScreenState extends State<StoreProductDetailsScreen> {
                       ],
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
           Positioned(
             left: 0,
@@ -1139,6 +1150,8 @@ class StoreProductHeroGallery extends StatefulWidget {
   final Color primaryColor;
   final int selectedIndex;
   final ValueChanged<int> onImageChanged;
+  final bool fullTop;
+  final VoidCallback? onBackTap;
 
   const StoreProductHeroGallery({
     super.key,
@@ -1146,6 +1159,8 @@ class StoreProductHeroGallery extends StatefulWidget {
     required this.primaryColor,
     required this.selectedIndex,
     required this.onImageChanged,
+    this.fullTop = false,
+    this.onBackTap,
   });
 
   @override
@@ -1204,6 +1219,104 @@ class _StoreProductHeroGalleryState extends State<StoreProductHeroGallery> {
     widget.onImageChanged(safeIndex);
   }
 
+  Widget buildGalleryIndicators(List<String> images) {
+    if (images.length <= 1) {
+      return const SizedBox.shrink();
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(images.length, (index) {
+        final bool active = index == widget.selectedIndex;
+
+        return GestureDetector(
+          onTap: () => goToImage(index, images.length),
+          child: Container(
+            width: active ? 20 : 7,
+            height: 7,
+            margin: const EdgeInsets.symmetric(horizontal: 3),
+            decoration: BoxDecoration(
+              color: active
+                  ? widget.primaryColor
+                  : Colors.white.withValues(alpha: 0.72),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.14),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  Widget buildBackButton(BuildContext context) {
+    final VoidCallback? onBackTap = widget.onBackTap;
+
+    if (onBackTap == null) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 12,
+      left: 16,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onBackTap,
+        child: Container(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.16),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.arrow_back_rounded,
+            color: Colors.black87,
+            size: 25,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildImagePage(String imageUrl, BoxFit fit) {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      child: imageUrl.isEmpty
+          ? Icon(
+              Icons.image_outlined,
+              color: widget.primaryColor,
+              size: 42,
+            )
+          : Image.network(
+              imageUrl,
+              fit: fit,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (_, __, ___) {
+                return Icon(
+                  Icons.broken_image_outlined,
+                  color: widget.primaryColor,
+                  size: 42,
+                );
+              },
+            ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final List<String> images = widget.product.galleryImages.isEmpty
@@ -1211,6 +1324,63 @@ class _StoreProductHeroGalleryState extends State<StoreProductHeroGallery> {
         : widget.product.galleryImages;
 
     final bool hasMultipleImages = images.length > 1;
+
+    if (widget.fullTop) {
+      final double topHeight = (MediaQuery.of(context).size.width * 0.82) +
+          MediaQuery.of(context).padding.top;
+
+      return SizedBox(
+        height: topHeight,
+        width: double.infinity,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            PageView.builder(
+              controller: pageController,
+              itemCount: images.length,
+              onPageChanged: widget.onImageChanged,
+              itemBuilder: (context, index) {
+                return buildImagePage(images[index], BoxFit.cover);
+              },
+            ),
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.18),
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: 0.10),
+                  ],
+                  stops: const [0.0, 0.36, 1.0],
+                ),
+              ),
+            ),
+            if (hasMultipleImages) ...[
+              StoreGalleryArrowButton(
+                alignment: Alignment.centerLeft,
+                icon: Icons.chevron_left_rounded,
+                onTap: () => goToImage(widget.selectedIndex - 1, images.length),
+              ),
+              StoreGalleryArrowButton(
+                alignment: Alignment.centerRight,
+                icon: Icons.chevron_right_rounded,
+                onTap: () => goToImage(widget.selectedIndex + 1, images.length),
+              ),
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 17,
+                child: buildGalleryIndicators(images),
+              ),
+            ],
+            buildBackButton(context),
+          ],
+        ),
+      );
+    }
+
     final BorderRadius imageRadius = BorderRadius.circular(
       widget.product.isRealEstateAd ? 14 : 22,
     );
@@ -1233,30 +1403,11 @@ class _StoreProductHeroGalleryState extends State<StoreProductHeroGallery> {
                   itemCount: images.length,
                   onPageChanged: widget.onImageChanged,
                   itemBuilder: (context, index) {
-                    final String imageUrl = images[index];
-
-                    return Container(
-                      width: double.infinity,
-                      color: Colors.white,
-                      child: imageUrl.isEmpty
-                          ? Icon(
-                              Icons.image_outlined,
-                              color: widget.primaryColor,
-                              size: 42,
-                            )
-                          : Image.network(
-                              imageUrl,
-                              fit: widget.product.isClassifiedAd
-                                  ? BoxFit.cover
-                                  : BoxFit.contain,
-                              errorBuilder: (_, __, ___) {
-                                return Icon(
-                                  Icons.broken_image_outlined,
-                                  color: widget.primaryColor,
-                                  size: 42,
-                                );
-                              },
-                            ),
+                    return buildImagePage(
+                      images[index],
+                      widget.product.isClassifiedAd
+                          ? BoxFit.cover
+                          : BoxFit.contain,
                     );
                   },
                 ),
@@ -1280,25 +1431,7 @@ class _StoreProductHeroGalleryState extends State<StoreProductHeroGallery> {
         ),
         if (hasMultipleImages) ...[
           const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(images.length, (index) {
-              final bool active = index == widget.selectedIndex;
-
-              return GestureDetector(
-                onTap: () => goToImage(index, images.length),
-                child: Container(
-                  width: active ? 20 : 7,
-                  height: 7,
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  decoration: BoxDecoration(
-                    color: active ? widget.primaryColor : Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              );
-            }),
-          ),
+          buildGalleryIndicators(images),
         ],
       ],
     );

@@ -7,6 +7,7 @@ import 'package:ride_sharing_user_app/features/message/screens/message_list.dart
 import 'package:ride_sharing_user_app/features/my_level/screens/my_level_screen.dart';
 import 'package:ride_sharing_user_app/features/my_offer/screens/my_offer_screen.dart';
 import 'package:ride_sharing_user_app/features/profile/widgets/profile_item.dart';
+import 'package:ride_sharing_user_app/features/notification/screens/notification_screen.dart';
 import 'package:ride_sharing_user_app/features/refer_and_earn/screens/refer_and_earn_screen.dart';
 import 'package:ride_sharing_user_app/features/safety_setup/screens/safety_setup_screen.dart';
 import 'package:ride_sharing_user_app/features/settings/domain/html_enum_types.dart';
@@ -253,6 +254,11 @@ class ProfileScreen extends StatelessWidget {
                   title: 'message',
                   icon: Images.profileMessage,
                   onTap: () => Get.to(() => const MessageListScreen()),
+                ),
+                ProfileMenuItem(
+                  title: 'Notificações',
+                  icon: Images.notificationOthersIcon,
+                  onTap: () => Get.to(() => const NotificationScreen()),
                 ),
                 ProfileMenuItem(
                   title: 'my_wallet',
