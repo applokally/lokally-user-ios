@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
@@ -1092,6 +1093,16 @@ class _StoreProductCategoryScreenState
   Widget build(BuildContext context) {
     final Color primaryColor = currentFeedPrimaryColor;
     final List<_StoreProductItemData> productsForView = visibleProducts;
+    final double screenWidth = MediaQuery.of(context).size.width;
+    final double availableGridWidth =
+        screenWidth - (Dimensions.paddingSizeDefault * 2) - 12;
+    final double gridItemWidth =
+        (availableGridWidth / 2).clamp(150.0, 320.0).toDouble();
+    final bool applyAndroidClassifiedGridFix =
+        defaultTargetPlatform == TargetPlatform.android && isClassifiedFeed;
+    final double productCardMainAxisExtent = applyAndroidClassifiedGridFix
+        ? (gridItemWidth + 156).clamp(348.0, 430.0).toDouble()
+        : 348;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1247,11 +1258,11 @@ class _StoreProductCategoryScreenState
                               childCount: productsForView.length,
                             ),
                             gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
+                                SliverGridDelegateWithFixedCrossAxisCount(
                               crossAxisCount: 2,
                               crossAxisSpacing: 12,
                               mainAxisSpacing: 14,
-                              mainAxisExtent: 348,
+                              mainAxisExtent: productCardMainAxisExtent,
                             ),
                           ),
                         ),

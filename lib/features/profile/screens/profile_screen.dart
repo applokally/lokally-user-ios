@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:ride_sharing_user_app/data/api_client.dart';
+import 'package:ride_sharing_user_app/features/dashboard/controllers/bottom_menu_controller.dart';
 import 'package:ride_sharing_user_app/common_widgets/confirmation_bottomsheet_widget.dart';
 import 'package:ride_sharing_user_app/features/address/screens/my_address.dart';
 import 'package:ride_sharing_user_app/features/message/screens/message_list.dart';
@@ -35,6 +36,16 @@ import 'package:ride_sharing_user_app/common_widgets/image_widget.dart';
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
+  void _goToHome(BuildContext context) {
+    if (Get.isRegistered<BottomMenuController>()) {
+      Get.find<BottomMenuController>().setTabIndex(0);
+    }
+
+    if (Navigator.canPop(context)) {
+      Get.back();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
@@ -42,7 +53,11 @@ class ProfileScreen extends StatelessWidget {
       child: Scaffold(
         body: GetBuilder<ProfileController>(builder: (profileController) {
           return BodyWidget(
-            appBar: AppBarWidget(title: 'profile'.tr, showBackButton: false),
+            appBar: AppBarWidget(
+              title: 'profile'.tr,
+              showBackButton: true,
+              onBackPressed: () => _goToHome(context),
+            ),
             body: SingleChildScrollView(
               padding: const EdgeInsets.all(Dimensions.paddingSizeDefault),
               child: Column(children: [
@@ -276,7 +291,7 @@ class ProfileScreen extends StatelessWidget {
                   onTap: () => Get.to(() => MyOfferScreen()),
                 ),
                 ProfileMenuItem(
-                  title: 'my_trips',
+                  title: 'Histórico de viagens',
                   icon: Images.profileMyTrip,
                   onTap: () =>
                       Get.to(() => const TripScreen(fromProfile: true)),
