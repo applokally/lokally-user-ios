@@ -153,6 +153,9 @@ class RideService implements RideServiceInterface {
     String? rideRequestType,
     double? surgeMultiplier,
     String? pickupNote,
+    String? lokallyPaymentFlow,
+    String? lokallyPaymentMethod,
+    String? lokallyPaymentMethodLabel,
     String? lokallyPointsVoucherId,
     String? lokallyPointsVoucherCode,
   }) async {
@@ -204,6 +207,9 @@ class RideService implements RideServiceInterface {
         rideRequestType: rideRequestType,
         surgeMultiplier: surgeMultiplier,
         pickupNote: pickupNote,
+        lokallyPaymentFlow: lokallyPaymentFlow,
+        lokallyPaymentMethod: lokallyPaymentMethod,
+        lokallyPaymentMethodLabel: lokallyPaymentMethodLabel,
         lokallyPointsVoucherId: lokallyPointsVoucherId,
         lokallyPointsVoucherCode: lokallyPointsVoucherCode);
   }

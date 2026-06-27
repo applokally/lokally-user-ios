@@ -70,6 +70,9 @@ abstract class RideServiceInterface {
     required String? scheduledAt,
     String? rideRequestType,
     double? surgeMultiplier,
+    String? lokallyPaymentFlow,
+    String? lokallyPaymentMethod,
+    String? lokallyPaymentMethodLabel,
     String? lokallyPointsVoucherId,
     String? lokallyPointsVoucherCode,
   });

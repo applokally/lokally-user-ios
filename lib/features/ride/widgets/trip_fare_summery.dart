@@ -12,10 +12,6 @@ import 'package:ride_sharing_user_app/features/coupon/controllers/coupon_control
 import 'package:ride_sharing_user_app/features/payment/controllers/payment_controller.dart';
 import 'package:ride_sharing_user_app/features/ride/controllers/ride_controller.dart';
 
-String? _lokallySelectedPaymentLabel;
-String? _lokallySelectedPaymentGroupLabel;
-int? _lokallySelectedPaymentTypeIndex;
-
 class TripFareSummery extends StatelessWidget {
   final bool fromPayment;
   final bool fromParcel;
@@ -39,14 +35,18 @@ class TripFareSummery extends StatelessWidget {
   }
 
   String _currentPaymentLabel(PaymentController paymentController) {
-    if (_lokallySelectedPaymentLabel != null &&
-        _lokallySelectedPaymentTypeIndex ==
-            paymentController.paymentTypeIndex) {
-      return _lokallySelectedPaymentLabel!;
-    }
-
     if (paymentController.paymentTypeIndex == 0) {
-      return 'cash'.tr;
+      switch (paymentController.directToDriverPaymentMethod) {
+        case 'machine_debit':
+          return 'machine_debit'.tr;
+        case 'machine_credit':
+          return 'machine_credit'.tr;
+        case 'pix':
+          return 'pix'.tr;
+        case 'cash':
+        default:
+          return 'cash'.tr;
+      }
     }
 
     if (paymentController.paymentTypeIndex == 1) {
@@ -57,12 +57,6 @@ class TripFareSummery extends StatelessWidget {
   }
 
   String _currentPaymentGroupLabel(PaymentController paymentController) {
-    if (_lokallySelectedPaymentGroupLabel != null &&
-        _lokallySelectedPaymentTypeIndex ==
-            paymentController.paymentTypeIndex) {
-      return _lokallySelectedPaymentGroupLabel!;
-    }
-
     if (paymentController.paymentTypeIndex == 1 ||
         paymentController.paymentTypeIndex == 2) {
       return 'pay_in_app'.tr;
@@ -72,32 +66,30 @@ class TripFareSummery extends StatelessWidget {
   }
 
   IconData _currentPaymentIcon(PaymentController paymentController) {
-    final String label = _currentPaymentLabel(paymentController);
-
-    if (label == 'pix'.tr) {
-      return Icons.qr_code_2_rounded;
-    }
-
-    if (label == 'machine_debit'.tr || label == 'machine_credit'.tr) {
-      return Icons.credit_card_rounded;
+    if (paymentController.paymentTypeIndex == 0) {
+      switch (paymentController.directToDriverPaymentMethod) {
+        case 'pix':
+          return Icons.qr_code_2_rounded;
+        case 'machine_debit':
+        case 'machine_credit':
+          return Icons.credit_card_rounded;
+        case 'cash':
+        default:
+          return Icons.payments_rounded;
+      }
     }
 
     if (paymentController.paymentTypeIndex == 1) {
       return Icons.phone_iphone_rounded;
     }
 
-    if (paymentController.paymentTypeIndex == 2) {
-      return Icons.account_balance_wallet_rounded;
-    }
-
-    return Icons.payments_rounded;
+    return Icons.account_balance_wallet_rounded;
   }
 
   void _selectPaymentMethod({
     required BuildContext context,
     required PaymentController paymentController,
-    required String label,
-    required String groupLabel,
+    required String paymentMethod,
     required int paymentTypeIndex,
     required double fareAmount,
   }) {
@@ -117,11 +109,12 @@ class TripFareSummery extends StatelessWidget {
       return;
     }
 
-    _lokallySelectedPaymentLabel = label;
-    _lokallySelectedPaymentGroupLabel = groupLabel;
-    _lokallySelectedPaymentTypeIndex = paymentTypeIndex;
+    if (paymentTypeIndex == 0) {
+      paymentController.setDirectToDriverPaymentMethod(paymentMethod);
+    } else {
+      paymentController.setPaymentType(paymentTypeIndex);
+    }
 
-    paymentController.setPaymentType(paymentTypeIndex);
     Navigator.of(context).pop();
   }
 
@@ -136,7 +129,6 @@ class TripFareSummery extends StatelessWidget {
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withValues(alpha: 0.55),
       builder: (modalContext) {
-        final String selectedLabel = _currentPaymentLabel(paymentController);
         final double bottomPadding = MediaQuery.of(modalContext).padding.bottom;
 
         return SafeArea(
@@ -198,12 +190,13 @@ class TripFareSummery extends StatelessWidget {
                       _PaymentOptionTile(
                         title: 'cash'.tr,
                         icon: Icons.payments_rounded,
-                        selected: selectedLabel == 'cash'.tr,
+                        selected:
+                            paymentController.directToDriverPaymentMethod ==
+                                'cash',
                         onTap: () => _selectPaymentMethod(
                           context: modalContext,
                           paymentController: paymentController,
-                          label: 'cash'.tr,
-                          groupLabel: 'pay_to_driver'.tr,
+                          paymentMethod: 'cash',
                           paymentTypeIndex: 0,
                           fareAmount: fareAmount,
                         ),
@@ -211,12 +204,13 @@ class TripFareSummery extends StatelessWidget {
                       _PaymentOptionTile(
                         title: 'machine_debit'.tr,
                         icon: Icons.credit_card_rounded,
-                        selected: selectedLabel == 'machine_debit'.tr,
+                        selected:
+                            paymentController.directToDriverPaymentMethod ==
+                                'machine_debit',
                         onTap: () => _selectPaymentMethod(
                           context: modalContext,
                           paymentController: paymentController,
-                          label: 'machine_debit'.tr,
-                          groupLabel: 'pay_to_driver'.tr,
+                          paymentMethod: 'machine_debit',
                           paymentTypeIndex: 0,
                           fareAmount: fareAmount,
                         ),
@@ -224,12 +218,13 @@ class TripFareSummery extends StatelessWidget {
                       _PaymentOptionTile(
                         title: 'machine_credit'.tr,
                         icon: Icons.credit_score_rounded,
-                        selected: selectedLabel == 'machine_credit'.tr,
+                        selected:
+                            paymentController.directToDriverPaymentMethod ==
+                                'machine_credit',
                         onTap: () => _selectPaymentMethod(
                           context: modalContext,
                           paymentController: paymentController,
-                          label: 'machine_credit'.tr,
-                          groupLabel: 'pay_to_driver'.tr,
+                          paymentMethod: 'machine_credit',
                           paymentTypeIndex: 0,
                           fareAmount: fareAmount,
                         ),
@@ -237,12 +232,13 @@ class TripFareSummery extends StatelessWidget {
                       _PaymentOptionTile(
                         title: 'pix'.tr,
                         icon: Icons.qr_code_2_rounded,
-                        selected: selectedLabel == 'pix'.tr,
+                        selected:
+                            paymentController.directToDriverPaymentMethod ==
+                                'pix',
                         onTap: () => _selectPaymentMethod(
                           context: modalContext,
                           paymentController: paymentController,
-                          label: 'pix'.tr,
-                          groupLabel: 'pay_to_driver'.tr,
+                          paymentMethod: 'pix',
                           paymentTypeIndex: 0,
                           fareAmount: fareAmount,
                         ),
@@ -256,12 +252,11 @@ class TripFareSummery extends StatelessWidget {
                       _PaymentOptionTile(
                         title: 'digital_pay'.tr,
                         icon: Icons.phone_iphone_rounded,
-                        selected: selectedLabel == 'digital_pay'.tr,
+                        selected: paymentController.paymentTypeIndex == 1,
                         onTap: () => _selectPaymentMethod(
                           context: modalContext,
                           paymentController: paymentController,
-                          label: 'digital_pay'.tr,
-                          groupLabel: 'pay_in_app'.tr,
+                          paymentMethod: 'lokally_pay',
                           paymentTypeIndex: 1,
                           fareAmount: fareAmount,
                         ),
@@ -269,12 +264,11 @@ class TripFareSummery extends StatelessWidget {
                       _PaymentOptionTile(
                         title: 'wallet'.tr,
                         icon: Icons.account_balance_wallet_rounded,
-                        selected: selectedLabel == 'wallet'.tr,
+                        selected: paymentController.paymentTypeIndex == 2,
                         onTap: () => _selectPaymentMethod(
                           context: modalContext,
                           paymentController: paymentController,
-                          label: 'wallet'.tr,
-                          groupLabel: 'pay_in_app'.tr,
+                          paymentMethod: 'wallet',
                           paymentTypeIndex: 2,
                           fareAmount: fareAmount,
                         ),

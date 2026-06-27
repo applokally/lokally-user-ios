@@ -397,6 +397,8 @@ class RideController extends GetxController implements GetxService {
       scheduleTime.second,
     );
 
+    final PaymentController paymentController = Get.find<PaymentController>();
+
     Response response = await rideServiceInterface.submitRideRequest(
       pickupLat: pickUpPosition.latitude.toString(),
       pickupLng: pickUpPosition.longitude.toString(),
@@ -435,8 +437,13 @@ class RideController extends GetxController implements GetxService {
               : estimatedFare.toString(),
       bid: parcel ? false : estimatedFare != actualFare,
       note: note,
-      paymentMethod: Get.find<PaymentController>()
-          .paymentTypeList[Get.find<PaymentController>().paymentTypeIndex],
+      paymentMethod:
+          paymentController.paymentTypeList[paymentController.paymentTypeIndex],
+      lokallyPaymentFlow: paymentController.lokallyPaymentFlowForRideRequest,
+      lokallyPaymentMethod:
+          paymentController.lokallyPaymentMethodForRideRequest,
+      lokallyPaymentMethodLabel:
+          paymentController.lokallyPaymentMethodLabelForRideRequest,
       encodedPolyline: parcel
           ? encodedPolyLine
           : selectedType?.polyline ??

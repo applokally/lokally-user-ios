@@ -319,28 +319,31 @@ class _LokallyPointsPreRideVoucherSelector extends StatefulWidget {
 class _LokallyPointsPreRideVoucherSelectorState
     extends State<_LokallyPointsPreRideVoucherSelector> {
   bool _isLoading = false;
-  bool _hasLoaded = false;
   List<_LokallyPointsPreRideVoucher> _vouchers = [];
 
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(_loadVouchers);
-  }
+  String get _tripType =>
+      widget.expectedRewardType == 'parcel_coupon' ? 'parcel' : 'ride_request';
 
-  Future<void> _loadVouchers() async {
+  String get _serviceLabel => _tripType == 'parcel' ? 'entrega' : 'corrida';
+
+  Future<bool> _loadVouchers() async {
     if (_isLoading) {
-      return;
+      return false;
     }
 
     setState(() {
       _isLoading = true;
+      _vouchers = [];
     });
 
     try {
       final response = await Get.find<ApiClient>().getData(
-        '/api/customer/points-club/vouchers',
+        '/api/customer/points-club/vouchers/available-for-trip?trip_type=$_tripType',
       );
+
+      if (response.statusCode != 200) {
+        return false;
+      }
 
       final List<dynamic> rawItems = _extractVoucherList(response.body);
       final List<_LokallyPointsPreRideVoucher> parsed = rawItems
@@ -357,22 +360,24 @@ class _LokallyPointsPreRideVoucherSelectorState
           .toList();
 
       if (!mounted) {
-        return;
+        return false;
       }
 
       setState(() {
         _vouchers = parsed;
-        _hasLoaded = true;
       });
+
+      return true;
     } catch (_) {
       if (!mounted) {
-        return;
+        return false;
       }
 
       setState(() {
         _vouchers = [];
-        _hasLoaded = true;
       });
+
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -418,8 +423,28 @@ class _LokallyPointsPreRideVoucherSelectorState
     return [];
   }
 
-  void _openVoucherModal() {
+  Future<void> _openVoucherModal() async {
+    if (_isLoading) {
+      return;
+    }
+
+    final bool loaded = await _loadVouchers();
+
+    if (!mounted) {
+      return;
+    }
+
+    if (!loaded) {
+      showCustomSnackBar(
+        'Não foi possível consultar os resgates do Clube. Tente novamente.',
+      );
+      return;
+    }
+
     if (_vouchers.isEmpty) {
+      showCustomSnackBar(
+        'Nenhum resgate disponível para esta $_serviceLabel.',
+      );
       return;
     }
 
@@ -605,7 +630,7 @@ class _LokallyPointsPreRideVoucherSelectorState
           );
         }
 
-        if (_isLoading && !_hasLoaded) {
+        if (_isLoading) {
           return Container(
             width: double.infinity,
             margin:
@@ -640,12 +665,8 @@ class _LokallyPointsPreRideVoucherSelectorState
           );
         }
 
-        if (_vouchers.isEmpty) {
-          return const SizedBox();
-        }
-
         return InkWell(
-          onTap: _openVoucherModal,
+          onTap: () => _openVoucherModal(),
           borderRadius: BorderRadius.circular(Dimensions.radiusDefault),
           child: Container(
             width: double.infinity,
@@ -690,7 +711,7 @@ class _LokallyPointsPreRideVoucherSelectorState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Você tem resgate do Clube de Pontos Lokally',
+                        'Usar resgate do Clube de Pontos',
                         style: textSemiBold.copyWith(
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                           fontSize: Dimensions.fontSizeDefault,
@@ -698,7 +719,7 @@ class _LokallyPointsPreRideVoucherSelectorState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${_vouchers.length} resgate${_vouchers.length == 1 ? '' : 's'} disponível${_vouchers.length == 1 ? '' : 'is'} para esta corrida',
+                        'Consulte os resgates válidos para esta $_serviceLabel.',
                         style: textRegular.copyWith(
                           color: Theme.of(context).hintColor,
                           fontSize: Dimensions.fontSizeSmall,

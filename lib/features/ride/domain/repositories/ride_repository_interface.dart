@@ -71,6 +71,9 @@ abstract class RideRepositoryInterface implements RepositoryInterface {
     required String? scheduledAt,
     String? rideRequestType,
     double? surgeMultiplier,
+    String? lokallyPaymentFlow,
+    String? lokallyPaymentMethod,
+    String? lokallyPaymentMethodLabel,
     String? lokallyPointsVoucherId,
     String? lokallyPointsVoucherCode,
   });
